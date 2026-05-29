@@ -4,8 +4,9 @@ Importe `REGISTRY` para iterar sobre todas as assembleias.
 """
 from .almg import ALMGConnector
 from .alep import ALEPConnector
+from .alesp import ALESPConnector
 from ._stubs import (
-    ALESPConnector, ALERJConnector, ALBAConnector, ALEPEConnector,
+    ALERJConnector, ALBAConnector, ALEPEConnector,
     ALERGSConnector, ALECEConnector, ALEPAConnector, ALEMAConnector,
     ALEGOConnector, ALESConnector, ALMTConnector, ALEMSConnector,
     ALERNConnector, ALPBConnector, ALESEConnector, ALALConnector,

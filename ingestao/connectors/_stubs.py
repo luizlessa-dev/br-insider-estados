@@ -12,14 +12,7 @@ Ordem sugerida de implementação:
 from ..base_connector import StubConnector
 
 
-class ALESPConnector(StubConnector):
-    """Assembleia Legislativa de São Paulo — Tier 1 (XML bulk + API parcial)"""
-    assembly_id = "alesp"
-    assembly_name = "Assembleia Legislativa do Estado de São Paulo"
-    uf = "SP"
-    base_url = "https://www.al.sp.gov.br"
-    # XML de votações: https://www.al.sp.gov.br/repositorio/legislacao/...
-    # API SOAP legada em https://www.al.sp.gov.br/repositorioAtos/...
+# ALESP foi implementada — ver connectors/alesp.py
 
 
 class ALERJConnector(StubConnector):
