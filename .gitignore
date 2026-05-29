@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Segredos / ambiente
+.env
+.env.*
+!.env.example
+
+# Dados / artefatos locais
+*.log
+*.zip
+*.csv
+data/
+dumps/
+
+# SO / editor
+.DS_Store
+.idea/
+.vscode/
