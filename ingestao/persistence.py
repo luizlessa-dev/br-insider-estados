@@ -78,6 +78,14 @@ class SupabaseWriter:
     # ── Upsert genérico ───────────────────────────────────────────────────
     def _upsert(self, table: str, rows: list[dict], on_conflict: str) -> int:
         rows = [{k: _jsonable(v) for k, v in r.items()} for r in rows]
+        # Dedup pelo(s) campo(s) da chave de conflito — o PostgREST recusa um
+        # batch que tenha a mesma chave duas vezes ("ON CONFLICT ... cannot
+        # affect row a second time"). Mantém a última ocorrência.
+        keys = [k.strip() for k in on_conflict.split(",")]
+        deduped: dict[tuple, dict] = {}
+        for r in rows:
+            deduped[tuple(r.get(k) for k in keys)] = r
+        rows = list(deduped.values())
         total = 0
         for i in range(0, len(rows), CHUNK):
             chunk = rows[i:i + CHUNK]
