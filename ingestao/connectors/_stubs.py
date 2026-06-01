@@ -15,12 +15,7 @@ from ..base_connector import StubConnector
 # ALESP foi implementada — ver connectors/alesp.py
 
 
-class ALERJConnector(StubConnector):
-    """Assembleia Legislativa do Rio de Janeiro — Tier 3 (scraping)"""
-    assembly_id = "alerj"
-    assembly_name = "Assembleia Legislativa do Estado do Rio de Janeiro"
-    uf = "RJ"
-    base_url = "https://www.alerj.rj.gov.br"
+# ALERJ foi implementada — ver connectors/alerj.py
 
 
 class ALBAConnector(StubConnector):
