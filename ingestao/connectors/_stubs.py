@@ -69,12 +69,7 @@ class ALEMAConnector(StubConnector):
 # ALES foi implementada — ver connectors/ales.py
 
 
-class ALMTConnector(StubConnector):
-    """Assembleia Legislativa de Mato Grosso — Tier 2"""
-    assembly_id = "almt"
-    assembly_name = "Assembleia Legislativa de Mato Grosso"
-    uf = "MT"
-    base_url = "https://www.al.mt.gov.br"
+# ALMT foi implementada — ver connectors/almt.py
 
 
 class ALEMSConnector(StubConnector):

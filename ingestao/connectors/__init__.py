@@ -10,10 +10,11 @@ from .alepe import ALEPEConnector
 from .alece import ALECEConnector
 from .alego import ALEGOConnector
 from .ales import ALESConnector
+from .almt import ALMTConnector
 from ._stubs import (
     ALERJConnector, ALBAConnector,
     ALERGSConnector, ALEPAConnector, ALEMAConnector,
-    ALMTConnector, ALEMSConnector,
+    ALEMSConnector,
     ALERNConnector, ALPBConnector, ALESEConnector, ALALConnector,
     ALEPIConnector, ALEROConnector, ALEAMConnector, ALESCConnector,
     ALETOConnector, ALERRConnector, ALEACConnector, ALAPConnector,
