@@ -66,12 +66,7 @@ class ALEMAConnector(StubConnector):
 # ALEGO foi implementada — ver connectors/alego.py
 
 
-class ALESConnector(StubConnector):
-    """Assembleia Legislativa do Espírito Santo — Tier 2"""
-    assembly_id = "ales"
-    assembly_name = "Assembleia Legislativa do Espírito Santo"
-    uf = "ES"
-    base_url = "https://www.al.es.gov.br"
+# ALES foi implementada — ver connectors/ales.py
 
 
 class ALMTConnector(StubConnector):

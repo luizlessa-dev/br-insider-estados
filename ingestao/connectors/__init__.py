@@ -9,10 +9,11 @@ from .cldf import CLDFConnector
 from .alepe import ALEPEConnector
 from .alece import ALECEConnector
 from .alego import ALEGOConnector
+from .ales import ALESConnector
 from ._stubs import (
     ALERJConnector, ALBAConnector,
     ALERGSConnector, ALEPAConnector, ALEMAConnector,
-    ALESConnector, ALMTConnector, ALEMSConnector,
+    ALMTConnector, ALEMSConnector,
     ALERNConnector, ALPBConnector, ALESEConnector, ALALConnector,
     ALEPIConnector, ALEROConnector, ALEAMConnector, ALESCConnector,
     ALETOConnector, ALERRConnector, ALEACConnector, ALAPConnector,
