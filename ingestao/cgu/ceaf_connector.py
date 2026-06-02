@@ -123,7 +123,7 @@ def _parse_record(r: dict) -> Expulsao:
         orgao_sigla=orgao.get("sigla"),
         orgao_pasta_sigla=orgao.get("siglaDaPasta"),
         orgao_nome=orgao.get("nome"),
-        uf_lotacao=uf_obj.get("uf"),
+        uf_lotacao=str(uf_obj.get("uf") or "")[:2] or None,
         portaria=punicao.get("portaria"),
         numero_processo=punicao.get("processo"),
         pagina_dou=punicao.get("paginaDOU"),
