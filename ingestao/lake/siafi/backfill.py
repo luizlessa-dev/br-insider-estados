@@ -258,12 +258,34 @@ def backfill_execucao_mensal(
                 n_ok, n_skip, n_err, total)
 
 
+def _delete_snap_dir(snap_dir: Path) -> None:
+    """Remove diretório bronze de snapshot após silver load bem-sucedido."""
+    import shutil
+    try:
+        shutil.rmtree(snap_dir)
+        logger.info("  🗑  bronze removido: %s (%.1f MB liberados)",
+                    snap_dir.name,
+                    sum(f.stat().st_size for f in snap_dir.rglob("*") if f.is_file()) / 1024 / 1024
+                    if snap_dir.exists() else 0)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("  Falha ao remover bronze %s: %s", snap_dir, e)
+
+
 def backfill_snapshot(
     start: tuple[int, int],
     end: tuple[int, int],
     silver_only: bool,
     retry_failed: bool,
+    no_keep_bronze: bool = False,
 ) -> None:
+    """Backfill Stream B — snapshots mensais.
+
+    Args:
+        no_keep_bronze: Se True, apaga o diretório bronze local após cada
+            silver load bem-sucedido. Essencial quando o disco é limitado
+            (~11 GB): mantém uso máximo em ~150 MB a qualquer momento.
+            Snapshots precisarão ser re-baixados se re-processados.
+    """
     stream_name = "snapshot_diario"
     done = fetch_done_months(stream_name)
     failed = fetch_failed_months(stream_name) if retry_failed else set()
@@ -271,6 +293,9 @@ def backfill_snapshot(
     client = SiafiClient() if not silver_only else None
     writer = LakeWriter() if not silver_only else None
     bronze_stream = SnapshotDiarioStream(client, writer) if client else None
+
+    if no_keep_bronze:
+        logger.info("Modo --no-keep-bronze ativo: bronze apagado após cada silver load.")
 
     total = sum(1 for _ in iter_months(start, end))
     n_ok = n_skip = n_err = 0
@@ -313,6 +338,7 @@ def backfill_snapshot(
                         results = bronze_stream.ingest(d)
                         rows_bronze = sum(r.rows for r in results)
                         snap_date = d  # atualiza para o dia que funcionou
+                        snap_dir = LAKE_ROOT / "siafi" / "snapshot" / f"snapshot_date={snap_date.isoformat()}"
                         ingested = True
                         break
                     except requests.exceptions.HTTPError as he:
@@ -333,6 +359,13 @@ def backfill_snapshot(
 
             logger.info("  silver load snapshot %s...", snap_date.isoformat())
             silver_snapshot(snap_date, LAKE_ROOT)
+
+            # Apaga bronze local se --no-keep-bronze (economiza disco)
+            if no_keep_bronze and snap_dir.exists():
+                import shutil
+                mb = sum(f.stat().st_size for f in snap_dir.rglob("*") if f.is_file()) / 1024 / 1024
+                shutil.rmtree(snap_dir)
+                logger.info("  🗑  bronze removido (%.1f MB liberados)", mb)
 
             duration = round(time.time() - t0, 2)
             log_result(stream_name, competencia, source_url,
@@ -385,6 +418,15 @@ def main() -> int:
         "--retry-failed", action="store_true",
         help="Re-tenta meses com status=failed no log (além dos pending).",
     )
+    parser.add_argument(
+        "--no-keep-bronze", action="store_true",
+        help=(
+            "Apaga o bronze local de cada snapshot após silver load. "
+            "Essencial quando o disco é limitado (~11 GB livre): mantém uso "
+            "máximo em ~150 MB a qualquer momento. Bronze do Stream A (execucao_mensal) "
+            "é sempre mantido (pequeno, ~500 MB total)."
+        ),
+    )
     args = parser.parse_args()
 
     start = parse_ym(args.start)
@@ -392,15 +434,20 @@ def main() -> int:
 
     n_months = sum(1 for _ in iter_months(start, end))
     logger.info(
-        "Backfill SIAFI %s→%s: %d meses | skip_snapshot=%s | silver_only=%s | retry_failed=%s",
+        "Backfill SIAFI %s→%s: %d meses | skip_snapshot=%s | silver_only=%s | "
+        "retry_failed=%s | no_keep_bronze=%s",
         args.start, args.end, n_months,
         args.skip_snapshot, args.silver_only, args.retry_failed,
+        getattr(args, "no_keep_bronze", False),
     )
 
     backfill_execucao_mensal(start, end, args.silver_only, args.retry_failed)
 
     if not args.skip_snapshot:
-        backfill_snapshot(start, end, args.silver_only, args.retry_failed)
+        backfill_snapshot(
+            start, end, args.silver_only, args.retry_failed,
+            no_keep_bronze=getattr(args, "no_keep_bronze", False),
+        )
 
     return 0
 
