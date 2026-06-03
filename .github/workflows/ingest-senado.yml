@@ -71,7 +71,8 @@ jobs:
           # Votações: período customizado ou últimos 14 dias
           if [ -n "${{ github.event.inputs.data_inicio }}" ]; then
             DATA_INI="${{ github.event.inputs.data_inicio }}"
-            DATA_FIM="${{ github.event.inputs.data_fim || $(date +%Y-%m-%d) }}"
+            DATA_FIM="${{ github.event.inputs.data_fim }}"
+            [ -z "$DATA_FIM" ] && DATA_FIM=$(date +%Y-%m-%d)
           else
             DATA_INI=$(date -d '14 days ago' +%Y-%m-%d 2>/dev/null || date -v-14d +%Y-%m-%d)
             DATA_FIM=$(date +%Y-%m-%d)
