@@ -1,0 +1,73 @@
+name: Ingestão Câmara Complementar
+
+# Cobre: votações nominais, frentes parlamentares, ocupações dos deputados.
+#
+# Cadências:
+#   votacoes  → semanal (2ª-feira 07:00 UTC) — dado de alto valor jornalístico
+#   frentes   → mensal dia 10 — muda pouco durante a legislatura
+#   ocupacoes → mensal dia 10 — estático, mas vale manter atualizado
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"    # semanal: segundas 07:00 UTC (votações)
+    - cron: "0 8 10 * *"   # mensal dia 10 08:00 UTC (frentes + ocupações)
+  workflow_dispatch:
+    inputs:
+      modulos:
+        description: "Módulos separados por espaço: votacoes frentes ocupacoes"
+        default: "votacoes frentes ocupacoes"
+      data_inicio:
+        description: "Início do período de votações (YYYY-MM-DD)"
+        default: ""
+      data_fim:
+        description: "Fim do período de votações (YYYY-MM-DD)"
+        default: ""
+
+concurrency:
+  group: ingest-camara-complementar
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Definir módulos por trigger
+        id: cfg
+        run: |
+          # Se dispatch manual, usa o input; senão detecta pelo horário
+          if [ -n "${{ github.event.inputs.modulos }}" ]; then
+            MODULOS="${{ github.event.inputs.modulos }}"
+          else
+            HOUR=$(date +%-H)
+            DAY=$(date +%-d)
+            if [ "$DAY" = "10" ]; then
+              MODULOS="frentes ocupacoes votacoes"
+            else
+              MODULOS="votacoes"
+            fi
+          fi
+          echo "modulos=$MODULOS" >> $GITHUB_OUTPUT
+          echo "Módulos: $MODULOS"
+
+      - name: Ingerir dados complementares da Câmara
+        run: |
+          ARGS="--modulos ${{ steps.cfg.outputs.modulos }}"
+          [ -n "${{ github.event.inputs.data_inicio }}" ] && ARGS="$ARGS --data-inicio ${{ github.event.inputs.data_inicio }}"
+          [ -n "${{ github.event.inputs.data_fim }}" ] && ARGS="$ARGS --data-fim ${{ github.event.inputs.data_fim }}"
+          python -m ingestao.camara_complementar $ARGS
