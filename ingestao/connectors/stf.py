@@ -39,6 +39,24 @@ logger = logging.getLogger("stf")
 # Configuração
 # ---------------------------------------------------------------------------
 
+# Carrega .env da raiz do projeto se as vars não estiverem no ambiente
+def _load_env() -> None:
+    env_path = Path(__file__).resolve().parents[2] / ".env"
+    if not env_path.exists():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            if k not in os.environ:
+                os.environ[k] = v
+
+_load_env()
+
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
@@ -69,6 +87,14 @@ DATASET_MAP = {
     "suspensao_nacional":          "rg_suspensao",
     "representativo":              "rg_representativo",
     "controle_concentrado":        "controle_concentrado",
+    "amicus":                      "controle_concentrado",
+    "acoes_covid_decisoes":        "decisoes_covid",
+    "acoes_covid_processos":       "acervo_covid",
+    "reclamacoes_decisoes":        "decisoes_reclamacoes",
+    "reclamacoes_processos":       "acervo_reclamacoes",
+    "reclamacoes_partes":          "acervo_partes",
+    "informacao_a_sociedade":      "informacao_sociedade",
+    "omissao_inconstitucional":    "omissao_inconstitucional",
 }
 
 # ---------------------------------------------------------------------------
@@ -488,15 +514,28 @@ def main() -> None:
 
         logger.info(f"Ingerindo: {csv_path.name} → dataset={dataset}")
 
-        if "decisoes" in dataset or dataset in ("decisoes_2000_2004", "decisoes_2005_2009",
-                                                  "decisoes_2010_2014", "decisoes_2015_2019",
-                                                  "decisoes_2020_2024", "decisoes_2025",
-                                                  "decisoes_2026"):
+        DATASETS_DECISOES = {
+            "decisoes_2000_2004", "decisoes_2005_2009", "decisoes_2010_2014",
+            "decisoes_2015_2019", "decisoes_2020_2024", "decisoes_2025", "decisoes_2026",
+            "decisoes_covid", "decisoes_reclamacoes",
+        }
+        DATASETS_ACERVO = {
+            "acervo", "controle_concentrado", "acervo_covid", "acervo_reclamacoes",
+        }
+        DATASETS_IGNORAR = {
+            "rg_temas", "rg_suspensao", "rg_representativo", "acervo_partes",
+            "controle_concentrado_acervo", "informacao_sociedade", "omissao_inconstitucional",
+        }
+
+        if dataset in DATASETS_DECISOES or "decisoes" in dataset:
             ok, erros = ingerir_decisoes(csv_path, dataset, db)
-        elif dataset in ("acervo", "controle_concentrado"):
+        elif dataset in DATASETS_ACERVO:
             ok, erros = ingerir_acervo(csv_path, dataset, db)
+        elif dataset in DATASETS_IGNORAR:
+            logger.info(f"Dataset {dataset} sem tabela dedicada ainda — pulando")
+            continue
         else:
-            logger.info(f"Dataset {dataset} ainda sem handler — pulando")
+            logger.info(f"Dataset {dataset} sem handler — pulando")
             continue
 
         total_ok += ok
