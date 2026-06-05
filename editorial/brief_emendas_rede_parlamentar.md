@@ -75,10 +75,35 @@ XCMG é a #1 receptora privada de emendas parlamentares de toda a base. R$ 311M 
 
 **Destinatário 2:** IDENE — processo `2421020 000004/2022`, mesmos documentos.
 
+### Duopólio chinês confirmado — LiuGong (atualizado 2026-06-04)
+
+LiuGong recebeu **R$ 28,9M** de 16 autores. **11 autores financiaram XCMG e LiuGong simultaneamente** — evidência de captura sistêmica, não diversificação casual:
+
+| Autor | XCMG | LiuGong | Total |
+|---|---|---|---|
+| Bancada da Bahia | R$ 16,1M | R$ 10,3M | R$ 26,4M |
+| Bancada de PE | R$ 31,9M | R$ 620k | R$ 32,5M |
+| Bancada da PB | R$ 15,8M | R$ 1,86M | R$ 17,7M |
+| Com. Integração Nacional | R$ 13,5M | R$ 1,25M | R$ 14,7M |
+| Bancada de TO | R$ 2,7M | R$ 1,86M | R$ 4,6M |
+| Bancada do CE | R$ 3,3M | R$ 1,24M | R$ 4,5M |
+| Efraim Filho | R$ 1,39M | R$ 1,24M | R$ 2,6M |
+| Pedro Campos | R$ 1,78M | R$ 620k | R$ 2,4M |
+| Paulo Abi-Ackel | R$ 908k | R$ 307k | R$ 1,2M |
+| Claudio Cajado | R$ 962k | R$ 315k | R$ 1,3M |
+| Samuel Viana | R$ 598k | R$ 307k | R$ 905k |
+
+**Ângulo editorial:** XCMG e LiuGong são concorrentes diretas no mercado brasileiro de maquinário pesado — e o mesmo bloco parlamentar financia as duas. Não é escolha técnica nem diversificação: é captura do fluxo de emendas por um setor.
+
+**Total combinado XCMG + LiuGong:** ~R$ 340M federal + R$ 25M estadual MG = **~R$ 365M**
+
+**Destaque LiuGong:** Delegado Caveira (individual, R$ 3,6M) — não aparece no top XCMG. Vale verificar UF e partido.
+
 ### CNPJs-chave
 - XCMG Brasil: `14707364000110`
+- LiuGong (SP): `11260925000279`
+- LiuGong (filial): `11260925000350`
 - Yanmar: `08263434000196`
-- Liugong (CNPJs): `11260925000279` e `11260925000350`
 - CNH Industrial: `01844555002398`
 
 ---
