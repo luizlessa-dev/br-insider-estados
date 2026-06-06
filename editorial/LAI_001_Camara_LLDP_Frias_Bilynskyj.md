@@ -5,6 +5,7 @@
 **Portal de protocolo:** https://www.camara.leg.br/ouvidoria/faleconosco (ou Fala.BR)
 **Base legal:** Lei nº 12.527/2011 (Lei de Acesso à Informação), art. 10
 **Data de envio:** 05 de junho de 2026
+**Número de protocolo:** 2026060600000002
 **Prazo legal de resposta:** 20 dias úteis (prorrogável por mais 10)
 
 ---

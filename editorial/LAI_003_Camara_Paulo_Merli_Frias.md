@@ -5,6 +5,7 @@
 **Portal:** https://www.camara.leg.br/ouvidoria/faleconosco
 **Base legal:** Lei nº 12.527/2011, art. 10
 **Data de envio:** 05 de junho de 2026
+**Número de protocolo:** 2026060600000001
 **Prazo:** 20 dias úteis
 
 ---
