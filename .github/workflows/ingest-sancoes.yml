@@ -6,7 +6,7 @@ name: Ingestão Sanções (CEIS + CNEP)
 # Secrets necessários:
 #   SUPABASE_URL
 #   SUPABASE_SERVICE_ROLE_KEY
-#   PORTAL_TRANSPARENCIA_API_KEY   ← registrar em portaldatransparencia.gov.br/api-de-dados/cadastrar-email
+#   TRANSPARENCIA_API_KEY   ← nome real do secret no GitHub (mapeado para PORTAL_TRANSPARENCIA_API_KEY)
 #
 # Volume estimado: CEIS ~30k registros + CNEP ~20k registros
 # Tempo estimado: ~15-30 min (paginação com throttle 0.5s/pág)
@@ -41,7 +41,7 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.TRANSPARENCIA_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
