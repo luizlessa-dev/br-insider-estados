@@ -196,7 +196,7 @@ select
     situacao,
     descricao,
     local_nome          as local,
-    tipo_presenca       as null,
+    null                as tipo_presenca,
     orgaos_siglas       as orgaos,
     url_registro        as url_video
 from agenda_camara_eventos
