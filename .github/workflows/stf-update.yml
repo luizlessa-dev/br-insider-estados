@@ -1,0 +1,63 @@
+# ============================================================
+# STF — Atualização mensal das decisões (Corte Aberta)
+# Roda no dia 5 de cada mês às 06:00 BRT
+# Baixa via Playwright os CSVs de decisões do ano corrente
+# e re-ingere no Supabase
+# ============================================================
+name: STF — Atualização mensal
+
+on:
+  schedule:
+    - cron: '0 9 5 * *'   # dia 5, 06:00 BRT (UTC-3)
+  workflow_dispatch:
+    inputs:
+      datasets:
+        description: 'Datasets a baixar (ex: 2026,2025)'
+        required: false
+        default: '2026'
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          pip install -r ingestao/requirements.txt
+          pip install playwright
+          playwright install chromium --with-deps
+
+      - name: Baixar CSVs via Playwright
+        env:
+          DATASETS: ${{ github.event.inputs.datasets || '2026' }}
+        run: python3 scripts/stf_download_csvs.py --datasets "$DATASETS"
+
+      - name: Ingerir no Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python3 -m ingestao.connectors.stf --pasta data/stf/raw/ --no-refresh
+
+      - name: Refresh matviews de tendência
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 scripts/stf_refresh_matviews.py
+
+      - name: Upload CSVs como artefato (30 dias)
+        uses: actions/upload-artifact@v4
+        with:
+          name: stf-csvs-${{ github.run_id }}
+          path: data/stf/raw/*.csv
+          retention-days: 30
+          if-no-files-found: warn
