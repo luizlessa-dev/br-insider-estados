@@ -146,37 +146,45 @@ def _slugify(nome: str) -> str:
 # Normalização de resultado de decisão
 # ---------------------------------------------------------------------------
 
+
+# ATENÇÃO: ordem importa — termos mais específicos (negados, compostos) ANTES
+# dos mais curtos, senão "provido" bate em "não provido" antes de checar o negado.
 RESULTADO_MAPA: dict[str, str] = {
-    # Favorável ao requerente/recorrente
-    "procedente":                               "favoravel",
-    "procedente em parte":                      "favoravel",
-    "provido":                                  "favoravel",
-    "provido em parte":                         "favoravel",
-    "deferido":                                 "favoravel",
-    "deferido em parte":                        "favoravel",
-    "concedida":                                "favoravel",
-    "concedido":                                "favoravel",
-    "conhecido e provido":                      "favoravel",
-    "agravo regimental provido":                "favoravel",
-    "agravo provido e desde logo provido":      "favoravel",
-    # Contrário
-    "improcedente":                             "contrario",
-    "não provido":                              "contrario",
-    "desprovido":                               "contrario",
-    "indeferido":                               "contrario",
-    "negado":                                   "contrario",
-    "negado seguimento":                        "contrario",
-    "não conhecido":                            "contrario",
-    "não conhecidos":                           "contrario",
-    "não conhecida":                            "contrario",
-    "agravo não provido":                       "contrario",
+    # ── Contrário (termos negados PRIMEIRO — evitam falso positivo em "provido") ──
+    "agravo provido e desde logo não provido":  "contrario",   # específico, antes de qualquer "provido"
     "agravo regimental não provido":            "contrario",
     "agravo regimental não conhecido":          "contrario",
+    "agravo regimental desprovido":             "contrario",
+    "agravo não provido":                       "contrario",
     "embargos rejeitados":                      "contrario",
     "embargos não conhecidos":                  "contrario",
     "inadmitidos os embargos":                  "contrario",
-    # Neutro / processual
-    "prejudicado":                              "neutro",
+    "não provido":                              "contrario",
+    "desprovido":                               "contrario",
+    "não conhecido":                            "contrario",
+    "não conhecidos":                           "contrario",
+    "não conhecida":                            "contrario",
+    "negado seguimento":                        "contrario",
+    "negado":                                   "contrario",
+    "improcedente":                             "contrario",
+    "indeferido":                               "contrario",
+    "denegada":                                 "contrario",
+    "denegado":                                 "contrario",
+    # ── Favorável (só depois de esgotar as negações) ──────────────────────────
+    "agravo regimental provido":                "favoravel",
+    "agravo provido e desde logo provido":      "favoravel",
+    "conhecido e provido":                      "favoravel",
+    "procedente em parte":                      "favoravel",
+    "procedente":                               "favoravel",
+    "provido em parte":                         "favoravel",
+    "provido":                                  "favoravel",
+    "deferido em parte":                        "favoravel",
+    "deferido":                                 "favoravel",
+    "concedida em parte":                       "favoravel",
+    "concedida":                                "favoravel",
+    "concedido":                                "favoravel",
+    # ── Neutro / processual ───────────────────────────────────────────────────
+    "prejudicado":          "neutro",
     "homologado":           "neutro",
     "arquivado":            "neutro",
     "baixado":              "neutro",
@@ -202,9 +210,11 @@ def _normalizar_resultado(nome_decisao: str) -> Optional[str]:
 def _parse_date(s: str) -> Optional[date]:
     if not s or not s.strip():
         return None
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+    # Cortar horário se presente: "06/01/2003 00:00:00" → "06/01/2003"
+    s = s.strip().split(" ")[0].split("T")[0]
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%m/%d/%Y"):
         try:
-            return datetime.strptime(s.strip(), fmt).date()
+            return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
     return None
