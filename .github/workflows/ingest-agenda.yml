@@ -1,0 +1,91 @@
+name: Ingestão — Agenda Legislativa (Câmara + Senado)
+
+# Câmara: eventos diários (comissões, audiências, plenário, sessões)
+# Senado: reuniões de comissões + sessões plenárias
+# Ambas as fontes sem autenticação — APIs públicas.
+
+on:
+  schedule:
+    # Diário às 07:00 UTC (04:00 BRT) — antes do horário comercial
+    - cron: "0 7 * * *"
+    # Segunda rodada às 19:00 UTC (16:00 BRT) — captura atualizações de pauta do dia
+    - cron: "0 19 * * *"
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: "Janela em dias (padrão: 2)"
+        default: "2"
+      data_inicio:
+        description: "Data início YYYY-MM-DD (opcional, sobrepõe --dias)"
+        default: ""
+      data_fim:
+        description: "Data fim YYYY-MM-DD (opcional)"
+        default: ""
+      fonte:
+        description: "Fonte: camara | senado | ambas"
+        default: "ambas"
+      backfill_ano:
+        description: "Backfill histórico: ano (ex: 2024). Deixe em branco para modo incremental."
+        default: ""
+
+concurrency:
+  group: ingest-agenda
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Ingestão incremental (modo padrão)
+        if: ${{ !github.event.inputs.backfill_ano }}
+        run: |
+          ARGS=""
+
+          # Janela
+          if [ -n "${{ github.event.inputs.data_inicio }}" ]; then
+            ARGS="$ARGS --data-inicio ${{ github.event.inputs.data_inicio }}"
+          fi
+          if [ -n "${{ github.event.inputs.data_fim }}" ]; then
+            ARGS="$ARGS --data-fim ${{ github.event.inputs.data_fim }}"
+          fi
+          if [ -z "${{ github.event.inputs.data_inicio }}" ]; then
+            ARGS="$ARGS --dias ${{ github.event.inputs.dias || '2' }}"
+          fi
+
+          # Fonte
+          FONTE="${{ github.event.inputs.fonte || 'ambas' }}"
+          if [ "$FONTE" = "camara" ]; then
+            ARGS="$ARGS --camara-only"
+          elif [ "$FONTE" = "senado" ]; then
+            ARGS="$ARGS --senado-only"
+          fi
+
+          python -m ingestao.agenda.runner $ARGS
+
+      - name: Backfill histórico
+        if: ${{ github.event.inputs.backfill_ano != '' }}
+        run: |
+          FONTE="${{ github.event.inputs.fonte || 'ambas' }}"
+          ARGS="--backfill --ano ${{ github.event.inputs.backfill_ano }}"
+          if [ "$FONTE" = "camara" ]; then
+            ARGS="$ARGS --camara-only"
+          elif [ "$FONTE" = "senado" ]; then
+            ARGS="$ARGS --senado-only"
+          fi
+          python -m ingestao.agenda.runner $ARGS
