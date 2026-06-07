@@ -68,8 +68,8 @@ select
     )                                                   as autores_emendas
 from mg_empenhos e
 join emendas_favorecidos f
-    on regexp_replace(e.cnpj_cpf_credor, '[^0-9]', '', 'g')
-     = regexp_replace(f.cnpj,            '[^0-9]', '', 'g')
+    on regexp_replace(e.cnpj_cpf_credor,  '[^0-9]', '', 'g')
+     = regexp_replace(f.codigo_favorecido, '[^0-9]', '', 'g')
 group by e.cnpj_cpf_credor, e.razao_social_credor
 order by total_pago_mg desc nulls last;
 
