@@ -3,6 +3,9 @@
 **Portal:** https://acessoainformacao.mg.gov.br/
 **Destinatário:** Instituto de Desenvolvimento do Norte e Nordeste de Minas Gerais (IDENE)
 **Data de elaboração:** 2026-06-04
+**Protocolo:** 02420.000088/2026-91
+**Data de protocolo:** 2026-06-05
+**Prazo legal de resposta:** 20 dias úteis a partir de 2026-06-05
 
 ---
 

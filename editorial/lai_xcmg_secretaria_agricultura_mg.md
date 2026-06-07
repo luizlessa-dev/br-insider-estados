@@ -3,6 +3,9 @@
 **Portal:** https://acessoainformacao.mg.gov.br/
 **Destinatário:** Secretaria de Estado de Agricultura, Pecuária e Abastecimento (SEAPA/MG)
 **Data de elaboração:** 2026-06-04
+**Protocolo:** 01230.000104/2026-11
+**Data de protocolo:** 2026-06-05
+**Prazo legal de resposta:** 20 dias úteis a partir de 2026-06-05
 
 ---
 

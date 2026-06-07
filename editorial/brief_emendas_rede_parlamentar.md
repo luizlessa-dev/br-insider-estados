@@ -63,17 +63,20 @@ XCMG é a #1 receptora privada de emendas parlamentares de toda a base. R$ 311M 
 - Por que a Bancada do RS direcionou R$ 102M para uma empresa sediada em MG?
 - Há restrição regulatória de compras de equipamentos chineses via emenda?
 
-### LAI prioritária
-**Destinatário:** Secretaria de Estado de Agricultura, Pecuária e Abastecimento de MG
-**Processo:** `1231021 000057/2025`
-**Solicitar:**
+### LAI prioritária — ✅ PROTOCOLADAS em 2026-06-05
+
+| Órgão | Processo | Protocolo LAI | Prazo |
+|---|---|---|---|
+| SEAPA/MG | `1231021 000057/2025` | **01230.000104/2026-11** | ~03/07/2026 |
+| IDENE | `2421020 000004/2022` | **02420.000088/2026-91** | ~03/07/2026 |
+
+**Solicitar em ambas:**
 1. Edital completo da licitação/contratação
 2. Ata de julgamento e relação de empresas que participaram/foram habilitadas
 3. Termo de referência / especificações técnicas do objeto
 4. Contrato assinado com a XCMG e eventuais aditivos
 5. Notas de empenho e liquidação vinculadas ao processo
-
-**Destinatário 2:** IDENE — processo `2421020 000004/2022`, mesmos documentos.
+6. Relação de municípios destinatários dos equipamentos
 
 ### Duopólio chinês confirmado — LiuGong (atualizado 2026-06-04)
 
