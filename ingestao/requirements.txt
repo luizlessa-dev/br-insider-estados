@@ -7,3 +7,4 @@ lxml>=4.9.0              # parser XML (ALESP bulk download)
 pyarrow>=15.0.0          # CSV → Parquet streaming
 boto3>=1.34.0            # upload pra Cloudflare R2 (S3-compatible)
 duckdb>=1.0.0            # query e transformação de Parquet (bronze → silver)
+supabase>=2.3.0
