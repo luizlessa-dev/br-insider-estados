@@ -1,0 +1,67 @@
+name: Alertas Investigativos — Agenda × Sanções × Emendas
+
+# Dispara logo após o ingest-agenda completar,
+# e também diariamente às 21h UTC (18h BRT) como fallback.
+
+on:
+  workflow_run:
+    workflows: ["Ingestão — Agenda Legislativa (Câmara + Senado)"]
+    types: [completed]
+  schedule:
+    - cron: "0 21 * * *"   # 18h BRT — digest diário
+  workflow_dispatch:
+    inputs:
+      query:
+        description: "Query específica (deixe vazio para todas)"
+        default: ""
+      dry_run:
+        description: "Dry run (true = só imprime, não envia)"
+        default: "false"
+
+concurrency:
+  group: alertas-investigativos
+  cancel-in-progress: false
+
+jobs:
+  alertas:
+    # Só roda se o workflow de ingestão teve sucesso (ou se foi disparado manualmente/schedule)
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_ALERTAS }}
+      ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt psycopg2-binary
+
+      - name: Rodar alertas
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.query }}" ]; then
+            ARGS="--query ${{ github.event.inputs.query }}"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m ingestao.alertas.runner $ARGS
