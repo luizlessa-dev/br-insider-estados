@@ -1,0 +1,93 @@
+name: Ingestão Eleições 2026
+
+# ════════════════════════════════════════════════════════════════════════════
+# STUB — workflow em standby até os dados do TSE estarem disponíveis.
+#
+# Calendário estimado de ativação:
+#   candidatos    → agosto 2026 (após prazo de registro: 20/jun–05/ago)
+#   financiamento → novembro 2026 (prestação de contas parcial pós-1º turno)
+#   gastos        → novembro/dezembro 2026 (prestação final)
+#
+# COMO ATIVAR:
+#   1. Quando o TSE publicar os dados:
+#      - Setar DADOS_DISPONIVEIS / FINANCIAMENTO_DISPONIVEL / GASTOS_DISPONIVEIS = True
+#        em ingestao/ele2026/connector.py
+#      - Confirmar as URLs no mesmo arquivo
+#   2. Substituir o `on:` abaixo pela versão com schedule ativa (ver comentário)
+#   3. Fazer push — o workflow passa a rodar na cadência definida
+#
+# CADÊNCIA SUGERIDA após ativação:
+#
+#   Agosto/Setembro (candidatos disponíveis, financiamento ainda não):
+#     - Candidatos: weekly (dados mudam — impugnações, substituições)
+#
+#   Outubro/Novembro (financiamento e gastos disponíveis):
+#     - Financiamento + gastos: a cada 2 semanas (prestações de contas parciais)
+#
+#   Dezembro (dados finais):
+#     - Reload completo com dados homologados
+#
+# SCHEDULE ATIVA (substituir o `on:` atual quando ativar):
+#   on:
+#     schedule:
+#       # candidatos: toda segunda às 7h (ago-set 2026)
+#       - cron: "0 7 * 8-9 1"
+#       # financiamento + gastos: toda segunda às 8h (out-dez 2026)
+#       - cron: "0 8 * 10-12 1"
+#     workflow_dispatch:
+#       inputs:
+#         dataset:
+#           description: "Dataset a ingerir"
+#           type: choice
+#           options: [todos, candidatos, financiamento, gastos]
+#           default: todos
+# ════════════════════════════════════════════════════════════════════════════
+
+on:
+  # Apenas manual enquanto os dados não estão disponíveis.
+  # Útil para testar o workflow e verificar o status de disponibilidade.
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: "Dataset a ingerir (usa --status se dados indisponíveis)"
+        type: choice
+        options:
+          - todos
+          - candidatos
+          - financiamento
+          - gastos
+          - status
+        default: status
+
+concurrency:
+  group: ingest-ele2026
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Verificar status de disponibilidade
+        run: python -m ingestao.ele2026.runner --status
+
+      - name: Ingerir dataset
+        if: ${{ github.event.inputs.dataset != 'status' }}
+        run: python -m ingestao.ele2026.runner --dataset ${{ github.event.inputs.dataset || 'todos' }}
+        # DataIndisponivel é tratado como warning (exit 0) pelo runner.
+        # Apenas erros reais (HTTP 5xx, parse error) causam exit 1.
