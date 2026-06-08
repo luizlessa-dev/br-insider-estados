@@ -56,49 +56,24 @@ def get_supabase():
     return create_client(url, key)
 
 
-def executar_query(supabase, sql: str) -> list[dict]:
-    """Executa uma query SQL via Supabase RPC e retorna linhas."""
+def executar_rpc(supabase, nome_funcao: str) -> list[dict]:
+    """Executa uma função RPC do Supabase e retorna as linhas."""
     try:
-        result = supabase.rpc("executar_query_alertas", {"query_sql": sql}).execute()
+        result = supabase.rpc(nome_funcao).execute()
         return result.data or []
-    except Exception:
-        # Fallback: usar postgrest diretamente via SQL raw
-        try:
-            result = supabase.postgrest.session.post(
-                f"{os.environ['SUPABASE_URL']}/rest/v1/rpc/executar_query_alertas",
-                json={"query_sql": sql},
-                headers={
-                    "apikey": os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-                    "Authorization": f"Bearer {os.environ['SUPABASE_SERVICE_ROLE_KEY']}",
-                    "Content-Type": "application/json",
-                },
-            )
-            return result.json() or []
-        except Exception as e2:
-            logger.error("Erro ao executar query: %s", e2)
-            return []
-
-
-def executar_query_direto(sql: str) -> list[dict]:
-    """
-    Executa SQL diretamente via psycopg2 (requer DATABASE_URL).
-    Alternativa quando RPC não está disponível.
-    """
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
-        return []
-    try:
-        import psycopg2
-        import psycopg2.extras
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(sql)
-        rows = [dict(r) for r in cur.fetchall()]
-        conn.close()
-        return rows
     except Exception as e:
-        logger.error("psycopg2 erro: %s", e)
+        logger.error("RPC %s erro: %s", nome_funcao, e)
         return []
+
+
+# Mapeamento query_key → nome da função RPC no banco
+RPC_MAP = {
+    "ministerio_sancao":    "alerta_ministerio_sancao",
+    "combo_sancao_emenda":  "alerta_combo_sancao_emenda",
+    "ministerio_emenda":    "alerta_ministerio_emenda",
+    "audiencias_semana":    "alerta_audiencias_semana",
+    "ranking_privados":     "alerta_ranking_privados",
+}
 
 
 def run_alertas(
@@ -106,19 +81,18 @@ def run_alertas(
     dry_run: bool = False,
 ) -> dict[str, list[dict]]:
     """
-    Executa todas as queries de alerta e envia notificações.
+    Executa todas as queries via RPC do Supabase e envia notificações.
     Retorna dicionário {query_key: [rows]}.
-    Usa psycopg2 (DATABASE_URL) se disponível; caso contrário usa
-    a função RPC `run_sql` do Supabase (precisa ser criada no banco).
     """
-    db_url = os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DATABASE_URL")
+    supabase = get_supabase()
+    db_url = None  # não usado — mantido para compatibilidade
 
     slack_url = os.environ.get("SLACK_WEBHOOK_URL", "")
     queries_a_rodar = queries_selecionadas or list(QUERIES.keys())
     resultados: dict[str, list[dict]] = {}
     total_alertas = 0
 
-    logger.info("Rodando %d queries de alerta...", len(queries_a_rodar))
+    logger.info("Rodando %d queries de alerta via RPC...", len(queries_a_rodar))
 
     for key in queries_a_rodar:
         if key not in QUERIES:
@@ -126,9 +100,10 @@ def run_alertas(
             continue
 
         meta = QUERIES[key]
-        logger.info("Query: %s", key)
+        rpc_name = RPC_MAP.get(key, f"alerta_{key}")
+        logger.info("Query: %s → RPC: %s", key, rpc_name)
 
-        rows = executar_query_direto(meta["sql"]) if db_url else executar_query(get_supabase(), meta["sql"])
+        rows = executar_rpc(supabase, rpc_name)
         resultados[key] = rows
 
         if not rows:
