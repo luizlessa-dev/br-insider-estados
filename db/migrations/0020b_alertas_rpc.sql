@@ -68,8 +68,8 @@ as $$
         s.tipo_sancao,
         s.cadastro,
         s.descricao_sancao,
-        s.data_inicio_sancao::text,
-        s.data_fim_sancao::text,
+        s.data_inicio::text,
+        s.data_fim::text,
         s.orgao_nome,
         s.nome
     from privados p
