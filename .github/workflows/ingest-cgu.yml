@@ -1,0 +1,98 @@
+name: Ingestão CGU — PAD + CEAF
+
+# Cadência: mensal, dia 5 às 09:00 UTC (06:00 BRT).
+# CGU-PAD: sempre full refresh (CSV único com histórico completo, ~25 MB, ~2 min).
+# CEAF:    incremental por padrão — busca publicações dos últimos 60 dias para
+#          capturar portarias do mês anterior + margem de atraso do DOU.
+#          Opção de full refresh via workflow_dispatch.
+
+on:
+  schedule:
+    - cron: "0 9 5 * *"   # dia 5 de cada mês às 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      ceaf_full:
+        description: "CEAF full refresh (desde 2003)?"
+        type: boolean
+        default: false
+      ceaf_desde:
+        description: "CEAF incremental desde (AAAA-MM-DD). Vazio = últimos 60 dias."
+        default: ""
+      pular_pad:
+        description: "Pular ingestão do CGU-PAD?"
+        type: boolean
+        default: false
+      pular_ceaf:
+        description: "Pular ingestão do CEAF?"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ingest-cgu
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      # ── CGU-PAD ────────────────────────────────────────────────────────────
+      - name: Ingerir CGU-PAD (full refresh)
+        if: ${{ github.event.inputs.pular_pad != 'true' }}
+        run: python3 -m ingestao.cgu.runner
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+
+      # ── CEAF: calcular data de início para modo incremental ────────────────
+      - name: Calcular data CEAF
+        if: ${{ github.event.inputs.pular_ceaf != 'true' }}
+        id: ceaf_date
+        run: |
+          if [ "${{ github.event.inputs.ceaf_full }}" = "true" ]; then
+            echo "modo=full" >> $GITHUB_OUTPUT
+          elif [ -n "${{ github.event.inputs.ceaf_desde }}" ]; then
+            echo "modo=incremental" >> $GITHUB_OUTPUT
+            echo "desde=${{ github.event.inputs.ceaf_desde }}" >> $GITHUB_OUTPUT
+          else
+            # Default: 60 dias atrás para cobrir publicações com atraso no DOU
+            DESDE=$(date -d "60 days ago" +%Y-%m-%d 2>/dev/null || date -v-60d +%Y-%m-%d)
+            echo "modo=incremental" >> $GITHUB_OUTPUT
+            echo "desde=$DESDE" >> $GITHUB_OUTPUT
+          fi
+
+      # ── CEAF: full refresh ─────────────────────────────────────────────────
+      - name: Ingerir CEAF (full desde 2003)
+        if: ${{ github.event.inputs.pular_ceaf != 'true' && steps.ceaf_date.outputs.modo == 'full' }}
+        run: python3 -m ingestao.cgu.ceaf_runner
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+          PORTAL_TRANSPARENCIA_API_KEY: ${{ env.PORTAL_TRANSPARENCIA_API_KEY }}
+
+      # ── CEAF: incremental ──────────────────────────────────────────────────
+      - name: Ingerir CEAF (incremental)
+        if: ${{ github.event.inputs.pular_ceaf != 'true' && steps.ceaf_date.outputs.modo == 'incremental' }}
+        run: |
+          echo "Buscando CEAF desde ${{ steps.ceaf_date.outputs.desde }}"
+          python3 -m ingestao.cgu.ceaf_runner --desde ${{ steps.ceaf_date.outputs.desde }}
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+          PORTAL_TRANSPARENCIA_API_KEY: ${{ env.PORTAL_TRANSPARENCIA_API_KEY }}
