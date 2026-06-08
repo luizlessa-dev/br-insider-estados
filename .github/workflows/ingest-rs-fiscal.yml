@@ -1,0 +1,52 @@
+name: Ingestão RS Fiscal (despesas estaduais)
+
+# Portal RS atualiza mensalmente.
+# Rodamos no dia 5 de cada mês (dados do mês anterior já disponíveis) + manual.
+on:
+  schedule:
+    - cron: "0 7 5 * *"   # dia 5 de cada mês, 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      ano:
+        description: "Ano a ingerir (ex: 2025). Vazio = ano corrente."
+        default: ""
+      mes:
+        description: "Mês específico (1-12). Vazio = todos disponíveis."
+        default: ""
+      apenas_pagamentos:
+        description: "Ingerir apenas pagamentos (true/false)"
+        default: "true"
+
+concurrency:
+  group: ingest-rs-fiscal
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Ingerir despesas RS
+        run: |
+          ANO="${{ github.event.inputs.ano }}"
+          MES="${{ github.event.inputs.mes }}"
+          PAGAMENTOS="${{ github.event.inputs.apenas_pagamentos }}"
+
+          ANO=${ANO:-$(date +%Y)}
+          ARGS="--ano $ANO"
+          [ -n "$MES" ] && ARGS="$ARGS --mes $MES"
+          [ "$PAGAMENTOS" = "true" ] && ARGS="$ARGS --apenas-pagamentos"
+
+          python3 -m ingestao.rs_fiscal.runner $ARGS
