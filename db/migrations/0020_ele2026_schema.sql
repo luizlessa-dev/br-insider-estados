@@ -307,7 +307,6 @@ SELECT
   c.sigla_partido,
   c.uf,
   ef.codigo_favorecido                AS cnpj_favorecido,
-  ef.nome_favorecido,
   ef.municipio_favorecido,
   ef.uf_favorecido,
   ef.valor_recebido,
