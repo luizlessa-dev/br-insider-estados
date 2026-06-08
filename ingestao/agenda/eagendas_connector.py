@@ -90,11 +90,19 @@ KEYWORDS_CARGO_TOPO = [
     # Presidência
     "PRESIDENTE DA REPÚBLICA",
     "VICE-PRESIDENTE",
-    # Ministros (com e sem parênteses para gênero)
+    # Ministros — variações de formato entre órgãos:
+    #   MINISTRO DE ESTADO (padrão)
+    #   MINISTRO(A) DE ESTADO (sem espaço antes do parêntese)
+    #   MINISTRO (A) DE ESTADO (com espaço — ex.: MAPA)
+    #   MINISTRA DE ESTADO (ex.: MMULHERES)
+    #   MINISTRO CHEFE / MINISTRA CHEFE
     "MINISTRO DE ESTADO",
     "MINISTRO(A) DE ESTADO",
+    "MINISTRO (A) DE ESTADO",
+    "MINISTRA DE ESTADO",
     "MINISTRO CHEFE",
     "MINISTRO(A) CHEFE",
+    "MINISTRA CHEFE",
     "MINISTRO(A) DA FAZENDA",
     "MINISTRO(A) DA EDUCAÇÃO",
     "MINISTRO(A) DA SAÚDE",
@@ -103,6 +111,9 @@ KEYWORDS_CARGO_TOPO = [
     "MINISTRO(A) DO",
     "MINISTRO(A) DAS",
     "MINISTRO(A) DOS",
+    "MINISTRA DO",
+    "MINISTRA DAS",
+    "MINISTRA DOS",
     "MINISTRO DO GABINETE DE SEGURANÇA INSTITUCIONAL",
     # Cargos equivalentes de ministro
     "ADVOGADO-GERAL DA UNIÃO",
@@ -192,6 +203,48 @@ def get_cargos_topo(session: requests.Session, orgao_id: int) -> list[dict]:
 
 
 # ── Busca de compromissos ─────────────────────────────────────────────────────
+
+def fetch_compromissos_orgao_sem_cargo(
+    session: requests.Session,
+    orgao_id: int,
+    data_inicio: date,
+    data_fim: date,
+) -> list[dict]:
+    """
+    Busca compromissos de um órgão SEM filtro por cargo.
+    Usado para a Presidência da República, onde o Presidente
+    não tem cargo_comissao_id registrado no sistema.
+    """
+    ini_str = data_inicio.strftime("%d-%m-%Y")
+    fim_str = data_fim.strftime("%d-%m-%Y")
+
+    params = {
+        "orgao_id": orgao_id,
+        "data_inicio": ini_str,
+        "data_termino": fim_str,
+        "per_page": 200,
+    }
+
+    resp = _get(session, f"{BASE_URL}/compromissos", params)
+    if not resp:
+        return []
+
+    compromissos = resp.get("compromissos", [])
+    # Filtra para trazer apenas compromissos cujo responsável
+    # é o Presidente ou o Vice-Presidente (cargo de topo)
+    resultado = []
+    for comp in compromissos:
+        part_pub = comp.get("participantes_publicos") or []
+        responsavel = next(
+            (p for p in part_pub if "Responsável" in (p.get("tipo_participacao") or "")),
+            part_pub[0] if part_pub else {},
+        )
+        cargo_resp = (responsavel.get("cargo") or "").upper()
+        if _is_cargo_topo(cargo_resp) or "PRESIDENTE" in cargo_resp:
+            resultado.append(comp)
+
+    return resultado
+
 
 def fetch_compromissos_cargo(
     session: requests.Session,
@@ -359,35 +412,59 @@ def run(
     n_orgaos_sem_dados = 0
     cargos_cache: dict[int, list[dict]] = {}
 
+    # Órgãos onde o titular NÃO tem cargo_comissao_id registrado:
+    # usar query de compromissos sem filtro de cargo e filtrar pelo nome/cargo do responsável.
+    ORGAOS_SEM_CARGO_ID = {511, 638}  # PR e VPR
+
     for orgao_id, sigla in orgaos.items():
-        # Buscar cargos de topo (com cache por orgao)
-        if orgao_id not in cargos_cache:
-            cargos = get_cargos_topo(session, orgao_id)
-            cargos_cache[orgao_id] = cargos
-            logger.debug("%s: %d cargos de topo", sigla, len(cargos))
-
-        cargos_topo = cargos_cache[orgao_id]
-        if not cargos_topo:
-            logger.debug("%s: sem cargos de topo — pulando", sigla)
-            n_orgaos_sem_dados += 1
-            continue
-
-        # Buscar compromissos para cada cargo de topo
-        for cargo in cargos_topo:
-            cargo_id = cargo["id"]
-            try:
-                comps_raw = fetch_compromissos_cargo(
-                    session, orgao_id, cargo_id, data_inicio, data_fim
+        try:
+            if orgao_id in ORGAOS_SEM_CARGO_ID:
+                # Estratégia alternativa: query por orgao sem cargo_comissao_id
+                comps_raw = fetch_compromissos_orgao_sem_cargo(
+                    session, orgao_id, data_inicio, data_fim
                 )
                 for raw in comps_raw:
                     norm = normalize_compromisso(raw, orgao_id, sigla)
                     todos_compromissos.append(norm)
                 if comps_raw:
-                    logger.info("%s / cargo %d: %d compromissos", sigla, cargo_id, len(comps_raw))
-            except Exception as e:
-                logger.warning("%s / cargo %d: erro: %s", sigla, cargo_id, e)
+                    logger.info("%s (sem cargo_id): %d compromissos", sigla, len(comps_raw))
+                else:
+                    logger.debug("%s (sem cargo_id): nenhum compromisso no período", sigla)
+                n_orgaos_ok += 1
+                continue
 
-        n_orgaos_ok += 1
+            # Buscar cargos de topo (com cache por orgao)
+            if orgao_id not in cargos_cache:
+                cargos = get_cargos_topo(session, orgao_id)
+                cargos_cache[orgao_id] = cargos
+                logger.debug("%s: %d cargos de topo", sigla, len(cargos))
+
+            cargos_topo = cargos_cache[orgao_id]
+            if not cargos_topo:
+                logger.debug("%s: sem cargos de topo — pulando", sigla)
+                n_orgaos_sem_dados += 1
+                continue
+
+            # Buscar compromissos para cada cargo de topo
+            for cargo in cargos_topo:
+                cargo_id = cargo["id"]
+                try:
+                    comps_raw = fetch_compromissos_cargo(
+                        session, orgao_id, cargo_id, data_inicio, data_fim
+                    )
+                    for raw in comps_raw:
+                        norm = normalize_compromisso(raw, orgao_id, sigla)
+                        todos_compromissos.append(norm)
+                    if comps_raw:
+                        logger.info("%s / cargo %d: %d compromissos", sigla, cargo_id, len(comps_raw))
+                except Exception as e:
+                    logger.warning("%s / cargo %d: erro: %s", sigla, cargo_id, e)
+
+            n_orgaos_ok += 1
+
+        except Exception as e:
+            logger.warning("%s: erro inesperado: %s", sigla, e)
+            n_orgaos_sem_dados += 1
 
     # Deduplicar por id (mesmo compromisso pode aparecer em múltiplos cargos)
     vistos: set[str] = set()
