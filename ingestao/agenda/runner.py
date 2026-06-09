@@ -95,15 +95,31 @@ def run_backfill(supabase, ano: int, fontes: list[str]):
     logger.info("Backfill %d — fontes: %s", ano, fontes)
     from calendar import monthrange
 
+    hoje = date.today()
+    token = os.environ.get("EAGENDAS_TOKEN", "") if "eagendas" in fontes else ""
+
     for mes in range(1, 13):
         _, ultimo_dia = monthrange(ano, mes)
         ini = date(ano, mes, 1)
         fim = date(ano, mes, ultimo_dia)
 
+        # Não ir além de hoje
+        if ini > hoje:
+            break
+        if fim > hoje:
+            fim = hoje
+
         if "camara" in fontes:
             run_camara(supabase, ini, fim)
         if "senado" in fontes:
             run_senado(supabase, ini, fim)
+        if "eagendas" in fontes:
+            if not token:
+                logger.warning("EAGENDAS_TOKEN não definido — pulando e-Agendas no backfill")
+            else:
+                logger.info("=== e-Agendas backfill %04d-%02d ===", ano, mes)
+                resultado_ea = eagendas_connector.run(supabase, ini, fim, token=token)
+                log_ingest(supabase, "eagendas", ini, fim, resultado_ea)
 
 
 def main():
