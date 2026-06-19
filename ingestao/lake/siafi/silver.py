@@ -119,17 +119,17 @@ class SupabaseUpsert:
                     response = requests.post(
                         url, headers=self.headers, json=chunk, timeout=UPSERT_TIMEOUT_S
                     )
-                except requests.exceptions.Timeout:
+                except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
                     if attempt == UPSERT_MAX_RETRIES:
                         logger.error(
-                            "UPSERT %s timeout final após %d tentativas (chunk i=%d, size=%d)",
-                            table, UPSERT_MAX_RETRIES, i, len(chunk),
+                            "UPSERT %s erro de rede final após %d tentativas (chunk i=%d, size=%d): %s",
+                            table, UPSERT_MAX_RETRIES, i, len(chunk), exc,
                         )
                         raise
                     backoff = 2 ** attempt
                     logger.warning(
-                        "UPSERT %s timeout (chunk i=%d, tentativa %d/%d) — retry em %ds",
-                        table, i, attempt, UPSERT_MAX_RETRIES, backoff,
+                        "UPSERT %s erro de rede %s (chunk i=%d, tentativa %d/%d) — retry em %ds",
+                        table, type(exc).__name__, i, attempt, UPSERT_MAX_RETRIES, backoff,
                     )
                     time.sleep(backoff)
                     continue
