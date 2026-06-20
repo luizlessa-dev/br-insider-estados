@@ -257,17 +257,34 @@ FROM public.emendas_api ea
 JOIN public.emendas_favorecidos ef ON ea.codigo = ef.codigo_emenda;
 
 -- Contratos de empresas que também receberam emendas
+-- CTEs isoladas evitam produto cartesiano entre contratos e emendas
 CREATE OR REPLACE VIEW public.v_empresa_emenda_contrato AS
+WITH agg_contratos AS (
+    SELECT
+        fornecedor_cnpj,
+        max(fornecedor_razao_social)  AS razao_social,
+        count(*)                       AS total_contratos,
+        sum(valor_total)               AS valor_total_contratos
+    FROM public.contratos_federais
+    GROUP BY fornecedor_cnpj
+),
+agg_emendas AS (
+    SELECT
+        codigo_favorecido,
+        count(DISTINCT codigo_emenda)  AS total_emendas,
+        sum(valor_recebido)            AS valor_total_emendas
+    FROM public.emendas_favorecidos
+    GROUP BY codigo_favorecido
+)
 SELECT
-    c.fornecedor_cnpj        AS cnpj,
-    c.fornecedor_razao_social AS razao_social,
-    count(DISTINCT c.id)     AS total_contratos,
-    sum(c.valor_total)       AS valor_total_contratos,
-    count(DISTINCT ef.codigo_emenda) AS total_emendas,
-    sum(ef.valor_recebido)   AS valor_total_emendas
-FROM public.contratos_federais c
-JOIN public.emendas_favorecidos ef ON c.fornecedor_cnpj = ef.codigo_favorecido
-GROUP BY c.fornecedor_cnpj, c.fornecedor_razao_social;
+    c.fornecedor_cnpj          AS cnpj,
+    c.razao_social,
+    c.total_contratos,
+    c.valor_total_contratos,
+    coalesce(e.total_emendas, 0)       AS total_emendas,
+    coalesce(e.valor_total_emendas, 0) AS valor_total_emendas
+FROM agg_contratos c
+LEFT JOIN agg_emendas e ON c.fornecedor_cnpj = e.codigo_favorecido;
 
 -- PEPs que são parlamentares com emendas
 CREATE OR REPLACE VIEW public.v_pep_emenda AS
