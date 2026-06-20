@@ -1,150 +1,192 @@
 """
-Enriquecimento de destino em viagens — lê CSVs bulk do Portal da Transparência
-e atualiza as colunas destinos/destino_municipio/destino_uf na tabela viagens
-usando PCDP como chave de join.
+Enriquecimento de origem/destino em viagens usando Trecho.csv do Portal da Transparência.
 
-Download manual dos ZIPs:
-  https://portaldatransparencia.gov.br/download-de-dados/viagens
-  → selecionar mês/ano → baixar → extrair CSV
+Cada ZIP anual contém 4 arquivos; este script usa apenas o *_Trecho.csv.
+Os trechos são agrupados por PCDP; o primeiro trecho define o destino primário.
 
 Uso:
-    python -m ingestao.portal.viagens_destinos /path/202301_Viagens.csv /path/202302_Viagens.csv ...
-
-    # ou para um diretório inteiro de CSVs:
-    python -m ingestao.portal.viagens_destinos /path/viagens/*.csv
+    python -m ingestao.portal.viagens_destinos \\
+        /Downloads/2023_Viagens/2023_Trecho.csv \\
+        /Downloads/2024_Viagens/2024_Trecho.csv \\
+        /Downloads/2025_Viagens/2025_Trecho.csv \\
+        /Downloads/2026_Viagens/2026_Trecho.csv
 """
 from __future__ import annotations
 
 import csv
 import logging
 import os
-import re
+import ssl
 import sys
 import time
+import urllib.request
+import json
 from pathlib import Path
-from typing import Iterator
 
 import requests
 
 logger = logging.getLogger("portal.viagens_destinos")
 
-BATCH_SLEEP_S = 0.15
+BATCH_SLEEP_S = 0.12
 
-# Possíveis nomes de coluna no CSV (Portal muda o nome ocasionalmente)
-COLUNAS_PCDP = [
-    "Identificador do processo de viagem (PCDP)",
-    "PCDP",
-    "Número PCDP",
-    "Identificador PCDP",
-]
-COLUNAS_DESTINOS = [
-    "Destinos",
-    "Destino",
-    "Destino(s)",
-    "Local de destino",
-]
+COL_PCDP   = "Identificador do processo de viagem "   # trailing space real no CSV
+COL_SEQ    = "Sequência Trecho"
+COL_ORIG_C = "Origem - Cidade"
+COL_ORIG_U = "Origem - UF"
+COL_DEST_C = "Destino - Cidade"
+COL_DEST_U = "Destino - UF"
+COL_DEST_P = "Destino - País"
+
+UF_SIGLAS: dict[str, str] = {
+    "Acre": "AC", "Alagoas": "AL", "Amapá": "AP", "Amazonas": "AM",
+    "Bahia": "BA", "Ceará": "CE", "Distrito Federal": "DF",
+    "Espírito Santo": "ES", "Goiás": "GO", "Maranhão": "MA",
+    "Mato Grosso": "MT", "Mato Grosso do Sul": "MS", "Minas Gerais": "MG",
+    "Pará": "PA", "Paraíba": "PB", "Paraná": "PR", "Pernambuco": "PE",
+    "Piauí": "PI", "Rio de Janeiro": "RJ", "Rio Grande do Norte": "RN",
+    "Rio Grande do Sul": "RS", "Rondônia": "RO", "Roraima": "RR",
+    "Santa Catarina": "SC", "São Paulo": "SP", "Sergipe": "SE", "Tocantins": "TO",
+    # abreviações já corretas (fallback)
+    **{v: v for v in ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA",
+                       "MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN",
+                       "RS","RO","RR","SC","SP","SE","TO"]},
+}
 
 
-def _detectar_coluna(header: list[str], candidatos: list[str]) -> str | None:
-    for c in candidatos:
-        if c in header:
-            return c
-    return None
+def _sigla(nome: str) -> str | None:
+    return UF_SIGLAS.get(nome.strip()) or (nome.strip().upper()[:2] or None)
 
 
-def _parse_destino(raw: str) -> tuple[str | None, str | None]:
+def _buscar_pcdps_db(url: str, key: str) -> set[str]:
+    """Retorna o conjunto de PCDPs que existem no banco."""
+    ctx = ssl.create_default_context()
+    pcdps: set[str] = set()
+    offset = 0
+    while True:
+        req = urllib.request.Request(
+            f"{url}/rest/v1/viagens?select=pcdp&pcdp=not.is.null&limit=1000&offset={offset}",
+            headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        )
+        with urllib.request.urlopen(req, context=ctx) as r:
+            rows = json.load(r)
+        if not rows:
+            break
+        pcdps.update(r["pcdp"] for r in rows if r.get("pcdp"))
+        if len(rows) < 1000:
+            break
+        offset += 1000
+    return pcdps
+
+
+def _ler_trechos(paths: list[Path], pcdps_alvo: set[str]) -> dict[str, dict]:
     """
-    "BRASÍLIA/DF - SÃO PAULO/SP" → ("BRASÍLIA", "DF")
-    "PARIS/FRANCA"                → ("PARIS", "FRANCA")
+    Lê os Trecho.csv e constrói um mapa pcdp → campos de destino/origem.
+    Filtra apenas PCDPs que existem no banco.
     """
-    if not raw:
-        return None, None
-    # pegar apenas o primeiro destino (antes do ' - ' ou ',')
-    primeiro = re.split(r"\s*[-,]\s*", raw.strip(), maxsplit=1)[0].strip()
-    if "/" in primeiro:
-        partes = primeiro.rsplit("/", 1)
-        municipio = partes[0].strip().upper() or None
-        uf = partes[1].strip().upper() or None
-        return municipio, uf
-    return primeiro.upper() or None, None
+    pcdp_data: dict[str, list[dict]] = {}
 
+    for path in paths:
+        logger.info("Lendo %s …", path.name)
+        with open(path, encoding="latin-1", newline="") as f:
+            reader = csv.DictReader(f, delimiter=";")
+            for row in reader:
+                pcdp = row.get(COL_PCDP, "").strip()
+                if not pcdp or pcdp not in pcdps_alvo:
+                    continue
+                seq = row.get(COL_SEQ, "99")
+                try:
+                    seq_n = int(seq)
+                except ValueError:
+                    seq_n = 99
+                pcdp_data.setdefault(pcdp, []).append({
+                    "seq": seq_n,
+                    "orig_cidade": row.get(COL_ORIG_C, "").strip(),
+                    "orig_uf":     row.get(COL_ORIG_U, "").strip(),
+                    "dest_cidade": row.get(COL_DEST_C, "").strip(),
+                    "dest_uf":     row.get(COL_DEST_U, "").strip(),
+                    "dest_pais":   row.get(COL_DEST_P, "").strip(),
+                })
 
-def iter_registros(path: Path) -> Iterator[dict]:
-    """Lê um CSV e emite dicts com pcdp + campos de destino."""
-    for enc in ("utf-8-sig", "latin-1"):
-        try:
-            with open(path, encoding=enc, newline="") as f:
-                reader = csv.DictReader(f, delimiter=";")
-                header = reader.fieldnames or []
+    result: dict[str, dict] = {}
+    for pcdp, trechos in pcdp_data.items():
+        trechos.sort(key=lambda t: t["seq"])
+        primeiro = trechos[0]
 
-                col_pcdp = _detectar_coluna(list(header), COLUNAS_PCDP)
-                col_dest = _detectar_coluna(list(header), COLUNAS_DESTINOS)
+        # destinos raw: "Cidade1/UF1, Cidade2/UF2"
+        dests_raw = []
+        for t in trechos:
+            uf = _sigla(t["dest_uf"]) or t["dest_uf"]
+            label = f"{t['dest_cidade']}/{uf}" if uf else t["dest_cidade"]
+            if label and label not in dests_raw:
+                dests_raw.append(label)
 
-                if not col_pcdp or not col_dest:
-                    logger.warning(
-                        "%s — colunas não encontradas. Disponíveis: %s",
-                        path.name, list(header)
-                    )
-                    return
+        pais = primeiro["dest_pais"] if primeiro["dest_pais"] != "Brasil" else None
 
-                for row in reader:
-                    pcdp = row.get(col_pcdp, "").strip()
-                    raw_dest = row.get(col_dest, "").strip()
-                    if not pcdp:
-                        continue
-                    municipio, uf = _parse_destino(raw_dest)
-                    yield {
-                        "pcdp": pcdp,
-                        "destinos": raw_dest or None,
-                        "destino_municipio": municipio,
-                        "destino_uf": uf,
-                    }
-            return  # encoding funcionou
-        except UnicodeDecodeError:
-            continue
+        result[pcdp] = {
+            "destinos":          ", ".join(dests_raw) or None,
+            "destino_municipio": primeiro["dest_cidade"] or None,
+            "destino_uf":        _sigla(primeiro["dest_uf"]) or None,
+            "destino_pais":      pais,
+            "origem_municipio":  primeiro["orig_cidade"] or None,
+            "origem_uf":         _sigla(primeiro["orig_uf"]) or None,
+        }
+
+    return result
 
 
 def enriquecer(csv_paths: list[Path]) -> int:
-    url = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
-    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
-    if not url or not key:
+    supa_url = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+    supa_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or ""
+    if not supa_url or not supa_key:
         raise RuntimeError("SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórios.")
+
+    logger.info("Buscando PCDPs existentes no banco …")
+    pcdps_alvo = _buscar_pcdps_db(supa_url, supa_key)
+    logger.info("%d PCDPs no banco", len(pcdps_alvo))
+
+    dados = _ler_trechos(csv_paths, pcdps_alvo)
+    logger.info("%d PCDPs com trechos encontrados nos CSVs", len(dados))
 
     session = requests.Session()
     session.headers.update({
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
+        "apikey": supa_key,
+        "Authorization": f"Bearer {supa_key}",
         "Content-Type": "application/json",
         "Prefer": "return=minimal",
     })
 
-    # Agregar por PCDP (o mesmo PCDP pode aparecer em várias linhas do CSV)
-    pcdp_map: dict[str, dict] = {}
-    for path in csv_paths:
-        logger.info("Lendo %s …", path.name)
-        for rec in iter_registros(path):
-            pcdp_map[rec["pcdp"]] = rec
-
-    logger.info("%d PCDPs únicos encontrados nos CSVs", len(pcdp_map))
-
     atualizados = 0
     erros = 0
-    for i, (pcdp, dados) in enumerate(pcdp_map.items()):
-        payload = {k: v for k, v in dados.items() if k != "pcdp"}
-        resp = session.patch(
-            f"{url}/rest/v1/viagens",
-            params={"pcdp": f"eq.{pcdp}"},
-            json=payload,
-            timeout=30,
-        )
-        if resp.status_code >= 300:
+    total = len(dados)
+    for i, (pcdp, payload) in enumerate(dados.items()):
+        for tentativa in range(4):
+            try:
+                resp = session.patch(
+                    f"{supa_url}/rest/v1/viagens",
+                    params={"pcdp": f"eq.{pcdp}"},
+                    json=payload,
+                    timeout=30,
+                )
+                break
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                if tentativa == 3:
+                    logger.error("PATCH pcdp=%s falhou após 4 tentativas: %s", pcdp, exc)
+                    resp = None
+                    break
+                wait = 2 ** tentativa
+                logger.warning("retry %d pcdp=%s (%s) — aguardando %ds", tentativa + 1, pcdp, type(exc).__name__, wait)
+                time.sleep(wait)
+
+        if resp is None:
+            erros += 1
+        elif resp.status_code >= 300:
             logger.warning("PATCH pcdp=%s → HTTP %d %s", pcdp, resp.status_code, resp.text[:120])
             erros += 1
         else:
             atualizados += 1
 
-        if (i + 1) % 200 == 0:
-            print(f"\r  {i+1}/{len(pcdp_map)} PCDPs processados …", end="", flush=True)
+        if (i + 1) % 100 == 0:
+            print(f"\r  {i+1}/{total} ({100*(i+1)//total}%) …", end="", flush=True)
         time.sleep(BATCH_SLEEP_S)
 
     print()
@@ -155,12 +197,12 @@ def enriquecer(csv_paths: list[Path]) -> int:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s — %(message)s")
     if len(sys.argv) < 2:
-        print("Uso: python -m ingestao.portal.viagens_destinos <csv1> [csv2] ...")
+        print("Uso: python -m ingestao.portal.viagens_destinos <Trecho.csv> [...]")
         sys.exit(1)
     paths = [Path(p) for p in sys.argv[1:]]
     for p in paths:
         if not p.exists():
-            print(f"ERRO: arquivo não encontrado: {p}")
+            print(f"ERRO: {p} não encontrado")
             sys.exit(1)
     n = enriquecer(paths)
-    print(f"✅ {n} PCDPs atualizados em viagens")
+    print(f"✅ {n} viagens enriquecidas com origem/destino")
