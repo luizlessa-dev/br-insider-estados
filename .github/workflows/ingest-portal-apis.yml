@@ -1,0 +1,238 @@
+name: Ingestão Portal da Transparência — PEPs + Emendas API
+
+# Cadência:
+#   PEPs:        mensal (dia 10, 08:00 UTC) — lista federal muda com posses/exonerações
+#   Emendas API: mensal (dia 10, 09:00 UTC) — atualização de valores executados
+#
+# Notas Fiscais, Contratos e Licitações são uso investigativo (dispatch manual)
+# pois dependem de uma lista de CNPJs alvo — não fazem ingestão ampla por padrão.
+#
+# Secrets necessários:
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   PORTAL_TRANSPARENCIA_API_KEY
+
+on:
+  schedule:
+    - cron: "0 8 10 * *"    # PEPs: dia 10, 08:00 UTC
+    - cron: "0 9 10 * *"    # Emendas API: dia 10, 09:00 UTC
+
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Job a executar"
+        type: choice
+        options:
+          - peps
+          - emendas-api
+          - contratos-cnpj
+          - notas-cnpj
+          - licitacoes-periodo
+        default: peps
+
+      # PEPs
+      peps_desde:
+        description: "[peps] Incremental desde (AAAA-MM-DD). Vazio = full."
+        default: ""
+
+      # Emendas API
+      emendas_ano:
+        description: "[emendas-api] Ano específico. Vazio = full (2014→hoje)."
+        default: ""
+      emendas_com_documentos:
+        description: "[emendas-api] Enriquecer com documentos SIAFI? (lento)"
+        type: boolean
+        default: false
+
+      # Contratos / Notas / Licitações — investigativo
+      cnpjs:
+        description: "[contratos/notas] CNPJs separados por vírgula"
+        default: ""
+      data_inicio:
+        description: "[licitacoes] Data início (AAAA-MM-DD)"
+        default: ""
+      data_fim:
+        description: "[licitacoes] Data fim (AAAA-MM-DD)"
+        default: ""
+      com_participantes:
+        description: "[licitacoes] Incluir participantes?"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ingest-portal-apis-${{ github.event.inputs.job || 'scheduled' }}
+  cancel-in-progress: false
+
+jobs:
+  peps:
+    name: Ingestão PEPs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 8 10 * *') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'peps')
+
+    env:
+      SUPABASE_URL:                 ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: PEPs — incremental
+        if: ${{ github.event.inputs.peps_desde != '' }}
+        run: python3 -m ingestao.cgu.peps_runner --desde ${{ github.event.inputs.peps_desde }}
+
+      - name: PEPs — full
+        if: ${{ github.event.inputs.peps_desde == '' || github.event_name == 'schedule' }}
+        run: python3 -m ingestao.cgu.peps_runner
+
+  emendas-api:
+    name: Ingestão Emendas API
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    if: >
+      (github.event_name == 'schedule' && github.event.schedule == '0 9 10 * *') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.job == 'emendas-api')
+
+    env:
+      SUPABASE_URL:                 ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Emendas API — ano específico
+        if: ${{ github.event.inputs.emendas_ano != '' }}
+        run: |
+          ARGS="--ano ${{ github.event.inputs.emendas_ano }}"
+          if [ "${{ github.event.inputs.emendas_com_documentos }}" = "true" ]; then
+            ARGS="$ARGS --com-documentos"
+          fi
+          python3 -m ingestao.cgu.emendas_api_runner $ARGS
+
+      - name: Emendas API — full (ano atual por padrão no schedule)
+        if: ${{ github.event.inputs.emendas_ano == '' }}
+        run: |
+          # No schedule: só o ano atual para ser rápido (valores do ano corrente mudam)
+          # No dispatch sem ano: full histórico
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ANO=$(date +%Y)
+            python3 -m ingestao.cgu.emendas_api_runner --ano $ANO
+          else
+            python3 -m ingestao.cgu.emendas_api_runner
+          fi
+
+  contratos-investigativo:
+    name: Contratos por CNPJs (investigativo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.job == 'contratos-cnpj' &&
+      github.event.inputs.cnpjs != ''
+
+    env:
+      SUPABASE_URL:                 ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Preparar lista de CNPJs
+        run: echo "${{ github.event.inputs.cnpjs }}" | tr ',' '\n' > /tmp/cnpjs.txt
+
+      - name: Contratos por CNPJs
+        run: python3 -m ingestao.cgu.contratos_runner --lista-cnpjs /tmp/cnpjs.txt
+
+  notas-investigativo:
+    name: Notas Fiscais por CNPJs (investigativo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.job == 'notas-cnpj' &&
+      github.event.inputs.cnpjs != ''
+
+    env:
+      SUPABASE_URL:                 ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Preparar lista de CNPJs
+        run: echo "${{ github.event.inputs.cnpjs }}" | tr ',' '\n' > /tmp/cnpjs.txt
+
+      - name: Notas Fiscais por CNPJs
+        run: python3 -m ingestao.cgu.notas_fiscais_runner --lista-cnpjs /tmp/cnpjs.txt
+
+  licitacoes-investigativo:
+    name: Licitações por período (investigativo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.job == 'licitacoes-periodo' &&
+      github.event.inputs.data_inicio != '' &&
+      github.event.inputs.data_fim != ''
+
+    env:
+      SUPABASE_URL:                 ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:    ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Licitações por período
+        run: |
+          ARGS="--inicio ${{ github.event.inputs.data_inicio }} --fim ${{ github.event.inputs.data_fim }}"
+          if [ "${{ github.event.inputs.com_participantes }}" = "true" ]; then
+            ARGS="$ARGS --com-participantes"
+          fi
+          python3 -m ingestao.cgu.licitacoes_runner $ARGS
