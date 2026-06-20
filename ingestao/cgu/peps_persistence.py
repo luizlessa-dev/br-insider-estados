@@ -7,6 +7,8 @@ from datetime import date, datetime
 from typing import Iterator
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from .peps_connector import Pep
 
@@ -41,6 +43,10 @@ class PepsWriter:
         if not self.url or not self.key:
             raise PersistenceError("Faltando SUPABASE_URL e/ou SUPABASE_SERVICE_ROLE_KEY.")
         self.session = requests.Session()
+        retry = Retry(total=5, backoff_factor=1.5,
+                      status_forcelist=[429, 500, 502, 503, 504],
+                      allowed_methods=["GET", "POST", "PATCH"])
+        self.session.mount("https://", HTTPAdapter(max_retries=retry))
         self.session.headers.update({
             "apikey": self.key,
             "Authorization": f"Bearer {self.key}",
@@ -83,32 +89,25 @@ class PepsWriter:
         total = 0
         batch: list[dict] = []
         for p in peps:
-            rels = [
-                {"nome": r.nome, "cpf": r.cpf, "tipo": r.tipo}
-                for r in p.relacionamentos
-            ]
             batch.append({
-                "id":                  p.id,
-                "cpf":                 p.cpf,
-                "cpf_formatado":       p.cpf_formatado,
-                "nome":                p.nome,
-                "nome_social":         p.nome_social,
-                "funcao":              p.funcao,
-                "data_inicio_vinculo": p.data_inicio_vinculo,
-                "data_fim_vinculo":    p.data_fim_vinculo,
-                "orgao_codigo":        p.orgao_codigo,
-                "orgao_descricao":     p.orgao_descricao,
-                "classificacao_pep":   p.classificacao_pep,
-                "tipo_pep":            p.tipo_pep,
-                "relacionamentos":     rels,
-                "updated_at":          datetime.utcnow().isoformat(),
+                "cpf":                    p.cpf,
+                "nome":                   p.nome,
+                "sigla_funcao":           p.sigla_funcao,
+                "descricao_funcao":       p.descricao_funcao,
+                "nivel_funcao":           p.nivel_funcao,
+                "orgao_codigo":           p.orgao_codigo,
+                "orgao_nome":             p.orgao_nome,
+                "data_inicio_exercicio":  p.data_inicio_exercicio,
+                "data_fim_exercicio":     p.data_fim_exercicio,
+                "data_fim_carencia":      p.data_fim_carencia,
+                "updated_at":             datetime.utcnow().isoformat(),
             })
             if len(batch) >= CHUNK:
-                self._upsert("peps", batch, on_conflict="id")
+                self._upsert("peps", batch, on_conflict="cpf,orgao_codigo,data_inicio_exercicio")
                 total += len(batch)
                 batch = []
         if batch:
-            self._upsert("peps", batch, on_conflict="id")
+            self._upsert("peps", batch, on_conflict="cpf,orgao_codigo,data_inicio_exercicio")
             total += len(batch)
         logger.info("PEPs: %d upsertadas", total)
         return total

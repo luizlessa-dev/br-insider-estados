@@ -48,27 +48,17 @@ PAGE_DELAY = 0.4
 # ─── Modelos ──────────────────────────────────────────────────────────────────
 
 @dataclass
-class Relacionamento:
-    nome: Optional[str]
-    cpf: Optional[str]
-    tipo: Optional[str]
-
-
-@dataclass
 class Pep:
-    id: int
-    cpf: Optional[str]           # só dígitos — chave de cruzamento
-    cpf_formatado: Optional[str]
+    cpf: Optional[str]           # mascarado pela API — guardamos como vem
     nome: Optional[str]
-    nome_social: Optional[str]
-    funcao: Optional[str]
-    data_inicio_vinculo: Optional[date]
-    data_fim_vinculo: Optional[date]
+    sigla_funcao: Optional[str]
+    descricao_funcao: Optional[str]
+    nivel_funcao: Optional[str]
     orgao_codigo: Optional[str]
-    orgao_descricao: Optional[str]
-    classificacao_pep: Optional[str]   # Nível 1 / 2 / 3
-    tipo_pep: Optional[str]
-    relacionamentos: list[Relacionamento] = field(default_factory=list)
+    orgao_nome: Optional[str]
+    data_inicio_exercicio: Optional[date]
+    data_fim_exercicio: Optional[date]
+    data_fim_carencia: Optional[date]
 
 
 # ─── Utilitários ──────────────────────────────────────────────────────────────
@@ -97,6 +87,7 @@ def _build_session(api_key: str) -> requests.Session:
         total=5, backoff_factor=2.0,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
+        raise_on_status=False,
     )
     session.mount("https://", HTTPAdapter(max_retries=retry))
     session.headers.update({
@@ -108,34 +99,18 @@ def _build_session(api_key: str) -> requests.Session:
 
 
 def _parse_record(raw: dict) -> Pep:
-    funcao_obj = raw.get("funcao") or {}
-    orgao_obj  = raw.get("orgaoVinculado") or {}
-    classif    = raw.get("classificacaoPep") or {}
-    tipo       = raw.get("tipoPep") or {}
-
-    rels = []
-    for r in raw.get("relacionamentos") or []:
-        rels.append(Relacionamento(
-            nome=r.get("nome"),
-            cpf=_strip_digits(r.get("cpfFormatado")),
-            tipo=r.get("tipoRelacionamento"),
-        ))
-
-    cpf_fmt = raw.get("cpfFormatado")
+    # A API retorna campos snake_case direto (diferente das outras APIs)
     return Pep(
-        id=raw.get("id"),
-        cpf=_strip_digits(cpf_fmt),
-        cpf_formatado=cpf_fmt,
-        nome=raw.get("nome"),
-        nome_social=raw.get("nomeSocial"),
-        funcao=funcao_obj.get("descricao"),
-        data_inicio_vinculo=_parse_date(funcao_obj.get("dataInicio")),
-        data_fim_vinculo=_parse_date(funcao_obj.get("dataFim")),
-        orgao_codigo=str(orgao_obj.get("codigo")) if orgao_obj.get("codigo") else None,
-        orgao_descricao=orgao_obj.get("descricao"),
-        classificacao_pep=classif.get("descricao"),
-        tipo_pep=tipo.get("descricao"),
-        relacionamentos=rels,
+        cpf=raw.get("cpf"),
+        nome=(raw.get("nome") or "").strip() or None,
+        sigla_funcao=(raw.get("sigla_funcao") or "").strip() or None,
+        descricao_funcao=(raw.get("descricao_funcao") or "").strip() or None,
+        nivel_funcao=raw.get("nivel_funcao"),
+        orgao_codigo=raw.get("cod_orgao"),
+        orgao_nome=(raw.get("nome_orgao") or "").strip() or None,
+        data_inicio_exercicio=_parse_date(raw.get("dt_inicio_exercicio")),
+        data_fim_exercicio=_parse_date(raw.get("dt_fim_exercicio")),
+        data_fim_carencia=_parse_date(raw.get("dt_fim_carencia")),
     )
 
 
@@ -159,37 +134,44 @@ class PepsConnector:
             time.sleep(PAGE_DELAY - elapsed)
         self._last_req = time.monotonic()
 
-    def _fetch_page(self, pagina: int,
-                    ini: str | None = None, fim: str | None = None) -> list[dict]:
+    def _fetch_page(self, pagina: int, **params) -> list[dict]:
         self._throttle()
-        params: dict = {"pagina": pagina}
-        if ini:
-            params["dataInicioVinculo"] = ini
-        if fim:
-            params["dataFimVinculo"] = fim
-        resp = self.session.get(BASE_URL, params=params, timeout=45)
+        params["pagina"] = pagina
+        resp = self.session.get(BASE_URL, params=params, timeout=(10, 30))
         if resp.status_code == 401:
             raise PermissionError("Chave da API inválida ou expirada.")
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else []
 
-    def _iter_year(self, ano: int) -> Iterator[Pep]:
-        ini = f"01/01/{ano}"
-        fim = f"31/12/{ano}"
+    def _iter_window(self, ini: str, fim: str) -> Iterator[Pep]:
         pagina = 1
         total = 0
         while True:
-            records = self._fetch_page(pagina, ini, fim)
+            records = self._fetch_page(
+                pagina,
+                dataInicioExercicioDe=ini,
+                datInicioExercicioAte=fim,
+            )
             if not records:
                 break
             for r in records:
                 yield _parse_record(r)
                 total += 1
-            logger.debug("PEPs %d: pág %d → %d acumulados", ano, pagina, total)
+            logger.debug("PEPs %s→%s: pág %d → %d acumulados", ini, fim, pagina, total)
             pagina += 1
         if total:
-            logger.info("PEPs %d: %d registros", ano, total)
+            logger.info("PEPs %s→%s: %d registros", ini, fim, total)
+
+    def _iter_year(self, ano: int) -> Iterator[Pep]:
+        # Janelas mensais — API trava em janelas com mais de ~2k registros
+        fim_por_mes = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        if ano % 4 == 0 and (ano % 100 != 0 or ano % 400 == 0):
+            fim_por_mes[1] = 29
+        for mes, ultimo in enumerate(fim_por_mes, start=1):
+            ini = f"{1:02d}/{mes:02d}/{ano}"
+            fim = f"{ultimo:02d}/{mes:02d}/{ano}"
+            yield from self._iter_window(ini, fim)
 
     def iter_all(self, ano_inicio: int = FIRST_YEAR) -> Iterator[Pep]:
         """Itera sobre todas as PEPs (histórico completo, janelas anuais)."""
@@ -198,23 +180,29 @@ class PepsConnector:
             yield from self._iter_year(ano)
 
     def iter_incremental(self, desde: date) -> Iterator[Pep]:
-        """Ingestão incremental a partir de uma data de início de vínculo."""
+        """Ingestão incremental a partir de uma data de início de exercício."""
         ini = desde.strftime("%d/%m/%Y")
         fim = datetime.utcnow().strftime("%d/%m/%Y")
         pagina = 1
         while True:
-            records = self._fetch_page(pagina, ini, fim)
+            records = self._fetch_page(
+                pagina,
+                dataInicioExercicioDe=ini,
+                datInicioExercicioAte=fim,
+            )
             if not records:
                 break
             for r in records:
                 yield _parse_record(r)
             pagina += 1
 
-    def fetch_by_cpf(self, cpf: str) -> list[Pep]:
-        """Busca PEPs por CPF (consulta pontual)."""
-        self._throttle()
-        params = {"cpfPep": cpf, "pagina": 1}
-        resp = self.session.get(BASE_URL, params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        return [_parse_record(r) for r in (data if isinstance(data, list) else [])]
+    def fetch_by_nome(self, nome: str) -> Iterator[Pep]:
+        """Busca PEPs por nome (consulta pontual)."""
+        pagina = 1
+        while True:
+            records = self._fetch_page(pagina, nome=nome)
+            if not records:
+                break
+            for r in records:
+                yield _parse_record(r)
+            pagina += 1

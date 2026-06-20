@@ -4,25 +4,24 @@
 -- ── PEPs ──────────────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.peps (
-    id                  integer PRIMARY KEY,
-    cpf                 text,
-    cpf_formatado       text,
-    nome                text,
-    nome_social         text,
-    funcao              text,
-    data_inicio_vinculo date,
-    data_fim_vinculo    date,
-    orgao_codigo        text,
-    orgao_descricao     text,
-    classificacao_pep   text,
-    tipo_pep            text,
-    relacionamentos     jsonb    DEFAULT '[]',
-    updated_at          timestamptz DEFAULT now()
+    id                      serial PRIMARY KEY,
+    cpf                     text,
+    nome                    text,
+    sigla_funcao            text,
+    descricao_funcao        text,
+    nivel_funcao            text,
+    orgao_codigo            text,
+    orgao_nome              text,
+    data_inicio_exercicio   date,
+    data_fim_exercicio      date,
+    data_fim_carencia       date,
+    updated_at              timestamptz DEFAULT now(),
+    UNIQUE (cpf, orgao_codigo, data_inicio_exercicio)
 );
 
 CREATE INDEX IF NOT EXISTS peps_cpf_idx ON public.peps (cpf);
 CREATE INDEX IF NOT EXISTS peps_nome_idx ON public.peps USING gin(to_tsvector('portuguese', coalesce(nome, '')));
-CREATE INDEX IF NOT EXISTS peps_data_inicio_idx ON public.peps (data_inicio_vinculo);
+CREATE INDEX IF NOT EXISTS peps_data_inicio_idx ON public.peps (data_inicio_exercicio);
 
 CREATE TABLE IF NOT EXISTS public.peps_ingest_log (
     id          serial PRIMARY KEY,

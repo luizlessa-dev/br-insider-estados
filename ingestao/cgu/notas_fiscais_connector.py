@@ -104,7 +104,7 @@ def _parse_float(v) -> Optional[float]:
 def _build_session(api_key: str) -> requests.Session:
     session = requests.Session()
     retry = Retry(
-        total=5, backoff_factor=2.0,
+        total=2, backoff_factor=1.0,
         status_forcelist=[429, 500, 502, 503, 504],
         allowed_methods=["GET"],
     )
@@ -164,7 +164,7 @@ class NotasFiscaisConnector:
     def _fetch_page(self, pagina: int, **params) -> list[dict]:
         self._throttle()
         params["pagina"] = pagina
-        resp = self.session.get(BASE_URL, params=params, timeout=45)
+        resp = self.session.get(BASE_URL, params=params, timeout=(5, 15))
         if resp.status_code == 401:
             raise PermissionError("Chave da API inválida ou expirada.")
         resp.raise_for_status()
@@ -230,4 +230,7 @@ class NotasFiscaisConnector:
         """Busca NFs para uma lista de CNPJs investigados (ex: casos Mário Frias, XCMG)."""
         for cnpj in cnpjs:
             logger.info("Buscando NFs para CNPJ %s", cnpj)
-            yield from self.iter_por_cnpj(cnpj)
+            try:
+                yield from self.iter_por_cnpj(cnpj)
+            except Exception as e:
+                logger.warning("CNPJ %s ignorado: %s", cnpj, e)

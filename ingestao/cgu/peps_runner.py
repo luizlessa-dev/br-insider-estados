@@ -32,11 +32,10 @@ logger = logging.getLogger("cgu.peps.runner")
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingestão PEPs → Supabase")
-    parser.add_argument("--desde", type=lambda s: date.fromisoformat(s),
-                        default=None, metavar="AAAA-MM-DD",
-                        help="Incremental a partir desta data (início de vínculo)")
-    parser.add_argument("--cpf", default=None,
-                        help="Busca pontual por CPF")
+    parser.add_argument("--ano-inicio", type=int, default=None,
+                        help="Retomar a partir deste ano (janelas anuais)")
+    parser.add_argument("--nome", default=None,
+                        help="Busca pontual por nome")
     args = parser.parse_args()
 
     api_key = os.environ.get("PORTAL_TRANSPARENCIA_API_KEY")
@@ -52,12 +51,12 @@ def main() -> None:
 
     log_id = writer.start_log("peps")
     try:
-        if args.cpf:
-            peps = iter(connector.fetch_by_cpf(args.cpf))
-            desc = f"PEPs CPF={args.cpf}"
-        elif args.desde:
-            peps = connector.iter_incremental(args.desde)
-            desc = f"PEPs incremental desde {args.desde}"
+        if args.nome:
+            peps = connector.fetch_by_nome(args.nome)
+            desc = f"PEPs nome={args.nome}"
+        elif args.ano_inicio:
+            peps = connector.iter_all(ano_inicio=args.ano_inicio)
+            desc = f"PEPs desde {args.ano_inicio}"
         else:
             peps = connector.iter_all(ano_inicio=FIRST_YEAR)
             desc = "PEPs full"

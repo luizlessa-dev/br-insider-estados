@@ -128,7 +128,10 @@ def _parse_float(v) -> Optional[float]:
     if v is None:
         return None
     try:
-        return float(str(v).replace(",", "."))
+        # Formato BR: "1.234,56" → remove pontos de milhar, troca vírgula por ponto
+        s = str(v).strip()
+        s = s.replace(".", "").replace(",", ".")
+        return float(s)
     except (ValueError, TypeError):
         return None
 
@@ -150,31 +153,29 @@ def _build_session(api_key: str) -> requests.Session:
 
 
 def _parse_record(raw: dict) -> EmendaApi:
-    autor   = raw.get("autor") or {}
-    funcao  = raw.get("funcao") or {}
-    subfunc = raw.get("subfuncao") or {}
-    local   = raw.get("localidadeGasto") or {}
-
+    # A API retorna campos planos (não aninhados) com valores monetários como "1.234,56"
     return EmendaApi(
-        codigo=str(raw.get("codigoEmenda") or raw.get("codigo") or ""),
-        ano=raw.get("anoEmenda") or raw.get("ano"),
-        tipo=raw.get("tipoEmenda") or raw.get("tipo"),
-        subtipo=raw.get("subtipo"),
-        autor_nome=autor.get("nome"),
-        autor_cpf=_strip_digits(autor.get("cpf")),
-        autor_partido=autor.get("siglaPartido"),
-        autor_uf=autor.get("ufRepresentacao"),
-        autor_codigo_portal=str(autor.get("codigoPortal")) if autor.get("codigoPortal") else None,
-        funcao_codigo=str(funcao.get("codigo")) if funcao.get("codigo") else None,
-        funcao_descricao=funcao.get("descricao"),
-        subfuncao_codigo=str(subfunc.get("codigo")) if subfunc.get("codigo") else None,
-        subfuncao_descricao=subfunc.get("descricao"),
-        localidade_ibge=str(local.get("ibge")) if local.get("ibge") else None,
-        localidade_descricao=local.get("descricao"),
+        codigo=str(raw.get("codigoEmenda") or ""),
+        ano=raw.get("ano"),
+        tipo=raw.get("tipoEmenda"),
+        subtipo=None,
+        autor_nome=raw.get("nomeAutor") or raw.get("autor"),
+        autor_cpf=None,          # API não expõe CPF do autor
+        autor_partido=None,
+        autor_uf=None,
+        autor_codigo_portal=None,
+        funcao_codigo=None,
+        funcao_descricao=raw.get("funcao"),
+        subfuncao_codigo=None,
+        subfuncao_descricao=raw.get("subfuncao"),
+        localidade_ibge=None,
+        localidade_descricao=raw.get("localidadeDoGasto"),
         valor_empenhado=_parse_float(raw.get("valorEmpenhado")),
         valor_liquidado=_parse_float(raw.get("valorLiquidado")),
         valor_pago=_parse_float(raw.get("valorPago")),
-        valor_resto_pagar=_parse_float(raw.get("valorRestoAPagar")),
+        valor_resto_pagar=_parse_float(
+            raw.get("valorRestoInscrito") or raw.get("valorRestoAPagar")
+        ),
     )
 
 
@@ -227,7 +228,7 @@ class EmendasApiConnector:
         pagina = 1
         total = 0
         while True:
-            records = self._fetch_page(pagina, anoEmenda=ano)
+            records = self._fetch_page(pagina, ano=ano)
             if not records:
                 break
             for r in records:
@@ -248,12 +249,12 @@ class EmendasApiConnector:
         """Itera emendas de um ano específico."""
         yield from self._iter_ano(ano)
 
-    def iter_por_autor(self, codigo_autor: str,
+    def iter_por_autor(self, nome_autor: str,
                        ano: int | None = None) -> Iterator[EmendaApi]:
-        """Busca emendas de um parlamentar específico."""
-        params: dict = {"codigoAutor": codigo_autor}
+        """Busca emendas de um parlamentar por nome."""
+        params: dict = {"nomeAutor": nome_autor}
         if ano:
-            params["anoEmenda"] = ano
+            params["ano"] = ano
         pagina = 1
         while True:
             records = self._fetch_page(pagina, **params)

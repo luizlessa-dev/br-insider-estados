@@ -150,41 +150,39 @@ def _build_session(api_key: str) -> requests.Session:
 
 
 def _parse_record(raw: dict) -> Contrato:
-    sit   = raw.get("situacao") or {}
     forn  = raw.get("fornecedor") or {}
     ug    = raw.get("unidadeGestora") or {}
-    orgao = ug.get("orgao") or {}
-    modal = raw.get("modalidadeCompra") or {}
-    tipo  = raw.get("tipoContrato") or {}
-    licit = raw.get("licitacao") or {}
+    orgao = ug.get("orgaoVinculado") or {}
+    orgao_max = ug.get("orgaoMaximo") or {}
+    compra = raw.get("compra") or {}
 
     return Contrato(
         id=raw.get("id"),
         numero=raw.get("numero"),
         objeto=raw.get("objeto"),
         data_assinatura=_parse_date(raw.get("dataAssinatura")),
-        data_publicacao_tcu=_parse_date(raw.get("dataPublicacaoTcu")),
+        data_publicacao_tcu=_parse_date(raw.get("dataPublicacaoDOU")),
         data_inicio_vigencia=_parse_date(raw.get("dataInicioVigencia")),
         data_fim_vigencia=_parse_date(raw.get("dataFimVigencia")),
-        valor=_parse_float(raw.get("valor")),
-        valor_aditivos=_parse_float(raw.get("valorAditivos")),
-        valor_total=_parse_float(raw.get("valorTotal")),
-        situacao_codigo=str(sit.get("codigo")) if sit.get("codigo") else None,
-        situacao_descricao=sit.get("descricao"),
-        fornecedor_cnpj=_strip_digits(forn.get("cnpj")),
-        fornecedor_cpf=_strip_digits(forn.get("cpf")),
+        valor=_parse_float(raw.get("valorInicialCompra")),
+        valor_aditivos=None,
+        valor_total=_parse_float(raw.get("valorFinalCompra")),
+        situacao_codigo=None,
+        situacao_descricao=raw.get("situacaoContrato"),
+        fornecedor_cnpj=_strip_digits(forn.get("cnpjFormatado")),
+        fornecedor_cpf=_strip_digits(forn.get("cpfFormatado")),
         fornecedor_nome=forn.get("nome"),
-        fornecedor_razao_social=forn.get("razaoSocial"),
-        ug_codigo=str(ug.get("codigo")) if ug.get("codigo") else None,
-        ug_descricao=ug.get("descricao"),
-        orgao_codigo=str(orgao.get("codigo")) if orgao.get("codigo") else None,
-        orgao_descricao=orgao.get("descricao"),
-        orgao_poder=(orgao.get("siglaPoder")),
-        modalidade_codigo=str(modal.get("codigo")) if modal.get("codigo") else None,
-        modalidade_descricao=modal.get("descricao"),
-        tipo_contrato=tipo.get("descricao"),
-        licitacao_numero=licit.get("numero"),
-        licitacao_modalidade=licit.get("modalidade"),
+        fornecedor_razao_social=forn.get("razaoSocialReceita"),
+        ug_codigo=ug.get("codigo"),
+        ug_descricao=ug.get("nome"),
+        orgao_codigo=orgao.get("codigoSIAFI") or orgao_max.get("codigo"),
+        orgao_descricao=orgao.get("nome") or orgao_max.get("nome"),
+        orgao_poder=ug.get("descricaoPoder"),
+        modalidade_codigo=None,
+        modalidade_descricao=raw.get("modalidadeCompra"),
+        tipo_contrato=None,
+        licitacao_numero=compra.get("numero"),
+        licitacao_modalidade=None,
     )
 
 
@@ -219,7 +217,7 @@ class ContratosConnector:
         pagina = 1
         total = 0
         while True:
-            records = self._fetch_page(BASE_URL_CNPJ, pagina, cpfOuCnpj=cnpj_digits)
+            records = self._fetch_page(BASE_URL_CNPJ, pagina, cpfCnpj=cnpj_digits)
             if not records:
                 break
             for r in records:
@@ -250,10 +248,13 @@ class ContratosConnector:
         logger.info("Contratos %s→%s: %d registros", data_inicio, data_fim, total)
 
     def iter_cnpjs_investigados(self, cnpjs: list[str]) -> Iterator[Contrato]:
-        """Busca contratos para uma lista de CNPJs investigados."""
+        """Busca contratos para uma lista de CNPJs investigados, pulando erros pontuais."""
         for cnpj in cnpjs:
             logger.info("Contratos para CNPJ %s", cnpj)
-            yield from self.iter_por_cnpj(cnpj)
+            try:
+                yield from self.iter_por_cnpj(cnpj)
+            except Exception as e:
+                logger.warning("CNPJ %s ignorado: %s", cnpj, e)
 
     def fetch_itens(self, contrato_id: int) -> list[ItemContratado]:
         """Busca itens contratados de um contrato específico."""
