@@ -1,0 +1,68 @@
+name: Ingestão CNPJ Receita Federal
+
+# Cadência: mensal (dump RFB atualiza no início de cada mês).
+# Baixa 10 partições de Empresas (~700 MB cada comprimido) e filtra pelos
+# CNPJs já presentes no banco — estratégia "filtro reverso" com DuckDB.
+# QSA (sócios) é opcional via input manual (arquivos Socios*.zip são igualmente pesados).
+#
+# Restrição: dadosabertos.rfb.gov.br só responde para IPs brasileiros.
+# GHA usa runners AWS us-east-1 — em teoria aceito. Se bloquear, migrar
+# para runner self-hosted ou usar um proxy brasileiro.
+#
+# Secrets necessários:
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#
+# Volume estimado: ~50k–150k empresas matches (emendas_favorecidos + tse_*)
+# Tempo estimado: 2–4h (download + DuckDB filter × 10 partições)
+
+on:
+  schedule:
+    # Dia 5 de cada mês às 06:00 UTC (03:00 BRT)
+    # Após o dump RFB ser publicado (normalmente nos primeiros dias do mês)
+    - cron: "0 6 5 * *"
+  workflow_dispatch:
+    inputs:
+      socios:
+        description: "Também ingerir QSA (sócios) — arquivos Socios*.zip, mais pesado"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Dry run — mostra contagem de CNPJs-alvo, não baixa nem grava"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ingest-cnpj-rfb
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300  # 5h — download de 10 partições pode ser lento
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Seed CNPJ Receita Federal
+        run: |
+          ARGS=""
+          if [ "${{ github.event.inputs.socios }}" = "true" ]; then
+            ARGS="$ARGS --socios"
+          fi
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m ingestao.rfb.seed_cnpj $ARGS
