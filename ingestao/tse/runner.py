@@ -56,12 +56,12 @@ def run_receitas(writer: TSEWriter, ano: int) -> None:
         raise
 
 
-def run_despesas(writer: TSEWriter, ano: int) -> None:
+def run_despesas(writer: TSEWriter, ano: int, skip_delete: bool = False) -> None:
     dataset = f"despesas_{ano}"
     log_id = writer.start_log(dataset)
     try:
         # iter_despesas é um generator — processa UF a UF sem acumular tudo na RAM
-        n = writer.upsert_despesas(iter_despesas(ano), ano=ano)
+        n = writer.upsert_despesas(iter_despesas(ano), ano=ano, skip_delete=skip_delete)
         writer.finish_log(log_id, "ok", n_novos=n)
         logger.info("despesas %d: %d gravadas", ano, n)
     except Exception as exc:
@@ -84,6 +84,11 @@ def main() -> None:
         dest="anos",
         required=True,
         help="Ano da eleição (pode repetir: --ano 2022 --ano 2024)",
+    )
+    parser.add_argument(
+        "--skip-delete",
+        action="store_true",
+        help="Não deletar ano antes de inserir (útil para retomar run parcial)",
     )
     args = parser.parse_args()
 
@@ -108,7 +113,7 @@ def main() -> None:
                 erros += 1
         if args.dataset in ("despesas", "todos"):
             try:
-                run_despesas(writer, ano)
+                run_despesas(writer, ano, skip_delete=args.skip_delete)
             except Exception:
                 erros += 1
 

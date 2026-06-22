@@ -199,8 +199,9 @@ class TSEWriter:
     # Mesmo padrão streaming das receitas.
 
     def upsert_despesas(self, despesas: Union[Iterable[Despesa], "Iterator[Despesa]"],
-                        ano: int) -> int:
-        self._delete_year("tse_despesas", ano)
+                        ano: int, skip_delete: bool = False) -> int:
+        if not skip_delete:
+            self._delete_year("tse_despesas", ano)
         total = 0
         batch: list[dict] = []
         for d in despesas:
