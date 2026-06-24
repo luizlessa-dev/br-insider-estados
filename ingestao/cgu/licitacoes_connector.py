@@ -199,7 +199,10 @@ class LicitacoesConnector:
     def _fetch_page(self, url: str, pagina: int, **params) -> list[dict]:
         self._throttle()
         params["pagina"] = pagina
-        resp = self.session.get(url, params=params, timeout=45)
+        # A API rejeita barras URL-encoded (%2F) nas datas — monta query string manualmente.
+        qs = "&".join(f"{k}={v}" for k, v in params.items())
+        full_url = f"{url}?{qs}"
+        resp = self.session.get(full_url, timeout=45)
         if resp.status_code == 401:
             raise PermissionError("Chave da API inválida.")
         resp.raise_for_status()
