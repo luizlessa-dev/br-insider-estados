@@ -176,6 +176,143 @@ def iter_despesas_legado(zip_path: str, ano: int, ufs: list | None = None):
                     }
 
 
+# ─── Receitas legado (2014 / 2016) ────────────────────────────────────────────
+
+# Mapeamento: nome_campo → índice de coluna no CSV
+COL_RECEITAS_2014 = {
+    "uf": 5, "sigla_partido": 6, "cargo": 8, "nome_candidato": 9,
+    "cpf_candidato": 10, "numero_recibo": 11,
+    "cpf_cnpj_doador": 13, "nome_doador_rfb": 15,
+    "setor_economico_doador": 20, "data_receita": 21, "valor": 22,
+    "tipo_doador": 23, "fonte_recurso": 24, "especie_recurso": 25,
+    "descricao": 26,
+    "cpf_cnpj_doador_originario": 27, "nome_doador_originario_rfb": 31,
+}
+
+COL_RECEITAS_2016 = {
+    "uf": 5, "sigla_partido": 8, "cargo": 10, "nome_candidato": 11,
+    "cpf_candidato": 12, "numero_recibo": 14,
+    "cpf_cnpj_doador": 16, "nome_doador_rfb": 18,
+    "setor_economico_doador": 23, "data_receita": 24, "valor": 25,
+    "tipo_doador": 26, "fonte_recurso": 27, "especie_recurso": 28,
+    "descricao": 29,
+    "cpf_cnpj_doador_originario": 30, "nome_doador_originario_rfb": 34,
+}
+
+
+def iter_receitas_legado(zip_path: str, ano: int, ufs: list | None = None):
+    col = COL_RECEITAS_2014 if ano == 2014 else COL_RECEITAS_2016
+    if ano == 2014:
+        pat = re.compile(r"receitas_candidatos_2014_[A-Z]{2}\.txt", re.IGNORECASE)
+    else:
+        pat = re.compile(r"receitas_candidatos_.*2016_[A-Z]{2}\.txt", re.IGNORECASE)
+
+    with zipfile.ZipFile(zip_path) as z:
+        arquivos = [n for n in z.namelist() if pat.match(n)]
+        log.info("%d arquivos de receitas encontrados", len(arquivos))
+
+        for nome in sorted(arquivos):
+            uf_match = re.search(r"_([A-Z]{2})\.txt$", nome, re.IGNORECASE)
+            uf_arquivo = uf_match.group(1).upper() if uf_match else "??"
+            if uf_arquivo == "BR":
+                continue
+            if ufs and uf_arquivo not in ufs:
+                continue
+
+            log.info("Receitas legado %d — %s", ano, uf_arquivo)
+            with z.open(nome) as f:
+                reader = csv.reader(
+                    io.TextIOWrapper(f, encoding="latin-1"),
+                    delimiter=";",
+                    quotechar='"',
+                )
+                next(reader)  # pular header
+
+                for row in reader:
+                    if len(row) < max(col.values()) + 1:
+                        continue
+                    cargo = _strip(row[col["cargo"]]).lower()
+                    if cargo not in CARGOS_ALVO:
+                        continue
+
+                    valor_str = _strip(row[col["valor"]])
+                    try:
+                        valor = _parse_valor(valor_str)
+                    except Exception:
+                        continue
+                    if not valor:
+                        continue
+
+                    yield {
+                        "ano_eleicao": ano,
+                        "numero_recibo": _strip(row[col["numero_recibo"]]) or None,
+                        "cpf_candidato": _doc(row[col["cpf_candidato"]]),
+                        "nome_candidato": _strip(row[col["nome_candidato"]]) or None,
+                        "cargo": _strip(row[col["cargo"]]) or None,
+                        "sigla_partido": _strip(row[col["sigla_partido"]]) or None,
+                        "uf": _strip(row[col["uf"]]) or None,
+                        "cpf_cnpj_doador": _doc(row[col["cpf_cnpj_doador"]]),
+                        "nome_doador": _strip(row[col["nome_doador_rfb"]]) or None,
+                        "tipo_doador": _strip(row[col["tipo_doador"]]) or None,
+                        "setor_economico_doador": _strip(row[col["setor_economico_doador"]]) or None,
+                        "cpf_cnpj_doador_originario": _doc(row[col["cpf_cnpj_doador_originario"]]),
+                        "nome_doador_originario": _strip(row[col["nome_doador_originario_rfb"]]) or None,
+                        "natureza_receita": _strip(row[col["descricao"]]) or None,
+                        "origem_receita": None,
+                        "especie_recurso": _strip(row[col["especie_recurso"]]) or None,
+                        "fonte_recurso": _strip(row[col["fonte_recurso"]]) or None,
+                        "valor": valor,
+                        "data_receita": _parse_data(row[col["data_receita"]]),
+                        "data_prestacao_contas": None,
+                    }
+
+
+def _insert_receitas_com_retry(sb_factory, batch: list, tentativas: int = 5) -> None:
+    for t in range(tentativas):
+        try:
+            sb_factory().table("tse_receitas").upsert(batch, on_conflict="numero_recibo,ano_eleicao").execute()
+            return
+        except Exception as e:
+            if t == tentativas - 1:
+                raise
+            espera = 5 * (t + 1)
+            log.warning("Erro ao inserir receitas (tentativa %d/%d): %s — aguardando %ds", t + 1, tentativas, e, espera)
+            time.sleep(espera)
+
+
+def ingerir_receitas(ano: int, zip_path: str, skip_delete: bool = False, ufs: list | None = None) -> None:
+    def sb_factory():
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    sb = sb_factory()
+
+    if not skip_delete:
+        log.info("Deletando receitas existentes de %d...", ano)
+        sb.table("tse_receitas").delete().eq("ano_eleicao", ano).execute()
+
+    buf: dict[tuple, dict] = {}  # dedup por (numero_recibo, ano_eleicao) dentro de cada batch
+    total = 0
+
+    for row in iter_receitas_legado(zip_path, ano, ufs=ufs):
+        key = (row.get("numero_recibo"), row.get("ano_eleicao"))
+        buf[key] = row
+        if len(buf) >= CHUNK:
+            batch = list(buf.values())
+            _insert_receitas_com_retry(sb_factory, batch)
+            total += len(batch)
+            buf = {}
+            if total % 50000 == 0:
+                log.info("%d receitas gravadas", total)
+
+    if buf:
+        batch = list(buf.values())
+        _insert_receitas_com_retry(sb_factory, batch)
+        total += len(batch)
+
+    log.info("TSE receitas %d: %d linhas gravadas", ano, total)
+    return total
+
+
 def _insert_com_retry(sb_factory, batch: list, tentativas: int = 5) -> None:
     for t in range(tentativas):
         try:
@@ -216,11 +353,14 @@ def ingerir(ano: int, zip_path: str, skip_delete: bool = False, ufs: list | None
         total += len(batch)
 
     log.info("TSE despesas %d: %d linhas gravadas", ano, total)
+    return total
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Ingestão TSE formato legado (2014/2016)")
     parser.add_argument("--ano", type=int, required=True, choices=[2014, 2016])
+    parser.add_argument("--dataset", choices=["despesas", "receitas", "todos"], default="despesas",
+                        help="Dataset a ingerir (padrão: despesas)")
     parser.add_argument("--zip", help="Caminho do ZIP já baixado (opcional — baixa se omitido)")
     parser.add_argument("--skip-delete", action="store_true", help="Não deletar ano antes de inserir (útil pra retomar run parcial)")
     parser.add_argument("--ufs", help="UFs a processar, separadas por vírgula (ex: SP,TO)")
@@ -242,7 +382,11 @@ def main() -> None:
             log.info("ZIP já existe: %s", zip_path)
 
     ufs = [u.strip().upper() for u in args.ufs.split(",")] if args.ufs else None
-    ingerir(args.ano, zip_path, skip_delete=args.skip_delete, ufs=ufs)
+
+    if args.dataset in ("despesas", "todos"):
+        ingerir(args.ano, zip_path, skip_delete=args.skip_delete, ufs=ufs)
+    if args.dataset in ("receitas", "todos"):
+        ingerir_receitas(args.ano, zip_path, skip_delete=args.skip_delete, ufs=ufs)
 
 
 if __name__ == "__main__":

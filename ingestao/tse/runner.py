@@ -15,10 +15,40 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
+import requests
+
 from .connector import get_candidatos, iter_despesas, iter_receitas
+from .ingest_legado import (
+    ZIP_URLS as ZIP_URLS_LEGADO,
+    ingerir as ingerir_despesas_legado,
+    ingerir_receitas as ingerir_receitas_legado,
+)
 from .persistence import TSEWriter
+
+# Anos cujo ZIP de prestação de contas usa URL/formato diferente do padrão moderno.
+# O connector.py tenta prestacao_de_contas_eleitorais_candidatos_{ano}.zip (404 nesses anos).
+# ingest_legado.py sabe as URLs corretas e lida com o formato .txt.
+ANOS_LEGADOS = {2014, 2016}
+
+
+def _baixar_zip_legado(ano: int) -> str:
+    """Baixa o ZIP legado para /tmp e retorna o caminho. Reutiliza se já existe."""
+    zip_path = f"/tmp/tse_{ano}.zip"
+    if os.path.exists(zip_path):
+        logger.info("ZIP legado %d já existe: %s", ano, zip_path)
+        return zip_path
+    url = ZIP_URLS_LEGADO[ano]
+    logger.info("Baixando ZIP legado %d → %s", ano, zip_path)
+    r = requests.get(url, stream=True, timeout=600)
+    r.raise_for_status()
+    with open(zip_path, "wb") as f:
+        for chunk in r.iter_content(65536):
+            f.write(chunk)
+    logger.info("Download concluído: %s", zip_path)
+    return zip_path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,8 +76,13 @@ def run_receitas(writer: TSEWriter, ano: int) -> None:
     dataset = f"receitas_{ano}"
     log_id = writer.start_log(dataset)
     try:
-        # iter_receitas é um generator — processa UF a UF sem acumular tudo na RAM
-        n = writer.upsert_receitas(iter_receitas(ano), ano=ano)
+        if ano in ANOS_LEGADOS:
+            # 2014/2016: ZIP tem formato .txt e URL diferente — delega ao ingest_legado
+            zip_path = _baixar_zip_legado(ano)
+            n = ingerir_receitas_legado(ano, zip_path) or 0
+        else:
+            # iter_receitas é um generator — processa UF a UF sem acumular tudo na RAM
+            n = writer.upsert_receitas(iter_receitas(ano), ano=ano)
         writer.finish_log(log_id, "ok", n_novos=n)
         logger.info("receitas %d: %d gravadas", ano, n)
     except Exception as exc:
@@ -60,8 +95,13 @@ def run_despesas(writer: TSEWriter, ano: int, skip_delete: bool = False) -> None
     dataset = f"despesas_{ano}"
     log_id = writer.start_log(dataset)
     try:
-        # iter_despesas é um generator — processa UF a UF sem acumular tudo na RAM
-        n = writer.upsert_despesas(iter_despesas(ano), ano=ano, skip_delete=skip_delete)
+        if ano in ANOS_LEGADOS:
+            # 2014/2016: ZIP tem formato .txt e URL diferente — delega ao ingest_legado
+            zip_path = _baixar_zip_legado(ano)
+            n = ingerir_despesas_legado(ano, zip_path, skip_delete=skip_delete) or 0
+        else:
+            # iter_despesas é um generator — processa UF a UF sem acumular tudo na RAM
+            n = writer.upsert_despesas(iter_despesas(ano), ano=ano, skip_delete=skip_delete)
         writer.finish_log(log_id, "ok", n_novos=n)
         logger.info("despesas %d: %d gravadas", ano, n)
     except Exception as exc:
