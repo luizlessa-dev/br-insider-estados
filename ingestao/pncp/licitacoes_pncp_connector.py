@@ -45,7 +45,7 @@ BASE_ORGAO_URL = "https://pncp.gov.br/api/consulta/v1/orgaos/{cnpj}/compras"
 MODALIDADES_INVESTIGATIVAS = [4, 5, 6, 7, 8, 9]
 
 PAGE_SIZE = 50
-THROTTLE_S = 0.5
+THROTTLE_S = 2.0  # PNCP rate limit: ~30 req/min sustentável
 
 
 @dataclass
@@ -159,7 +159,8 @@ class PncpConnector:
                 try:
                     payload = self._fetch_page(mod, data_str, data_str, pagina)
                 except Exception as e:
-                    logger.warning("mod=%d dia=%s p=%d ERRO: %s", mod, dia, pagina, e)
+                    logger.warning("mod=%d dia=%s p=%d ERRO: %s — pulando restante", mod, dia, pagina, e)
+                    time.sleep(5)  # backoff extra após 429
                     break
                 if not payload:
                     break

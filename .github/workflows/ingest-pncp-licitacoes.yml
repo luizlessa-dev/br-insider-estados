@@ -1,0 +1,31 @@
+name: Ingest PNCP Licitações
+
+on:
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: 'Dias retroativos a varrer'
+        default: '7'
+        required: false
+  schedule:
+    # Toda quarta-feira às 08:00 UTC (05:00 BRT)
+    - cron: "0 8 * * 3"
+
+jobs:
+  ingest:
+    name: Ingerir licitações PNCP
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependências
+        run: pip install requests supabase python-dotenv
+      - name: Ingerir licitações
+        run: |
+          DIAS=${{ github.event.inputs.dias || '7' }}
+          python -m ingestao.pncp.licitacoes_pncp_runner --dias $DIAS
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
