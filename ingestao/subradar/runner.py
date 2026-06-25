@@ -27,6 +27,7 @@ from .bndes import BNDESConnector
 from .opensanctions import OpenSanctionsConnector
 from .leniencia import LenienciaConnector
 from .societario import SocietarioConnector
+from .dou import DOUConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +42,7 @@ FONTES = [
     LenienciaConnector(),      # acordos de leniência (Portal Transparência)
     SocietarioConnector(),     # qsa + capital social (rfb interno)
     OpenSanctionsConnector(),  # sanções internacionais (só com sócio estrangeiro)
+    DOUConnector(),            # Diário Oficial da União (30 dias, DO1+DO3)
 ]
 
 
