@@ -64,7 +64,7 @@ class LenienciaConnector(SubradarSource):
                 sancoes = item.get("sancoes") or []
                 for s in sancoes:
                     cnpj_item = _strip_cnpj(s.get("cnpj") or s.get("cnpjFormatado") or "")
-                    if cnpj_item == cnpj or not cnpj_item:
+                    if cnpj_item == cnpj:
                         encontrados.append({**item, "_sancao": s})
 
             if len(items) < 10:
