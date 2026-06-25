@@ -116,6 +116,12 @@ class INLabsSession:
             return False
 
     @classmethod
+    def refresh(cls) -> bool:
+        """Força novo login (chama a cada N downloads para evitar expiração de sessão)."""
+        cls._logged_in = False
+        return cls.login()
+
+    @classmethod
     def ensure_logged_in(cls) -> bool:
         if not cls._logged_in:
             return cls.login()
@@ -127,21 +133,30 @@ def _download_zip(data: str, secao: str) -> bytes | None:
     session = INLabsSession.get()
     filename = f"{data}-{secao}.zip"
     url = f"{INLABS_BASE}/index.php?p={data}&dl={filename}"
-    try:
-        r = session.get(url, timeout=120, headers={"Referer": f"{INLABS_BASE}/index.php?p={data}"})
-        if not r.ok:
-            logger.warning("DOU: download %s %s retornou %s", data, secao, r.status_code)
-            return None
-        # Verifica se é realmente um ZIP (não HTML de erro de auth)
-        if r.content[:4] != b"PK\x03\x04":
-            logger.warning("DOU: resposta não é ZIP para %s %s (possível sessão expirada)", data, secao)
-            # Tenta re-login uma vez
-            INLabsSession._logged_in = False
-            if INLabsSession.login():
-                r = session.get(url, timeout=120)
-                if r.ok and r.content[:4] == b"PK\x03\x04":
-                    return r.content
-            return None
+
+    for attempt in range(3):
+        try:
+            r = session.get(url, timeout=120, headers={"Referer": f"{INLABS_BASE}/index.php?p={data}"})
+            if r.status_code == 404:
+                # Edição não existe (feriado, final de semana sem suplemento) — silencioso
+                logger.debug("DOU: %s %s não disponível (404)", data, secao)
+                return None
+            if not r.ok:
+                logger.warning("DOU: download %s %s retornou %s", data, secao, r.status_code)
+                return None
+            # Verifica se é realmente um ZIP (não HTML de sessão expirada)
+            if r.content[:4] == b"PK\x03\x04":
+                return r.content
+            # Sessão expirou — re-login e retry
+            logger.debug("DOU: sessão expirada para %s %s — re-login (tentativa %d)", data, secao, attempt + 1)
+            if not INLabsSession.refresh():
+                return None
+        except Exception as e:
+            logger.warning("DOU: erro ao baixar %s %s (tentativa %d): %s", data, secao, attempt + 1, e)
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    logger.warning("DOU: falhou após 3 tentativas para %s %s", data, secao)
+    return None
         return r.content
     except Exception as e:
         logger.warning("DOU: erro ao baixar %s %s: %s", data, secao, e)
@@ -315,9 +330,14 @@ class DOUConnector(SubradarSource):
         ][:20]  # máximo 20 datas para controlar o custo
 
         todos_artigos = []
+        downloads_feitos = 0
         for data in datas:
+            # Re-login a cada 8 downloads para evitar expiração de sessão PHP
+            if downloads_feitos > 0 and downloads_feitos % 8 == 0:
+                INLabsSession.refresh()
             for secao in SECOES:
                 zip_bytes = _download_zip(data, secao)
+                downloads_feitos += 1
                 if not zip_bytes:
                     continue
                 artigos = _extrair_artigos_com_cnpj(zip_bytes, cnpj_limpo, razao_social)
@@ -325,7 +345,7 @@ class DOUConnector(SubradarSource):
                     a["_data"] = data
                     a["_secao"] = secao
                 todos_artigos.extend(artigos)
-                time.sleep(0.5)  # evita sobrecarga no servidor
+                time.sleep(0.3)  # evita sobrecarga no servidor
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, todos_artigos)
         if not mudou:
