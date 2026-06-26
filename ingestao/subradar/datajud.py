@@ -12,7 +12,10 @@ Consulta por CNPJ nas classes processuais de interesse:
   1295 = Recuperação Extrajudicial
   1296 = Insolvência Civil
 
-Estratégia: busca texto-livre pelo CNPJ (sem formatação) em `dadosBasicos.partes.CPFouCNPJ`.
+LIMITAÇÃO DA API PÚBLICA: o campo `partes` (com CPF/CNPJ) não está disponível
+na camada pública do DataJud — apenas na API restrita (convênio CNJ).
+Estratégia atual: busca por número do processo usando CNPJ formatado como texto
+no campo `numeroProcesso`, ou por razão social quando fornecida.
 """
 from __future__ import annotations
 
@@ -70,14 +73,26 @@ def _headers() -> dict:
     }
 
 
-def _search(indice: str, cnpj_digits: str) -> list[dict]:
-    """Busca processos por CNPJ num índice DataJud."""
+def _search(indice: str, cnpj_digits: str, razao_social: str | None = None) -> list[dict]:
+    """Busca processos por razão social ou CNPJ num índice DataJud.
+
+    A API pública não expõe o campo partes.CPFouCNPJ — buscamos por
+    razão social (quando disponível) ou pelo número do CNPJ como texto.
+    """
+    # Termo de busca: prefere razão social, fallback para CNPJ formatado
+    cnpj_fmt = f"{cnpj_digits[:2]}.{cnpj_digits[2:5]}.{cnpj_digits[5:8]}/{cnpj_digits[8:12]}-{cnpj_digits[12:14]}"
+    search_terms = []
+    if razao_social:
+        search_terms.append(razao_social)
+    search_terms.append(cnpj_fmt)
+    search_query = " OR ".join(f'"{t}"' for t in search_terms)
+
     query = {
         "size": 20,
         "query": {
             "bool": {
                 "must": [
-                    {"term": {"dadosBasicos.partes.CPFouCNPJ": cnpj_digits}},
+                    {"query_string": {"query": search_query, "default_operator": "OR"}},
                 ],
                 "filter": [
                     {"terms": {"classe.codigo": list(CLASSES_INTERESSE.keys())}},
@@ -118,16 +133,19 @@ class DataJudConnector(SubradarSource):
         cnpj_fmt   = _fmt(cnpj_limpo)
         ciclo      = _ciclo_atual()
 
+        # A API pública DataJud não indexa partes (CPF/CNPJ) nos documentos.
+        # Cobertura real de falências requer API restrita (convênio CNJ) ou fontes alternativas.
+        # Retornamos "sem dados" graciosamente para não bloquear o pipeline.
         if not DATAJUD_KEY:
             logger.info("DataJud: DATAJUD_API_KEY não configurada — fonte indisponível")
             return [{
                 "cnpj": cnpj_fmt, "ciclo": ciclo, "fonte": self.fonte,
                 "categoria": "judicial", "severidade": "info",
-                "titulo": "DataJud — cobertura indisponível",
+                "titulo": "DataJud — cobertura indisponível (APIKey ausente)",
                 "descricao": (
-                    "A consulta de falências e recuperações judiciais requer APIKey do CNJ. "
-                    "Cadastre em https://datajud-wiki.cnj.jus.br/api-publica/acesso e "
-                    "defina DATAJUD_API_KEY no .env."
+                    "Consulta de falências/RJ requer APIKey CNJ (gratuita). "
+                    "Nota: a API pública não indexa CNPJ das partes — "
+                    "cobertura real depende de convênio CNJ ou fontes alternativas."
                 ),
                 "url_fonte": "https://datajud-wiki.cnj.jus.br",
                 "is_novo": True,
@@ -135,7 +153,7 @@ class DataJudConnector(SubradarSource):
 
         todos: list[dict] = []
         for indice in INDICES:
-            processos = _search(indice, cnpj_limpo)
+            processos = _search(indice, cnpj_limpo, razao_social)
             todos.extend(processos)
             if processos:
                 time.sleep(self.request_delay)
