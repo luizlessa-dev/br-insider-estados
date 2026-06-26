@@ -1,0 +1,75 @@
+name: Subradar — Seed de Tabelas Locais (mensal)
+
+on:
+  schedule:
+    - cron: "0 4 1 * *"   # dia 1 de cada mês, 04:00 UTC — antes do runner
+  workflow_dispatch:
+    inputs:
+      fonte:
+        description: "Fonte específica para re-seed"
+        type: choice
+        options:
+          - todas
+          - pgfn
+          - ibama
+          - cvm
+          - sancoes
+          - lista_suja
+          - aneel
+          - ans
+        default: todas
+
+concurrency:
+  group: subradar-seed
+  cancel-in-progress: false
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Seed PGFN — Dívida Ativa
+        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'pgfn' }}
+        run: python -m ingestao.subradar.pgfn_seeder
+
+      - name: Seed IBAMA — Autos de Infração Ambiental
+        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'ibama' }}
+        run: python -m ingestao.subradar.ibama_seeder
+
+      - name: Seed CVM — Processos Sancionadores
+        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'cvm' }}
+        run: python -m ingestao.subradar.cvm_seeder
+
+      - name: Seed Sanções — CEIS/CNEP/CEPIM
+        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'sancoes' }}
+        run: python -m ingestao.subradar.sancoes_seeder
+
+      - name: Seed Lista Suja MTE — Trabalho Análogo à Escravidão
+        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'lista_suja' }}
+        run: python -m ingestao.subradar.lista_suja_seeder
+
+      - name: Seed ANEEL — Autos de Infração Setor Elétrico
+        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'aneel' }}
+        run: python -m ingestao.subradar.aneel_seeder
+
+      - name: Seed ANS — Operadoras de Plano de Saúde
+        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'ans' }}
+        run: python -m ingestao.subradar.ans_seeder
+
+      # MTE Autos: seed manual até dados.mte.gov.br resolver SSL
+      # - name: Seed MTE — Autos de Infração Trabalhista
+      #   if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'mte_autos' }}
+      #   run: python -m ingestao.subradar.mte_autos_seeder

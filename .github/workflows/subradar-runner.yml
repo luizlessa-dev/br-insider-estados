@@ -1,0 +1,60 @@
+name: Subradar — Monitoramento de Compliance (mensal)
+
+on:
+  schedule:
+    - cron: "0 6 1 * *"   # dia 1 de cada mês, 06:00 UTC (03:00 BRT)
+  workflow_dispatch:
+    inputs:
+      cnpj:
+        description: "CNPJ específico (opcional, ex: 12.345.678/0001-90)"
+        required: false
+      dry_run:
+        description: "Dry run (não grava no Supabase)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: subradar-runner
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+      TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
+      OPENSANCTIONS_API_KEY: ${{ secrets.OPENSANCTIONS_API_KEY }}
+      INLABS_EMAIL: ${{ secrets.INLABS_EMAIL }}
+      INLABS_PASSWORD: ${{ secrets.INLABS_PASSWORD }}
+      DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Instalar Playwright (para conector TCU)
+        run: |
+          pip install playwright
+          python -m playwright install chromium --with-deps
+
+      - name: Executar Subradar — todos os CNPJs monitorados
+        if: ${{ !inputs.cnpj }}
+        run: |
+          python -m ingestao.subradar.runner ${{ inputs.dry_run && '--dry-run' || '' }}
+
+      - name: Executar Subradar — CNPJ específico
+        if: ${{ inputs.cnpj }}
+        run: |
+          python -m ingestao.subradar.runner \
+            --cnpj "${{ inputs.cnpj }}" \
+            --cliente-id "00000000-0000-0000-0000-000000000000" \
+            ${{ inputs.dry_run && '--dry-run' || '' }}

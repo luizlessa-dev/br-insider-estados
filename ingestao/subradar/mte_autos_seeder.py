@@ -6,6 +6,13 @@ Uso:
 
 Fonte: dados.mte.gov.br — CSV anual, encoding latin-1, sep ;
 Cobre autos de infração lavrados pelos Auditores Fiscais do Trabalho.
+
+STATUS (jun/2026):
+  - dados.mte.gov.br: SSL inválido (conexão recusada)
+  - sit.trabalho.gov.br/radar: temporariamente fora do ar (migração para novo Radar SIT)
+  - Aguardando novo portal. Monitorar: https://sit.trabalho.gov.br
+
+Quando o portal voltar, atualizar BASE_URL e re-rodar o seeder.
 """
 from __future__ import annotations
 
