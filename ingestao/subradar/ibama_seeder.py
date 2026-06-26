@@ -4,8 +4,8 @@ Seed mensal da tabela sub_ibama a partir do bulk CSV do IBAMA.
 Uso:
     python -m ingestao.subradar.ibama_seeder
 
-Arquivo: ~130 MB descomprimido, ~500k linhas.
-Encoding: latin-1  Separador: ;
+ZIP contém 49 CSVs anuais (1977–2026). Só PJs (14 dígitos) são inseridas.
+Encoding: latin-1  Separador: ;  Tamanho: ~114 MB comprimido
 """
 from __future__ import annotations
 
@@ -34,11 +34,8 @@ SUPABASE_KEY = (
 )
 
 BATCH_SIZE = 400
-TABLE = "sub_ibama"
-
-# Colunas que nos interessam (subset do CSV completo)
-# Nome das colunas pode variar — detectado dinamicamente
-CNPJ_COLS = ["CPF_CNPJ_INFRATOR", "CPF_CNPJ", "CNPJ_INFRATOR"]
+TABLE      = "sub_ibama"
+CNPJ_COLS  = ["CPF_CNPJ_INFRATOR", "CPF_CNPJ", "CNPJ_INFRATOR"]
 
 
 def _headers():
@@ -69,77 +66,91 @@ def _upsert(rows: list[dict]) -> None:
         r.raise_for_status()
 
 
-def run() -> None:
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise SystemExit("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ausentes")
-
-    logger.info("Baixando bulk CSV IBAMA...")
-    r = requests.get(URL, stream=True, timeout=300)
-    r.raise_for_status()
-    content = r.content
-    logger.info("Download OK — %d MB", len(content) // 1_048_576)
-
-    with zipfile.ZipFile(io.BytesIO(content)) as z:
-        csv_name = next(n for n in z.namelist() if n.endswith(".csv"))
-        logger.info("Processando %s", csv_name)
-        raw = z.read(csv_name).decode("latin-1")
+def _process_csv(raw_bytes: bytes, batch: list, counters: dict) -> None:
+    try:
+        raw = raw_bytes.decode("latin-1")
+    except Exception:
+        raw = raw_bytes.decode("utf-8", errors="replace")
 
     lines = raw.splitlines()
-    if not lines:
-        raise SystemExit("CSV vazio")
+    if len(lines) < 2:
+        return
 
     header = [c.strip().upper() for c in lines[0].split(";")]
-    logger.info("Colunas: %s", header[:10])
-
-    # Detectar coluna de CNPJ
-    cnpj_col = next((c for c in CNPJ_COLS if c in header), None)
-    if not cnpj_col:
-        raise SystemExit(f"Coluna CNPJ não encontrada. Colunas disponíveis: {header}")
-
-    idx = {c: i for i, c in enumerate(header)}
+    idx    = {c: i for i, c in enumerate(header)}
 
     def get(row: list, col: str) -> str:
         i = idx.get(col)
         return row[i].strip() if i is not None and i < len(row) else ""
 
-    batch: list[dict] = []
-    total = inserted = 0
+    cnpj_col = next((c for c in CNPJ_COLS if c in idx), None)
+    if not cnpj_col:
+        return  # CSV antigo sem coluna CNPJ
 
     for line in lines[1:]:
-        total += 1
-        cols = line.split(";")
-        cpf_cnpj_raw = get(cols, cnpj_col)
-        cpf_cnpj     = _strip(cpf_cnpj_raw)
+        if not line.strip():
+            continue
+        counters["total"] += 1
+        cols    = line.split(";")
+        tp_pess = get(cols, "TP_PESSOA_INFRATOR").upper()
+        if tp_pess and tp_pess not in ("PJ", ""):
+            continue
 
-        # Só interessam CNPJs (14 dígitos)
+        cpf_cnpj = _strip(get(cols, cnpj_col))
         if len(cpf_cnpj) != 14:
             continue
 
-        row = {
+        val_raw = get(cols, "VAL_AUTO_INFRACAO").replace(",", ".").replace(" ", "") or None
+        try:
+            val_num = float(val_raw) if val_raw else None
+        except ValueError:
+            val_num = None
+
+        batch.append({
             "cpf_cnpj_infrator":    cpf_cnpj,
             "num_auto_infracao":    get(cols, "NUM_AUTO_INFRACAO"),
-            "des_situacao_auto":    get(cols, "DES_SITUACAO_AUTO"),
-            "dat_auto_de_infracao": get(cols, "DAT_AUTO_DE_INFRACAO"),
+            "des_situacao_auto":    get(cols, "DS_SIT_AUTO_AIE") or get(cols, "DES_STATUS_FORMULARIO"),
+            "dat_auto_de_infracao": (get(cols, "DAT_HORA_AUTO_INFRACAO") or get(cols, "DT_FATO_INFRACIONAL"))[:10] or None,
             "des_infracao":         get(cols, "DES_INFRACAO"),
-            "val_auto_infracao":    get(cols, "VAL_AUTO_INFRACAO") or None,
-            "nom_municipio":        get(cols, "NOM_MUNICIPIO"),
-            "sig_uf":               get(cols, "SIG_UF"),
-            "num_processo":         get(cols, "NUM_PROCESSO"),
+            "val_auto_infracao":    val_num,
+            "nom_municipio":        get(cols, "MUNICIPIO"),
+            "sig_uf":               get(cols, "UF"),
+            "num_processo":         get(cols, "NU_PROCESSO_FORMATADO") or get(cols, "NUM_PROCESSO"),
             "nom_infrator":         get(cols, "NOME_INFRATOR"),
-        }
-        batch.append(row)
-        inserted += 1
+        })
+        counters["inserted"] += 1
 
-        if len(batch) >= BATCH_SIZE:
+
+def run() -> None:
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        raise SystemExit("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ausentes")
+
+    logger.info("Baixando bulk CSV IBAMA (~114 MB)...")
+    r = requests.get(URL, timeout=300)
+    r.raise_for_status()
+    logger.info("Download OK — %d MB", len(r.content) // 1_048_576)
+
+    batch:    list[dict] = []
+    counters: dict       = {"total": 0, "inserted": 0}
+
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        csv_names = sorted(n for n in z.namelist() if n.endswith(".csv"))
+        logger.info("%d arquivos CSV no ZIP", len(csv_names))
+
+        for csv_name in csv_names:
+            _process_csv(z.read(csv_name), batch, counters)
+
+            while len(batch) >= BATCH_SIZE:
+                _upsert(batch[:BATCH_SIZE])
+                del batch[:BATCH_SIZE]
+
+            logger.debug("  %s — acumulado: %d PJs", csv_name, counters["inserted"])
+
+        if batch:
             _upsert(batch)
-            batch.clear()
-            if inserted % 10_000 == 0:
-                logger.info("  %d CNPJs inseridos (de %d linhas)", inserted, total)
 
-    if batch:
-        _upsert(batch)
-
-    logger.info("Seed IBAMA concluído: %d CNPJs de %d linhas totais", inserted, total)
+    logger.info("Seed IBAMA concluído: %d CNPJs de %d linhas totais",
+                counters["inserted"], counters["total"])
 
 
 if __name__ == "__main__":
