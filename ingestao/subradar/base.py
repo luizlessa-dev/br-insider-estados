@@ -66,11 +66,13 @@ def upsert(table: str, rows: list[dict]) -> None:
         batch = [_jsonable(r) for r in rows[i : i + chunk]]
         for attempt in range(5):
             try:
-                # sub_snapshots tem unique (cnpj, ciclo, fonte) — usa ignore-duplicates
-                extra_headers = {}
+                # sub_snapshots: unique (cnpj, ciclo, fonte) — usa on_conflict para ignorar duplicatas
+                req_url  = url
+                req_hdrs = {**_supabase_headers()}
                 if table == "sub_snapshots":
-                    extra_headers = {"Prefer": "resolution=ignore-duplicates,return=minimal"}
-                resp = requests.post(url, json=batch, headers={**_supabase_headers(), **extra_headers}, timeout=60)
+                    req_url  = url + "?on_conflict=cnpj,ciclo,fonte"
+                    req_hdrs["Prefer"] = "resolution=ignore-duplicates,return=minimal"
+                resp = requests.post(req_url, json=batch, headers=req_hdrs, timeout=60)
                 if resp.ok:
                     break
                 if resp.status_code in (429, 503):
