@@ -56,7 +56,15 @@ class IBAMAConnector(SubradarSource):
         cnpj_fmt    = _fmt(cnpj_limpo)
         ciclo       = _ciclo_atual()
 
-        registros = _query_local(cnpj_limpo)
+        # dedup por num_auto_infracao (mesmo auto pode aparecer em múltiplos registros)
+        raw = _query_local(cnpj_limpo)
+        seen: set[str] = set()
+        registros = []
+        for r in raw:
+            key = r.get("num_auto_infracao") or str(r.get("id", ""))
+            if key not in seen:
+                seen.add(key)
+                registros.append(r)
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, registros)
         if not mudou:
