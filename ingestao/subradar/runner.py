@@ -33,6 +33,10 @@ from .ibama import IBAMAConnector
 from .cvm import CVMConnector
 from .siconv import SICONVConnector
 from .anvisa import ANVISAConnector
+from .lista_suja import ListaSujaConnector
+from .situacao_cadastral import SituacaoCadastralConnector
+from .bacen import BACENConnector
+from .mte_autos import MTEAutosConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +59,10 @@ FONTES = [
     CVMConnector(),            # CVM — processos administrativos sancionadores (tabela local)
     SICONVConnector(),         # SICONV — convênios federais (Portal Transparência)
     ANVISAConnector(),         # ANVISA — AFE/AE (token gov.br opcional)
+    ListaSujaConnector(),      # Lista Suja MTE — trabalho análogo à escravidão
+    SituacaoCadastralConnector(), # Situação Cadastral RFB — ativo/suspenso/inapto/baixado
+    BACENConnector(),          # BACEN — entidades supervisionadas (bancos, fintechs)
+    MTEAutosConnector(),       # MTE — autos de infração trabalhista
 ]
 
 
