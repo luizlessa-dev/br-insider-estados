@@ -28,6 +28,11 @@ from .opensanctions import OpenSanctionsConnector
 from .leniencia import LenienciaConnector
 from .societario import SocietarioConnector
 from .dou import DOUConnector
+from .sancoes import CEISConnector, CNEPConnector, CEPIMConnector
+from .ibama import IBAMAConnector
+from .cvm import CVMConnector
+from .siconv import SICONVConnector
+from .anvisa import ANVISAConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,6 +48,13 @@ FONTES = [
     SocietarioConnector(),     # qsa + capital social (rfb interno)
     OpenSanctionsConnector(),  # sanções internacionais (só com sócio estrangeiro)
     DOUConnector(),            # Diário Oficial da União (30 dias, DO1+DO3)
+    CEISConnector(),           # CEIS — empresas inidôneas e suspensas
+    CNEPConnector(),           # CNEP — punidas pela Lei Anticorrupção
+    CEPIMConnector(),          # CEPIM — entidades impedidas de convênios
+    IBAMAConnector(),          # IBAMA — autos de infração ambiental (tabela local)
+    CVMConnector(),            # CVM — processos administrativos sancionadores (tabela local)
+    SICONVConnector(),         # SICONV — convênios federais (Portal Transparência)
+    ANVISAConnector(),         # ANVISA — AFE/AE (token gov.br opcional)
 ]
 
 

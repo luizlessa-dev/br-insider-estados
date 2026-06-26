@@ -157,10 +157,6 @@ def _download_zip(data: str, secao: str) -> bytes | None:
                 time.sleep(2 ** attempt)
     logger.warning("DOU: falhou após 3 tentativas para %s %s", data, secao)
     return None
-        return r.content
-    except Exception as e:
-        logger.warning("DOU: erro ao baixar %s %s: %s", data, secao, e)
-        return None
 
 
 def _extrair_artigos_com_cnpj(zip_bytes: bytes, cnpj_limpo: str, razao_social: str | None) -> list[dict]:
