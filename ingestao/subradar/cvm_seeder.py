@@ -74,6 +74,14 @@ def _parse_csv(raw: bytes, encoding: str = "utf-8") -> tuple[list[str], list[lis
     return header, rows
 
 
+CNPJ_RE = re.compile(r"\b\d{2}[\.\s]?\d{3}[\.\s]?\d{3}[/\.\s]?\d{4}[\-\.\s]?\d{2}\b")
+
+
+def _extract_cnpjs(text: str) -> list[str]:
+    """Extrai CNPJs em qualquer formato do texto e retorna como dígitos."""
+    return list({_strip(m) for m in CNPJ_RE.findall(text) if len(_strip(m)) == 14})
+
+
 def run() -> None:
     if not SUPABASE_URL or not SUPABASE_KEY:
         raise SystemExit("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ausentes")
@@ -87,7 +95,6 @@ def run() -> None:
         names = z.namelist()
         logger.info("Arquivos no ZIP: %s", names)
 
-        # Processos: num_pas → campos do processo
         proc_file = next((n for n in names if "acusado" not in n.lower() and n.endswith(".csv")), None)
         acus_file = next((n for n in names if "acusado" in n.lower()), None)
 
@@ -99,81 +106,81 @@ def run() -> None:
 
     logger.info("Processos: %d linhas | Acusados: %d linhas", len(proc_rows), len(acus_rows))
 
-    # Indexar processos por num_pas
-    p_idx = {c: i for i, c in enumerate(proc_header)}
+    p_idx = {c.upper(): i for i, c in enumerate(proc_header)}
+    a_idx = {c.upper(): i for i, c in enumerate(acus_header)}
 
-    def pget(row, col):
-        i = p_idx.get(col)
-        return row[i].strip() if i is not None and i < len(row) else ""
+    def pget(row, *cols):
+        for col in cols:
+            i = p_idx.get(col.upper())
+            if i is not None and i < len(row):
+                v = row[i].strip()
+                if v:
+                    return v
+        return ""
 
-    proc_map: dict[str, dict] = {}
-    for row in proc_rows:
-        num = pget(row, "NUM_PAS") or pget(row, "NUMPAS") or pget(row, "NUMERO_PAS")
-        if num:
-            proc_map[num] = {
-                "num_pas":               num,
-                "des_fase":              pget(row, "DES_FASE") or pget(row, "FASE"),
-                "des_tipo_irregularidade": pget(row, "DES_TIPO_IRREGULARIDADE") or pget(row, "TIPO_IRREGULARIDADE"),
-                "dat_julgamento":        pget(row, "DAT_JULGAMENTO") or pget(row, "DATA_JULGAMENTO"),
-                "des_orgao_julgador":    pget(row, "DES_ORGAO_JULGADOR") or pget(row, "ORGAO_JULGADOR"),
-            }
+    def aget(row, *cols):
+        for col in cols:
+            i = a_idx.get(col.upper())
+            if i is not None and i < len(row):
+                v = row[i].strip()
+                if v:
+                    return v
+        return ""
 
-    # Acusados — cruzar com processo
-    a_idx = {c: i for i, c in enumerate(acus_header)}
-
-    def aget(row, col):
-        i = a_idx.get(col)
-        return row[i].strip() if i is not None and i < len(row) else ""
-
-    # Detectar coluna CNPJ/CPF nos acusados
-    cpf_col = next((c for c in ["CPF_CNPJ", "CNPJ", "CPF", "DOCUMENTO"] if c in a_idx), None)
-    if not cpf_col:
-        raise SystemExit(f"Coluna CPF/CNPJ não encontrada em acusados: {acus_header}")
-
-    logger.info("Coluna CPF/CNPJ em acusados: %s", cpf_col)
+    # Índice acusados por NUP
+    acus_by_nup: dict[str, list[str]] = {}
+    for row in acus_rows:
+        nup  = aget(row, "NUP")
+        nome = aget(row, "NOME_ACUSADO", "NOM_ACUSADO")
+        if nup and nome:
+            acus_by_nup.setdefault(nup, []).append(nome)
 
     batch: list[dict] = []
     inserted = total = 0
 
-    for row in acus_rows:
+    for row in proc_rows:
         total += 1
-        doc_raw = aget(row, cpf_col)
-        doc     = _strip(doc_raw)
+        nup    = pget(row, "NUP", "NUM_PAS")
+        objeto = pget(row, "OBJETO")
+        ementa = pget(row, "EMENTA")
+        fase   = pget(row, "FASE_ATUAL", "DES_FASE")
+        dt_ab  = pget(row, "DATA_ABERTURA", "DAT_JULGAMENTO")
 
-        # Só CNPJs (14 dígitos)
-        if len(doc) != 14:
-            continue
+        # Extrai CNPJs mencionados no texto do processo
+        texto = f"{objeto} {ementa}"
+        cnpjs = _extract_cnpjs(texto)
+        nomes_acusados = "; ".join(acus_by_nup.get(nup, []))
 
-        num_pas = aget(row, "NUM_PAS") or aget(row, "NUMPAS") or aget(row, "NUMERO_PAS")
-        proc    = proc_map.get(num_pas, {})
+        if not cnpjs:
+            # Sem CNPJ explícito — armazena sem vinculação por CNPJ
+            # Fica disponível para busca por razão social no connector
+            cnpjs = ["SEM_CNPJ"]
 
-        sancao     = aget(row, "DES_SANCAO") or aget(row, "SANCAO") or ""
-        val_multa  = aget(row, "VAL_MULTA") or aget(row, "VALOR_MULTA") or None
-
-        rec = {
-            "cpf_cnpj":              doc,
-            "nom_acusado":           aget(row, "NOM_ACUSADO") or aget(row, "NOME_ACUSADO") or "",
-            "num_pas":               num_pas,
-            "des_sancao":            sancao,
-            "val_multa":             val_multa or None,
-            "des_fase":              proc.get("des_fase", ""),
-            "des_tipo_irregularidade": proc.get("des_tipo_irregularidade", ""),
-            "dat_julgamento":        proc.get("dat_julgamento", "") or None,
-            "des_orgao_julgador":    proc.get("des_orgao_julgador", "CVM"),
-        }
-        batch.append(rec)
-        inserted += 1
+        for cnpj in cnpjs:
+            rec = {
+                "cpf_cnpj":              cnpj,
+                "nom_acusado":           nomes_acusados[:500],
+                "num_pas":               nup,
+                "des_sancao":            "",
+                "val_multa":             None,
+                "des_fase":              fase,
+                "des_tipo_irregularidade": ementa[:500] if ementa else objeto[:500],
+                "dat_julgamento":        dt_ab or None,
+                "des_orgao_julgador":    "CVM",
+            }
+            batch.append(rec)
+            inserted += 1
 
         if len(batch) >= BATCH_SIZE:
             _upsert(batch)
             batch.clear()
-            if inserted % 5_000 == 0:
-                logger.info("  %d CNPJs inseridos", inserted)
+            if inserted % 2_000 == 0:
+                logger.info("  %d linhas inseridas", inserted)
 
     if batch:
         _upsert(batch)
 
-    logger.info("Seed CVM PAS concluído: %d CNPJs de %d linhas de acusados", inserted, total)
+    logger.info("Seed CVM PAS concluído: %d linhas de %d processos", inserted, total)
 
 
 if __name__ == "__main__":
