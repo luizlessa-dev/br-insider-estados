@@ -37,6 +37,10 @@ from .lista_suja import ListaSujaConnector
 from .situacao_cadastral import SituacaoCadastralConnector
 from .bacen import BACENConnector
 from .mte_autos import MTEAutosConnector
+from .aneel import ANEELConnector
+from .ans import ANSConnector
+from .datajud import DataJudConnector
+from .tcu import TCUConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +67,10 @@ FONTES = [
     SituacaoCadastralConnector(), # Situação Cadastral RFB — ativo/suspenso/inapto/baixado
     BACENConnector(),          # BACEN — entidades supervisionadas (bancos, fintechs)
     MTEAutosConnector(),       # MTE — autos de infração trabalhista
+    ANEELConnector(),          # ANEEL — autos de infração setor elétrico
+    ANSConnector(),            # ANS — operadoras de plano de saúde (situação)
+    DataJudConnector(),        # DataJud/CNJ — falências e recuperações judiciais
+    TCUConnector(),            # TCU — certidão de regularidade + acórdãos (Playwright)
 ]
 
 
