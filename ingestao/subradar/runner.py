@@ -209,6 +209,17 @@ def main() -> None:
         if not args.cliente_id and not args.dry_run:
             print("--cliente-id obrigatório com --cnpj (exceto em --dry-run)")
             sys.exit(1)
+        from datetime import date, timedelta
+        from .dou import INLabsSession, SECOES, INLABS_EMAIL
+        if INLABS_EMAIL:
+            hoje = date.today()
+            datas_dou = [
+                (hoje - timedelta(days=d)).isoformat()
+                for d in range(30)
+                if (hoje - timedelta(days=d)).weekday() < 5
+            ][:20]
+            logger.info("DOU: pré-aquecendo cache...")
+            INLabsSession.warm_cache(datas_dou, SECOES)
         total = processar_cnpj(
             cnpj=args.cnpj,
             cliente_id=args.cliente_id or "00000000-0000-0000-0000-000000000000",
@@ -225,6 +236,20 @@ def main() -> None:
         return
 
     logger.info("Iniciando processamento de %d CNPJs", len(cnpjs))
+
+    # Pré-aquece cache DOU: baixa todos os ZIPs uma única vez para todos os CNPJs
+    from datetime import date, timedelta
+    from .dou import INLabsSession, SECOES, INLABS_EMAIL
+    if INLABS_EMAIL:
+        hoje = date.today()
+        datas_dou = [
+            (hoje - timedelta(days=d)).isoformat()
+            for d in range(30)
+            if (hoje - timedelta(days=d)).weekday() < 5
+        ][:20]
+        logger.info("DOU: pré-aquecendo cache (%d datas × %d seções)...", len(datas_dou), len(SECOES))
+        INLabsSession.warm_cache(datas_dou, SECOES)
+
     total_geral = 0
     for row in cnpjs:
         total_geral += processar_cnpj(

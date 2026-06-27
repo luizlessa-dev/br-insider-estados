@@ -84,6 +84,8 @@ class INLabsSession:
     """Gerencia cookie de sessão INLabs (singleton por processo)."""
     _session: requests.Session | None = None
     _logged_in: bool = False
+    # Cache de ZIPs já baixados nesta execução: (data, secao) → bytes
+    _zip_cache: dict[tuple[str, str], bytes | None] = {}
 
     @classmethod
     def get(cls) -> requests.Session:
@@ -117,7 +119,6 @@ class INLabsSession:
 
     @classmethod
     def refresh(cls) -> bool:
-        """Força novo login (chama a cada N downloads para evitar expiração de sessão)."""
         cls._logged_in = False
         return cls.login()
 
@@ -127,9 +128,35 @@ class INLabsSession:
             return cls.login()
         return True
 
+    @classmethod
+    def warm_cache(cls, datas: list[str], secoes: list[str]) -> None:
+        """Pré-baixa todos os ZIPs necessários uma única vez, cacheando em memória."""
+        if not cls.ensure_logged_in():
+            return
+        total = len(datas) * len(secoes)
+        baixados = 0
+        for data in datas:
+            for secao in secoes:
+                key = (data, secao)
+                if key in cls._zip_cache:
+                    continue
+                cls._zip_cache[key] = _download_zip_http(data, secao)
+                baixados += 1
+                if baixados % 10 == 0:
+                    logger.info("DOU cache: %d/%d ZIPs baixados", baixados, total)
+                time.sleep(0.2)
+        logger.info("DOU cache: %d ZIPs prontos", len(cls._zip_cache))
 
-def _download_zip(data: str, secao: str) -> bytes | None:
-    """Baixa o ZIP de uma seção do DOU para uma data (YYYY-MM-DD)."""
+    @classmethod
+    def get_zip(cls, data: str, secao: str) -> bytes | None:
+        key = (data, secao)
+        if key not in cls._zip_cache:
+            cls._zip_cache[key] = _download_zip_http(data, secao)
+        return cls._zip_cache[key]
+
+
+def _download_zip_http(data: str, secao: str) -> bytes | None:
+    """Baixa o ZIP de uma seção do DOU para uma data. Uso interno — prefira INLabsSession.get_zip()."""
     session = INLabsSession.get()
     filename = f"{data}-{secao}.zip"
     url = f"{INLABS_BASE}/index.php?p={data}&dl={filename}"
@@ -138,17 +165,15 @@ def _download_zip(data: str, secao: str) -> bytes | None:
         try:
             r = session.get(url, timeout=120, headers={"Referer": f"{INLABS_BASE}/index.php?p={data}"})
             if r.status_code == 404:
-                # Edição não existe (feriado, final de semana sem suplemento) — silencioso
                 logger.debug("DOU: %s %s não disponível (404)", data, secao)
                 return None
             if not r.ok:
                 logger.warning("DOU: download %s %s retornou %s", data, secao, r.status_code)
                 return None
-            # Verifica se é realmente um ZIP (não HTML de sessão expirada)
             if r.content[:4] == b"PK\x03\x04":
                 return r.content
             # Sessão expirou — re-login e retry
-            logger.debug("DOU: sessão expirada para %s %s — re-login (tentativa %d)", data, secao, attempt + 1)
+            logger.debug("DOU: sessão expirada para %s %s — re-login", data, secao)
             if not INLabsSession.refresh():
                 return None
         except Exception as e:
@@ -322,18 +347,14 @@ class DOUConnector(SubradarSource):
         datas = [
             (hoje - timedelta(days=d)).isoformat()
             for d in range(30)
-            if (hoje - timedelta(days=d)).weekday() < 5  # só dias úteis
-        ][:20]  # máximo 20 datas para controlar o custo
+            if (hoje - timedelta(days=d)).weekday() < 5
+        ][:20]
 
         todos_artigos = []
-        downloads_feitos = 0
         for data in datas:
-            # Re-login a cada 8 downloads para evitar expiração de sessão PHP
-            if downloads_feitos > 0 and downloads_feitos % 8 == 0:
-                INLabsSession.refresh()
             for secao in SECOES:
-                zip_bytes = _download_zip(data, secao)
-                downloads_feitos += 1
+                # Usa cache — ZIP já baixado por warm_cache() ou baixa agora
+                zip_bytes = INLabsSession.get_zip(data, secao)
                 if not zip_bytes:
                     continue
                 artigos = _extrair_artigos_com_cnpj(zip_bytes, cnpj_limpo, razao_social)
@@ -341,7 +362,6 @@ class DOUConnector(SubradarSource):
                     a["_data"] = data
                     a["_secao"] = secao
                 todos_artigos.extend(artigos)
-                time.sleep(0.3)  # evita sobrecarga no servidor
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, todos_artigos)
         if not mudou:
