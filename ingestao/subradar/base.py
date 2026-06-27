@@ -54,6 +54,14 @@ def _supabase_headers() -> dict:
     }
 
 
+def _normalize_rows(rows: list[dict]) -> list[dict]:
+    """Garante que todos os dicts no batch tenham exatamente as mesmas chaves (PGRST102)."""
+    all_keys = set()
+    for r in rows:
+        all_keys.update(r.keys())
+    return [{k: r.get(k) for k in all_keys} for r in rows]
+
+
 def upsert(table: str, rows: list[dict]) -> None:
     if not rows:
         return
@@ -63,7 +71,7 @@ def upsert(table: str, rows: list[dict]) -> None:
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     chunk = 500
     for i in range(0, len(rows), chunk):
-        batch = [_jsonable(r) for r in rows[i : i + chunk]]
+        batch = [_jsonable(r) for r in _normalize_rows(rows[i : i + chunk])]
         for attempt in range(5):
             try:
                 # sub_snapshots: unique (cnpj, ciclo, fonte) — usa on_conflict para ignorar duplicatas
