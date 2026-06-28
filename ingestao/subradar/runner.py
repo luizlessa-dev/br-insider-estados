@@ -237,11 +237,13 @@ def processar_cnpj(cnpj: str, cliente_id: str, razao_social: str | None, dry_run
     os.makedirs(pdf_dir, exist_ok=True)
     try:
         from .pdf import gerar_dossie as _gerar_pdf
+        from .pdf_upload import upload_pdf as _upload_pdf
         pdf_path = _gerar_pdf(dossie_id, output_dir=pdf_dir)
         if pdf_path:
             logger.info("%s: PDF gerado → %s", cnpj, pdf_path)
+            _upload_pdf(pdf_path)
     except Exception as e:
-        logger.warning("%s: falha ao gerar PDF (não bloqueante): %s", cnpj, e)
+        logger.warning("%s: falha ao gerar/upload PDF (não bloqueante): %s", cnpj, e)
 
     logger.info("%s: %d alertas gravados (dossiê %s)", cnpj, len(todos_alertas), dossie_id)
     return len(todos_alertas)
