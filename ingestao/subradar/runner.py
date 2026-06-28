@@ -56,6 +56,10 @@ from .susep import SUSEPConnector
 from .anp import ANPConnector
 from .antaq import ANTAQConnector
 from .jucesp import JUCESPConnector
+from .sicaf import SICAFConnector
+from .previc import PREVICConnector
+from .anac import ANACConnector
+from .ana import ANAConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,6 +105,10 @@ FONTES = [
     ANPConnector(),               # ANP — multas e processos sancionadores (CSV, 12h)
     ANTAQConnector(),             # ANTAQ — processos sancionadores aquaviários (CSV, 12h)
     JUCESPConnector(),            # JUCESP/RFB — mudanças societárias relevantes (snapshot diff)
+    SICAFConnector(),             # SICAF — fornecedores impedidos/suspensos para contratos federais
+    PREVICConnector(),            # PREVIC — medidas administrativas em fundos de pensão
+    ANACConnector(),              # ANAC — infrações e sanções em aviação civil
+    ANAConnector(),               # ANA — sanções em recursos hídricos e saneamento
 ]
 
 
