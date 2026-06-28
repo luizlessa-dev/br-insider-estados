@@ -46,6 +46,7 @@ from .anatel import ANATELConnector
 from .protestos import ProtestosConnector
 from .ofac import OFACConnector
 from .uk_sanctions import UKSanctionsConnector
+from .protestos_nacional import ProtestosNacionalConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,8 +79,9 @@ FONTES = [
     TCUConnector(),            # TCU — certidão de regularidade + acórdãos (Playwright)
     ANTTConnector(),           # ANTT — habilitação transporte rodoviário interestadual
     ANATELConnector(),         # ANATEL — sanções administrativas e processos sancionadores
-    ProtestosConnector(),      # Protestos — CENPROT-SP (cobertura estado de SP)
-    OFACConnector(),           # OFAC SDN — sanções EUA (XML oficial, diário)
+    ProtestosConnector(),         # Protestos — CENPROT-SP (cobertura SP, gratuito, scraping)
+    ProtestosNacionalConnector(), # Protestos — Direct Data/IEPTB (cobertura nacional, pago, DIRECT_DATA_TOKEN)
+    OFACConnector(),              # OFAC SDN — sanções EUA (XML oficial, diário)
     UKSanctionsConnector(),    # UK Sanctions List — FCDO (CSV oficial, contínuo)
 ]
 
