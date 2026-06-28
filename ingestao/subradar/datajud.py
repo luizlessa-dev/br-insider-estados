@@ -33,27 +33,46 @@ logger = logging.getLogger("subradar.datajud")
 DATAJUD_KEY  = os.environ.get("DATAJUD_API_KEY", "")
 DATAJUD_BASE = "https://api-publica.datajud.cnj.jus.br"
 
-# Índices de tribunais (um por tribunal — consultamos em paralelo os maiores)
+# Índices de tribunais — cobertura ampliada (top 16 por volume + todos TRFs)
 INDICES = [
-    "api_publica_tjsp",   # SP — maior volume de falências
-    "api_publica_tjrj",
-    "api_publica_tjmg",
-    "api_publica_tjrs",
-    "api_publica_tjpr",
-    "api_publica_tjba",
-    "api_publica_trf1",   # federal 1ª região
-    "api_publica_trf2",
-    "api_publica_trf3",
-    "api_publica_trf4",
+    # Estaduais — maior volume de falências e execuções fiscais
+    "api_publica_tjsp",   # SP
+    "api_publica_tjrj",   # RJ
+    "api_publica_tjmg",   # MG
+    "api_publica_tjrs",   # RS
+    "api_publica_tjpr",   # PR
+    "api_publica_tjba",   # BA
+    "api_publica_tjsc",   # SC
+    "api_publica_tjgo",   # GO
+    "api_publica_tjpe",   # PE
+    "api_publica_tjce",   # CE
+    "api_publica_tjdf",   # DF
+    "api_publica_tjmt",   # MT
+    "api_publica_tjms",   # MS
+    "api_publica_tjam",   # AM
+    "api_publica_tjpa",   # PA
+    "api_publica_tjma",   # MA
+    # Federais — execuções fiscais da União
+    "api_publica_trf1",   # 1ª região (DF, MG, GO, MT, PA, AM, etc.)
+    "api_publica_trf2",   # 2ª região (RJ, ES)
+    "api_publica_trf3",   # 3ª região (SP, MS)
+    "api_publica_trf4",   # 4ª região (RS, PR, SC)
+    "api_publica_trf5",   # 5ª região (PE, CE, BA, SE, AL, RN, PB)
+    "api_publica_trf6",   # 6ª região (MG — criado 2022)
+    # Superior
+    "api_publica_stj",    # STJ — recursos em processos falimentares relevantes
 ]
 
-# Códigos de classe CNJ relevantes para compliance
+# Códigos de classe CNJ relevantes para compliance (expandido)
 CLASSES_INTERESSE = {
     "1116": "Falência",
     "1294": "Recuperação Judicial",
     "1295": "Recuperação Extrajudicial",
     "1296": "Insolvência Civil",
     "436":  "Execução Fiscal",
+    "1201": "Liquidação Extrajudicial",
+    "109":  "Ação Penal — Procedimento Ordinário",  # crimes econômicos
+    "241":  "Improbidade Administrativa",
 }
 
 

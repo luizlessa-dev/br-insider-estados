@@ -41,6 +41,11 @@ from .aneel import ANEELConnector
 from .ans import ANSConnector
 from .datajud import DataJudConnector
 from .tcu import TCUConnector
+from .antt import ANTTConnector
+from .anatel import ANATELConnector
+from .protestos import ProtestosConnector
+from .ofac import OFACConnector
+from .uk_sanctions import UKSanctionsConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,8 +74,13 @@ FONTES = [
     MTEAutosConnector(),       # MTE — autos de infração trabalhista
     ANEELConnector(),          # ANEEL — autos de infração setor elétrico
     ANSConnector(),            # ANS — operadoras de plano de saúde (situação)
-    DataJudConnector(),        # DataJud/CNJ — falências e recuperações judiciais
+    DataJudConnector(),        # DataJud/CNJ — falências, RJ, execuções fiscais, improbidade
     TCUConnector(),            # TCU — certidão de regularidade + acórdãos (Playwright)
+    ANTTConnector(),           # ANTT — habilitação transporte rodoviário interestadual
+    ANATELConnector(),         # ANATEL — sanções administrativas e processos sancionadores
+    ProtestosConnector(),      # Protestos — CENPROT-SP (cobertura estado de SP)
+    OFACConnector(),           # OFAC SDN — sanções EUA (XML oficial, diário)
+    UKSanctionsConnector(),    # UK Sanctions List — FCDO (CSV oficial, contínuo)
 ]
 
 
