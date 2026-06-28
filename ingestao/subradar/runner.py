@@ -60,6 +60,7 @@ from .sicaf import SICAFConnector
 from .previc import PREVICConnector
 from .anac import ANACConnector
 from .ana import ANAConnector
+from .escavador import EscavadorConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -109,6 +110,7 @@ FONTES = [
     PREVICConnector(),            # PREVIC — medidas administrativas em fundos de pensão
     ANACConnector(),              # ANAC — infrações e sanções em aviação civil
     ANAConnector(),               # ANA — sanções em recursos hídricos e saneamento
+    EscavadorConnector(),         # Escavador — processos judiciais nacionais (ESCAVADOR_API_KEY)
 ]
 
 
