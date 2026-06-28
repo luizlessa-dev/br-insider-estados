@@ -47,6 +47,15 @@ from .protestos import ProtestosConnector
 from .ofac import OFACConnector
 from .uk_sanctions import UKSanctionsConnector
 from .protestos_nacional import ProtestosNacionalConnector
+from .eu_sanctions import EUSanctionsConnector
+from .un_sanctions import UNSanctionsConnector
+from .worldbank_debarment import WorldBankDebarmentConnector
+from .cade import CADEConnector
+from .procon import PROCONConnector
+from .susep import SUSEPConnector
+from .anp import ANPConnector
+from .antaq import ANTAQConnector
+from .jucesp import JUCESPConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,7 +91,16 @@ FONTES = [
     ProtestosConnector(),         # Protestos — CENPROT-SP (cobertura SP, gratuito, scraping)
     ProtestosNacionalConnector(), # Protestos — Direct Data/IEPTB (cobertura nacional, pago, DIRECT_DATA_TOKEN)
     OFACConnector(),              # OFAC SDN — sanções EUA (XML oficial, diário)
-    UKSanctionsConnector(),    # UK Sanctions List — FCDO (CSV oficial, contínuo)
+    UKSanctionsConnector(),       # UK Sanctions List — FCDO (CSV oficial, contínuo)
+    EUSanctionsConnector(),       # EU Financial Sanctions — Comissão Europeia (XML, 6h)
+    UNSanctionsConnector(),       # UN SC Consolidated List — ONU (XML, 6h)
+    WorldBankDebarmentConnector(), # World Bank Debarment — OpenSanctions (CSV, 12h)
+    CADEConnector(),              # CADE — contencioso antitruste (CSV, 24h)
+    PROCONConnector(),            # PROCON/SINDEC — reclamações fundamentadas (CSV, 24h)
+    SUSEPConnector(),             # SUSEP — corretoras/sociedades irregulares (CSV, 12h)
+    ANPConnector(),               # ANP — multas e processos sancionadores (CSV, 12h)
+    ANTAQConnector(),             # ANTAQ — processos sancionadores aquaviários (CSV, 12h)
+    JUCESPConnector(),            # JUCESP/RFB — mudanças societárias relevantes (snapshot diff)
 ]
 
 
