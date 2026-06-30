@@ -35,18 +35,25 @@ logger = logging.getLogger("subradar.escavador")
 ESCAVADOR_KEY  = os.environ.get("ESCAVADOR_API_KEY", "")
 ESCAVADOR_BASE = "https://api.escavador.com/api/v2"
 
-# Classes CNJ → severidade
-_CRITICO = {"1116", "1294", "1295", "1296"}   # Falência, RJ, RE, Insolvência Civil
-_ATENCAO = {"436", "241", "109"}               # Exec. Fiscal, Improbidade, Ação Penal
+# Palavras-chave no título do processo → severidade
+# (a API v2 /envolvido/processos não retorna classe CNJ — usamos título e tribunal)
+_CRITICO_KW = [
+    "falência", "falencia", "recuperação judicial", "recuperacao judicial",
+    "recuperação extrajudicial", "recuperacao extrajudicial", "insolvência", "insolvencia",
+]
+_ATENCAO_KW = [
+    "execução fiscal", "execucao fiscal", "improbidade", "ação penal", "acao penal",
+    "execução trabalhista", "execucao trabalhista",
+]
 
-_CLASSE_NOME = {
-    "1116": "Falência",
-    "1294": "Recuperação Judicial",
-    "1295": "Recuperação Extrajudicial",
-    "1296": "Insolvência Civil",
-    "436":  "Execução Fiscal",
-    "241":  "Improbidade Administrativa",
-    "109":  "Ação Penal",
+# Siglas de tribunal → categoria legível
+_TRIB_CAT = {
+    "TRT": "Trabalhista",
+    "TRF": "Federal",
+    "TJ":  "Estadual",
+    "TST": "Trabalhista (TST)",
+    "STJ": "Superior",
+    "STF": "Supremo",
 }
 
 
@@ -79,7 +86,7 @@ def _buscar_processos(cnpj_digits: str) -> list[dict]:
         try:
             r = requests.get(
                 f"{ESCAVADOR_BASE}/envolvido/processos",
-                params={"cpf_cnpj": cnpj_digits, "page": page, "per_page": 50},
+                params={"cpf_cnpj": cnpj_digits, "page": page, "limit": 50},
                 headers=_headers(),
                 timeout=30,
             )
@@ -119,35 +126,48 @@ def _buscar_processos(cnpj_digits: str) -> list[dict]:
     return todos
 
 
-def _severidade(classe_codigo: str) -> str:
-    if classe_codigo in _CRITICO:
+def _severidade_por_titulo(titulo: str) -> str:
+    t = titulo.lower()
+    if any(kw in t for kw in _CRITICO_KW):
         return "critico"
-    if classe_codigo in _ATENCAO:
+    if any(kw in t for kw in _ATENCAO_KW):
         return "atencao"
     return "info"
 
 
-def _montar_alerta(processo: dict, cnpj_fmt: str, ciclo: str) -> dict:
-    num    = processo.get("numero_cnj") or processo.get("numero") or "N/D"
-    classe = processo.get("classe") or {}
-    cod    = str(classe.get("codigo") or "")
-    nome   = classe.get("nome") or _CLASSE_NOME.get(cod, "Processo Judicial")
-    trib   = (processo.get("tribunal") or {}).get("sigla") or "N/D"
-    dt_upd = (processo.get("data_ultima_movimentacao") or "")[:10]
-    sev    = _severidade(cod)
+def _tribunal_sigla(processo: dict) -> str:
+    """Extrai sigla do tribunal da lista de fontes ou unidade_origem."""
+    fontes = processo.get("fontes") or []
+    if fontes:
+        return fontes[0].get("sigla") or "N/D"
+    unidade = processo.get("unidade_origem") or {}
+    return unidade.get("tribunal_sigla") or "N/D"
 
-    ultima_mov = ""
-    movs = processo.get("movimentacoes") or []
-    if movs:
-        ultima_mov = (movs[0].get("descricao") or "")[:200]
+
+def _categoria_tribunal(sigla: str) -> str:
+    for prefixo, cat in _TRIB_CAT.items():
+        if sigla.startswith(prefixo):
+            return cat
+    return "Judicial"
+
+
+def _montar_alerta(processo: dict, cnpj_fmt: str, ciclo: str) -> dict:
+    num    = processo.get("numero_cnj") or "N/D"
+    trib   = _tribunal_sigla(processo)
+    cat    = _categoria_tribunal(trib)
+    dt_upd = (processo.get("data_ultima_movimentacao") or "")[:10]
+    polo_a = processo.get("titulo_polo_ativo") or ""
+    polo_p = processo.get("titulo_polo_passivo") or ""
+
+    # Monta título descritivo com polos
+    titulo_processo = f"Processo Judicial — {cat} — {trib}"
+    sev = _severidade_por_titulo(polo_a + " " + polo_p + " " + trib)
 
     descricao = (
-        f"Processo {num} identificado pelo Escavador. "
-        f"Tribunal: {trib}. "
-        f"Última atualização: {dt_upd or 'N/D'}."
+        f"Processo {num}. Tribunal: {trib}. "
+        f"Polo ativo: {polo_a or 'N/D'}. Polo passivo: {polo_p or 'N/D'}. "
+        f"Última movimentação: {dt_upd or 'N/D'}."
     )
-    if ultima_mov:
-        descricao += f" Última movimentação: {ultima_mov}."
 
     return {
         "cnpj": cnpj_fmt,
@@ -155,11 +175,11 @@ def _montar_alerta(processo: dict, cnpj_fmt: str, ciclo: str) -> dict:
         "fonte": "escavador",
         "categoria": "judicial",
         "severidade": sev,
-        "titulo": f"Escavador — {nome} — {trib} — {num}",
+        "titulo": f"Escavador — {titulo_processo} — {num}",
         "descricao": descricao,
         "referencia_id": num,
         "data_evento": dt_upd or None,
-        "url_fonte": f"https://www.escavador.com/processos/{num.replace('.', '').replace('/', '-').replace('-', '')}",
+        "url_fonte": f"https://www.escavador.com/processos/{num.replace('.', '').replace('/', '-')}",
         "is_novo": True,
     }
 
