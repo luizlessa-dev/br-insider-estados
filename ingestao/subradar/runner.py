@@ -61,6 +61,8 @@ from .previc import PREVICConnector
 from .anac import ANACConnector
 from .ana import ANAConnector
 from .escavador import EscavadorConnector
+from .opensanctions_pro import OpenSanctionsProConnector
+from .directdata import DirectDataConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -111,6 +113,8 @@ FONTES = [
     ANACConnector(),              # ANAC — infrações e sanções em aviação civil
     ANAConnector(),               # ANA — sanções em recursos hídricos e saneamento
     EscavadorConnector(),         # Escavador — processos judiciais nacionais (ESCAVADOR_API_KEY)
+    OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
+    DirectDataConnector(),        # Direct Data — dossiê PJ agregado (DIRECT_DATA_TOKEN + DIRECT_DATA_TEMPLATE)
 ]
 
 
