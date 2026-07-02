@@ -109,7 +109,7 @@ def _classificar(chave: str) -> tuple[str, str]:
 
 def _processar_dossie(cnpj_digits: str, session) -> str | None:
     """
-    Inicia o processamento do dossiê. Retorna o dossierProcessId (UUID).
+    Inicia o processamento do dossiê. Retorna o dossieID (ex: DS-xxxxxxxx).
     """
     r = session.post(
         f"{DD_BASE}/api/Dossier/Process",
@@ -130,50 +130,59 @@ def _processar_dossie(cnpj_digits: str, session) -> str | None:
         logger.warning("Direct Data: dossierProcesses vazio")
         return None
 
-    return processos[0].get("id") or processos[0].get("dossierProcessId")
+    # A API retorna dossieID (ex: DS-a712b92c), não dossierProcessId
+    return processos[0].get("dossieID") or processos[0].get("id")
 
 
-def _aguardar_conclusao(process_id: str, session) -> bool:
+def _aguardar_conclusao(dossie_id: str, session) -> bool:
     """
-    Poll de status até concluído ou timeout.
-    Retorna True se concluído com sucesso.
+    Poll via History até situationType = Concluído ou timeout.
+    O endpoint /Status retorna 405 — a alternativa é History com filtro por guid.
     """
     for tentativa in range(_POLL_MAX):
         time.sleep(_POLL_INTERVAL)
         try:
             r = session.post(
-                f"{DD_BASE}/api/Dossier/Status",
-                json={"id": process_id},
+                f"{DD_BASE}/api/Dossier/History",
+                json={"id": dossie_id, "take": 1},
                 headers=_headers(),
                 timeout=15,
             )
             r.raise_for_status()
             data = r.json()
         except Exception as e:
-            logger.warning("Direct Data Status erro (tentativa %d): %s", tentativa + 1, e)
+            logger.warning("Direct Data History erro (tentativa %d): %s", tentativa + 1, e)
             continue
 
-        status = (data.get("status") or "").lower()
-        if "conclu" in status or "success" in status or "ok" in status:
+        histories = data.get("histories", [])
+        if not histories:
+            logger.debug("Direct Data: aguardando (tentativa %d, sem histórico ainda)", tentativa + 1)
+            continue
+
+        situacao = (histories[0].get("situationType") or {}).get("result", "").lower()
+        resultado = (histories[0].get("resultType") or {}).get("result", "").lower()
+
+        if "conclu" in situacao or "finaliz" in resultado:
             return True
-        if "erro" in status or "falh" in status or "error" in status:
-            logger.warning("Direct Data: dossiê falhou com status '%s'", status)
+        if any(s in situacao for s in ("erro", "falh", "saldo insuf", "indispon")):
+            logger.warning("Direct Data: dossiê não processado — situação='%s'", situacao)
             return False
 
-        logger.debug("Direct Data: aguardando (tentativa %d, status=%s)", tentativa + 1, status)
+        logger.debug("Direct Data: aguardando (tentativa %d, situação=%s)", tentativa + 1, situacao)
 
-    logger.warning("Direct Data: timeout aguardando dossiê %s", process_id)
+    logger.warning("Direct Data: timeout aguardando dossiê %s", dossie_id)
     return False
 
 
-def _buscar_detalhes(process_id: str, session) -> dict:
+def _buscar_detalhes(dossie_id: str, session) -> dict:
     """
-    Busca o resultado completo do dossiê.
+    Busca resultado completo via GET /Dossier/Full-Details?dossieID=...
     """
-    r = session.post(
+    headers = {k: v for k, v in _headers().items() if k != "Content-Type"}
+    r = session.get(
         f"{DD_BASE}/api/Dossier/Full-Details",
-        json={"id": process_id},
-        headers=_headers(),
+        params={"dossieID": dossie_id},
+        headers=headers,
         timeout=30,
     )
     r.raise_for_status()
@@ -186,64 +195,53 @@ def _buscar_detalhes(process_id: str, session) -> dict:
 
 def _extrair_alertas(detalhes: dict, cnpj_fmt: str, ciclo: str) -> list[dict]:
     """
-    Percorre as seções do dossiê e gera alertas para qualquer achado relevante.
-    A estrutura exata depende do template — adicionamos suporte genérico por ora
-    e refinamos após o primeiro teste com CNPJ real.
+    Estrutura real da API Full-Details:
+    {
+      "summary": { "status": "Alerta", ... },
+      "details": [
+        {
+          "nameAPI": "PGFN - Lista de Devedores",
+          "moduleName": "Sanções e Restrições",
+          "statusPriority": "Alerta",   ← "Regular" = sem ocorrência
+          "alertList": [{"fieldName": "Flag Dívida", "value": "true"}],
+          "object": { ... dados brutos ... }
+        }, ...
+      ]
+    }
     """
     alertas = []
+    details = detalhes.get("details", [])
 
-    # O resultado pode vir em "dossier", "data", "retorno" ou direto
-    corpo = (
-        detalhes.get("dossier")
-        or detalhes.get("data")
-        or detalhes.get("retorno")
-        or detalhes
-    )
+    for item in details:
+        prioridade = (item.get("statusPriority") or "").lower()
+        if prioridade in ("regular", ""):
+            continue  # sem ocorrência
 
-    # Percorre todas as chaves de 1º nível buscando listas de registros
-    for chave, valor in corpo.items():
-        if not isinstance(valor, (dict, list)):
-            continue
+        nome_api    = item.get("nameAPI", "")
+        modulo      = item.get("moduleName", "")
+        alert_list  = item.get("alertList", [])
+        sev, cat    = _classificar(f"{nome_api} {modulo}")
 
-        registros = valor if isinstance(valor, list) else [valor]
+        # Monta descrição a partir dos campos de alertList
+        campos = "; ".join(
+            f"{al.get('fieldName','')}: {al.get('value','')}"
+            for al in alert_list
+            if al.get("value") not in (None, "", "false", "False")
+        )
+        if not campos:
+            campos = f"Ocorrência identificada em {nome_api}"
 
-        for reg in registros:
-            if not isinstance(reg, dict):
-                continue
-
-            # Indicadores de "nada encontrado"
-            status_reg = str(reg.get("status", "")).lower()
-            if any(s in status_reg for s in ["não consta", "nao consta", "sem ocorrência", "regular"]):
-                continue
-            if reg.get("totalPendencia") == 0 and not reg.get("pendencias"):
-                continue
-
-            sev, cat = _classificar(chave)
-            titulo = reg.get("titulo") or reg.get("descricao") or chave
-            descricao = (
-                reg.get("descricao")
-                or reg.get("observacao")
-                or reg.get("mensagem")
-                or f"Registro encontrado em '{chave}'"
-            )
-            ref_id = (
-                reg.get("id")
-                or reg.get("numero")
-                or reg.get("protocolo")
-                or reg.get("consultaUid")
-            )
-
-            alertas.append({
-                "cnpj":          cnpj_fmt,
-                "ciclo":         ciclo,
-                "fonte":         "directdata",
-                "categoria":     cat,
-                "severidade":    sev,
-                "titulo":        f"Direct Data — {titulo}",
-                "descricao":     str(descricao)[:2000],
-                "referencia_id": str(ref_id) if ref_id else None,
-                "is_novo":       True,
-            })
+        alertas.append({
+            "cnpj":          cnpj_fmt,
+            "ciclo":         ciclo,
+            "fonte":         "directdata",
+            "categoria":     cat,
+            "severidade":    sev,
+            "titulo":        f"Direct Data — {nome_api}",
+            "descricao":     campos[:2000],
+            "referencia_id": item.get("apiid"),
+            "is_novo":       True,
+        })
 
     return alertas
 
