@@ -1,0 +1,51 @@
+name: Ingestão SENAR — Contratos, Licitações e Transferências
+
+# Cadência: mensal, dia 9 às 08:00 UTC (05:00 BRT).
+# Fonte: app3.cna.org.br/transparencia — CSV público (sem autenticação)
+# Cobertura: SENAR nacional, ~9 períodos trimestrais + anos (2024–atual)
+# Tempo estimado: ~5 minutos
+
+on:
+  schedule:
+    - cron: "0 8 9 * *"
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Modo de execução: all | extract | load"
+        default: "all"
+
+concurrency:
+  group: ingest-senar
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      SUPABASE_URL:                       ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:          ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      INTERNAL_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.INTERNAL_SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingestao/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Ingerir SENAR
+        run: |
+          MODO="${{ github.event.inputs.modo || 'all' }}"
+          python -m ingestao.senar_connector "$MODO"
+
+      - name: Notificar falha
+        if: failure()
+        run: |
+          echo "::error::Falha na ingestão SENAR — verificar logs acima."
