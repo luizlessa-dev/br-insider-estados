@@ -1,0 +1,52 @@
+name: Ingestão SENAC — Contratos, Parcerias e Licitações
+
+# Cadência: mensal, dia 11 às 08:00 UTC (05:00 BRT).
+# Fonte: transparencia.senac.br — API JSON pública (sem autenticação)
+# Regionais: DN + 27 DRs estaduais (28 regionais)
+# Endpoints: /service/api/contratos-parcerias?regional=* e /service/api/licitacoes/regional/*
+# Tempo estimado: ~5 minutos (56 requisições)
+
+on:
+  schedule:
+    - cron: "0 8 11 * *"
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Modo de execução: all | extract | load"
+        default: "all"
+
+concurrency:
+  group: ingest-senac
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      SUPABASE_URL:                       ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:          ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      INTERNAL_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.INTERNAL_SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingestao/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Ingerir SENAC
+        run: |
+          MODO="${{ github.event.inputs.modo || 'all' }}"
+          python -m ingestao.senac_connector "$MODO"
+
+      - name: Notificar falha
+        if: failure()
+        run: |
+          echo "::error::Falha na ingestão SENAC — verificar logs acima."
