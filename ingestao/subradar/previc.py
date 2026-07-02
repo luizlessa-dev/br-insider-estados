@@ -93,8 +93,12 @@ def _load_previc() -> dict[str, list[dict]]:
 
     csv_url = _discover_csv_url()
     if not csv_url:
-        logger.warning("PREVIC: não foi possível descobrir URL do CSV")
+        logger.warning(
+            "PREVIC: portal dadosabertos.previc.gov.br offline (HTTP 503 em jul/2026). "
+            "Retornando vazio — próxima tentativa em 1h."
+        )
         _cache_index = _cache_index or {}
+        _cache_ts = now - _CACHE_TTL + 3600  # retry em 1h, não 24h
         return _cache_index
 
     logger.info("PREVIC: baixando dataset de medidas administrativas…")

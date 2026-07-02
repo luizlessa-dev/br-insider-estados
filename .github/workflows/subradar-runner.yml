@@ -2,7 +2,7 @@ name: Subradar — Monitoramento de Compliance (mensal)
 
 on:
   schedule:
-    - cron: "0 6 1 * *"   # dia 1 de cada mês, 06:00 UTC (03:00 BRT)
+    - cron: "0 6 * * 1"   # toda segunda-feira, 06:00 UTC (03:00 BRT)
   workflow_dispatch:
     inputs:
       cnpj:
@@ -27,6 +27,9 @@ jobs:
       PORTAL_TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
       TRANSPARENCIA_API_KEY: ${{ secrets.PORTAL_TRANSPARENCIA_API_KEY }}
       OPENSANCTIONS_API_KEY: ${{ secrets.OPENSANCTIONS_API_KEY }}
+      OPENSANCTIONS_PRO_KEY: ${{ secrets.OPENSANCTIONS_PRO_KEY }}
+      DIRECT_DATA_TOKEN: ${{ secrets.DIRECT_DATA_TOKEN }}
+      DIRECT_DATA_TEMPLATE: ${{ secrets.DIRECT_DATA_TEMPLATE }}
       INLABS_EMAIL: ${{ secrets.INLABS_EMAIL }}
       INLABS_PASSWORD: ${{ secrets.INLABS_PASSWORD }}
       DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}

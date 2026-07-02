@@ -69,7 +69,21 @@ def _load_uk() -> dict[str, list[dict]]:
     index: dict[str, list[dict]] = {}
 
     try:
-        reader = csv.DictReader(io.StringIO(content))
+        # O CSV da FCDO inclui uma linha extra antes do header real:
+        #   Line 0: "Report Date: DD-Mon-YYYY"
+        #   Line 1: header real (Last Updated, Unique ID, ...)
+        # csv.DictReader leria a linha 0 como header, gerando chaves None.
+        lines = content.splitlines()
+        # Descarta linhas que não são o header real (não começam com "Last Updated" ou similar)
+        header_idx = 0
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("Last Updated") or stripped.startswith("Unique ID"):
+                header_idx = i
+                break
+        content_clean = "\n".join(lines[header_idx:])
+
+        reader = csv.DictReader(io.StringIO(content_clean))
         for row in reader:
             # Normaliza chaves
             r = {k.strip().lower().replace(" ", "_"): (v or "").strip() for k, v in row.items()}

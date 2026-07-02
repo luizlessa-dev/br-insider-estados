@@ -26,7 +26,18 @@ from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
 
 logger = logging.getLogger("subradar.antt")
 
-ANTT_CSV_URL = "https://dados.antt.gov.br/dataset/3028a2b2-d6d3-4484-852d-d9e700c5b08c/resource/0a28c9b6-59f1-44ef-9987-a61afd85ba1a/download/empresas-habilitadas.csv"
+# Dataset ID novo (mudou em 2024; URL antiga retorna 404)
+_ANTT_DATASET_ID = "c7edbb2b-a6ea-49d9-b807-0db8f336022b"
+_ANTT_CKAN = f"https://dados.antt.gov.br/api/3/action/package_show?id={_ANTT_DATASET_ID}"
+
+# Fallbacks hardcoded — atualizados jun/2026
+# Estrutura: razao_social;cnpj;numero_tar;vigencia
+_ANTT_CSV_FALLBACKS = [
+    # Transporte regular (maior base, ~50k empresas)
+    "https://dados.antt.gov.br/dataset/c7edbb2b-a6ea-49d9-b807-0db8f336022b/resource/34732a04-28a9-4a21-9a87-fa98a4017b9f/download/empresas_habilitadas_regular.csv",
+    # Fretamento (complementar)
+    "https://dados.antt.gov.br/dataset/c7edbb2b-a6ea-49d9-b807-0db8f336022b/resource/9b922503-b676-48dd-bc9a-49c20b37027e/download/empresas_habilitadas_fretamento_06_2023.csv",
+]
 
 # Cache global do CSV (carregado uma vez por execução)
 _cache: dict[str, dict] | None = None
@@ -43,33 +54,30 @@ def _fmt(cnpj: str) -> str:
     return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:14]}" if len(c) == 14 else cnpj
 
 
-def _load_csv() -> dict[str, dict]:
-    """Baixa e indexa o CSV da ANTT por CNPJ (sem pontuação)."""
-    global _cache, _cache_ts
-    if _cache is not None and time.monotonic() - _cache_ts < _CACHE_TTL:
-        return _cache
-
-    logger.info("ANTT: baixando CSV de empresas habilitadas…")
+def _descobrir_urls_antt() -> list[str]:
+    """Tenta descobrir URLs atuais via CKAN API; usa fallbacks se falhar."""
     try:
-        resp = requests.get(ANTT_CSV_URL, timeout=60, headers={
+        r = requests.get(_ANTT_CKAN, timeout=15, headers={
             "User-Agent": "Subradar/1.0 (dados-publicos; contato@subradar.com.br)"
         })
-        resp.raise_for_status()
-        # Tenta detectar encoding
-        content = resp.content.decode("latin-1", errors="replace")
-    except Exception as e:
-        logger.error("ANTT: falha ao baixar CSV: %s", e)
-        _cache = _cache or {}
-        return _cache
+        if r.ok:
+            resources = r.json().get("result", {}).get("resources", [])
+            urls = [
+                res["url"] for res in resources
+                if res.get("url", "").endswith(".csv") and "habilitad" in res.get("url", "").lower()
+            ]
+            if urls:
+                return urls
+    except Exception:
+        pass
+    return _ANTT_CSV_FALLBACKS
 
-    index: dict[str, dict] = {}
+
+def _parse_antt_csv(content: str, index: dict) -> int:
+    """Parseia um CSV ANTT e adiciona entradas ao index. Retorna linhas adicionadas."""
     lines = content.splitlines()
     if not lines:
-        _cache = index
-        _cache_ts = time.monotonic()
-        return index
-
-    # Detecta separador (;  ou ,)
+        return 0
     sep = ";" if ";" in lines[0] else ","
     header = [h.strip().lower() for h in lines[0].split(sep)]
 
@@ -82,6 +90,7 @@ def _load_csv() -> dict[str, dict]:
                 continue
         return ""
 
+    added = 0
     for line in lines[1:]:
         row = line.split(sep)
         cnpj_raw = col(row, "cnpj", "nr_cnpj", "nu_cnpj")
@@ -90,17 +99,46 @@ def _load_csv() -> dict[str, dict]:
         cnpj_digits = _strip(cnpj_raw)
         if len(cnpj_digits) != 14:
             continue
+        # Novo formato: razao_social;cnpj;numero_tar;vigencia
+        # Antigo formato: razao_social;cnpj;regime;situacao;modalidade;validade
         index[cnpj_digits] = {
             "razao_social": col(row, "razao_social", "nm_empresa", "nome_empresa"),
-            "regime": col(row, "regime", "tipo_regime", "ds_regime"),
-            "situacao": col(row, "situacao", "ds_situacao", "situacao_habilitacao"),
-            "modalidade": col(row, "modalidade", "ds_modalidade"),
-            "validade": col(row, "validade", "dt_validade", "data_validade"),
+            "regime":       col(row, "regime", "tipo_regime", "ds_regime"),
+            "situacao":     col(row, "situacao", "ds_situacao", "situacao_habilitacao"),
+            "modalidade":   col(row, "modalidade", "ds_modalidade"),
+            "validade":     col(row, "validade", "vigencia", "dt_validade", "data_validade"),
+            "numero_tar":   col(row, "numero_tar", "tar"),
         }
+        added += 1
+    return added
+
+
+def _load_csv() -> dict[str, dict]:
+    """Baixa e indexa os CSVs da ANTT por CNPJ (sem pontuação)."""
+    global _cache, _cache_ts
+    if _cache is not None and time.monotonic() - _cache_ts < _CACHE_TTL:
+        return _cache
+
+    urls = _descobrir_urls_antt()
+    index: dict[str, dict] = {}
+
+    for url in urls:
+        logger.info("ANTT: baixando %s", url.split("/")[-1])
+        try:
+            resp = requests.get(url, timeout=60, headers={
+                "User-Agent": "Subradar/1.0 (dados-publicos; contato@subradar.com.br)"
+            })
+            resp.raise_for_status()
+            content = resp.content.decode("latin-1", errors="replace")
+            added = _parse_antt_csv(content, index)
+            logger.info("ANTT: +%d empresas de %s", added, url.split("/")[-1])
+        except Exception as e:
+            logger.error("ANTT: falha ao baixar/parsear %s: %s", url.split("/")[-1], e)
+            continue
 
     _cache = index
     _cache_ts = time.monotonic()
-    logger.info("ANTT: %d empresas indexadas", len(index))
+    logger.info("ANTT: %d empresas indexadas no total", len(index))
     return index
 
 
@@ -122,21 +160,23 @@ class ANTTConnector(SubradarSource):
 
         situacao = empresa.get("situacao", "").upper()
         regime = empresa.get("regime", "")
+        validade = empresa.get("validade", "")
 
         # Determina severidade pela situação da habilitação
+        # Novo formato de CSV só tem vigência; se vazia = info
         situacoes_criticas = {"CANCELADA", "CASSADA", "REVOGADA", "SUSPENSA"}
         situacoes_atencao = {"IRREGULAR", "VENCIDA", "PENDENTE"}
 
         if any(s in situacao for s in situacoes_criticas):
             severidade = "critico"
-            titulo = f"Habilitação ANTT {situacao.lower()} — regime {regime}"
+            titulo = f"Habilitação ANTT {situacao.lower()}" + (f" — {regime}" if regime else "")
         elif any(s in situacao for s in situacoes_atencao):
             severidade = "atencao"
             titulo = f"Habilitação ANTT com pendência — {situacao.lower()}"
         else:
-            # Empresa habilitada regularmente = info apenas
+            # Empresa habilitada regularmente = info (confirma regularidade)
             severidade = "info"
-            titulo = f"Empresa habilitada ANTT — regime {regime}"
+            titulo = "Empresa habilitada ANTT" + (f" — {regime}" if regime else "") + (f" (válida até {validade})" if validade else "")
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, empresa)
         if not mudou:

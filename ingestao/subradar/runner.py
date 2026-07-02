@@ -114,7 +114,12 @@ FONTES = [
     ANAConnector(),               # ANA — sanções em recursos hídricos e saneamento
     EscavadorConnector(),         # Escavador — processos judiciais nacionais (ESCAVADOR_API_KEY)
     OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
-    DirectDataConnector(),        # Direct Data — dossiê PJ agregado (DIRECT_DATA_TOKEN + DIRECT_DATA_TEMPLATE)
+]
+
+# Fontes exclusivas para consulta avulsa (dossiê pontual R$ 197).
+# Não incluídas no ciclo de monitoramento — Direct Data cobra por dossie (R$ 15,70).
+FONTES_AVULSA = FONTES + [
+    DirectDataConnector(),        # Direct Data — dossiê PJ completo 22 APIs (DIRECT_DATA_TOKEN + DIRECT_DATA_TEMPLATE)
 ]
 
 
@@ -196,16 +201,26 @@ def _atualizar_dossie(dossie_id: str, alertas: list[dict]) -> None:
     requests.patch(url, json=payload, params=params, headers=headers, timeout=15)
 
 
-def processar_cnpj(cnpj: str, cliente_id: str, razao_social: str | None, dry_run: bool = False) -> int:
+def processar_cnpj(
+    cnpj: str,
+    cliente_id: str,
+    razao_social: str | None,
+    dry_run: bool = False,
+    avulsa: bool = False,
+) -> int:
     """
     Processa todas as fontes para um CNPJ.
+
+    avulsa=True → usa FONTES_AVULSA (inclui Direct Data, para dossiê pontual R$ 197).
+    avulsa=False → usa FONTES (monitoramento contínuo, sem custo por consulta Direct Data).
     Retorna total de alertas gerados.
     """
     from .base import _ciclo_atual
     ciclo = _ciclo_atual()
     todos_alertas = []
 
-    for fonte in FONTES:
+    fontes_ativas = FONTES_AVULSA if avulsa else FONTES
+    for fonte in fontes_ativas:
         try:
             alertas = fonte.consultar_cnpj(cnpj)
             todos_alertas.extend(alertas)
@@ -260,6 +275,11 @@ def main() -> None:
     parser.add_argument("--cnpj", help="Processar CNPJ específico (formato: 00.000.000/0000-00)")
     parser.add_argument("--cliente-id", help="UUID do cliente (obrigatório com --cnpj)")
     parser.add_argument("--dry-run", action="store_true", help="Não grava no Supabase")
+    parser.add_argument(
+        "--avulsa",
+        action="store_true",
+        help="Consulta avulsa: inclui Direct Data (dossiê pontual, custa R$ 15,70/consulta)",
+    )
     args = parser.parse_args()
 
     if args.cnpj:
@@ -282,6 +302,7 @@ def main() -> None:
             cliente_id=args.cliente_id or "00000000-0000-0000-0000-000000000000",
             razao_social=None,
             dry_run=args.dry_run,
+            avulsa=args.avulsa,
         )
         print(f"\nTotal: {total} alertas")
         return

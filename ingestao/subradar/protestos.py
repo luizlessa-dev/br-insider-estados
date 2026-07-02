@@ -86,9 +86,15 @@ def _consultar_cenprot(cnpj_digits: str) -> dict:
 
         texto = resp.text.lower()
 
-        if "captcha" in texto or "recaptcha" in texto:
-            logger.warning("CENPROT-SP: CAPTCHA detectado para %s", cnpj_digits)
-            return {"status": "captcha", "detalhes": "CAPTCHA bloqueou a consulta"}
+        if "captcha" in texto or "recaptcha" in texto or resp.status_code in (403, 429):
+            logger.warning(
+                "CENPROT-SP: acesso bloqueado para %s (CAPTCHA/rate-limit). "
+                "Limitação conhecida do protestosp.com.br — sem API pública. "
+                "Fonte retorna [] graciosamente; cobertura de protestos via "
+                "ProtestosNacionalConnector (Direct Data) quando disponível.",
+                cnpj_digits,
+            )
+            return {"status": "captcha", "detalhes": "CAPTCHA/bloqueio bloqueou a consulta"}
 
         if any(p in texto for p in ["não foram encontrados", "nenhum protesto", "sem protesto", "não há protesto"]):
             return {"status": "sem_protesto", "detalhes": "Nenhum protesto encontrado"}

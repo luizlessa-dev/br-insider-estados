@@ -1,10 +1,14 @@
 """
 Conector: EU Consolidated Financial Sanctions List
 
-Fonte: European Commission — Financial Sanctions Files (FSF)
-URL: https://webgate.ec.europa.eu/fsd/fsf/public/files/xmlFullSanctionsList_1_1/content
-Formato: XML público, sem autenticação
-Frequência: atualizado continuamente (monitora terrorismo, RU, Bielorrússia, Iran, etc.)
+Fonte primária: European Commission — Financial Sanctions Files (FSF)
+  URL: https://webgate.ec.europa.eu/fsd/fsf/public/files/xmlFullSanctionsList_1_1/content
+  Status: bloqueado com HTTP 403 desde jun/2026 (scraping bloqueado pela CE)
+
+Fonte fallback: OpenSanctions — espelho público do dataset eu_fsf
+  URL: https://data.opensanctions.org/datasets/latest/eu_fsf/entities.ftm.json
+  Formato: NDJSON (FollowTheMoney), atualizado diariamente
+  Sem autenticação necessária para o dataset eu_fsf público
 
 Alertas gerados:
   - Entidade encontrada na lista de sanções financeiras da UE (CRÍTICO)
@@ -26,9 +30,11 @@ from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
 
 logger = logging.getLogger("subradar.eu_sanctions")
 
-EU_XML_URL = (
-    "https://webgate.ec.europa.eu/fsd/fsf/public/files/xmlFullSanctionsList_1_1/content"
-)
+# URL primária (bloqueada desde jun/2026, mas testada primeiro caso desbloqueiem)
+EU_XML_URL = "https://webgate.ec.europa.eu/fsd/fsf/public/files/xmlFullSanctionsList_1_1/content"
+
+# Fallback: OpenSanctions espelha eu_fsf diariamente em NDJSON (FTM format)
+EU_FTM_URL = "https://data.opensanctions.org/datasets/latest/eu_fsf/entities.ftm.json"
 
 _cache_index: dict[str, list[dict]] | None = None
 _cache_ts: float = 0.0
@@ -53,25 +59,42 @@ def _load_eu() -> dict[str, list[dict]]:
     if _cache_index is not None and time.monotonic() - _cache_ts < _CACHE_TTL:
         return _cache_index
 
-    logger.info("EU Sanctions: baixando XML…")
+    index: dict[str, list[dict]] = {}
+
+    # Tenta fonte primária (XML webgate) — pode estar bloqueada
+    loaded = _load_eu_xml(index)
+    if not loaded:
+        # Fallback: OpenSanctions NDJSON (FTM format), espelha eu_fsf diariamente
+        _load_eu_ftm(index)
+
+    _cache_index = index
+    _cache_ts = time.monotonic()
+    logger.info("EU Sanctions: %d identificadores indexados", len(index))
+    return index
+
+
+def _load_eu_xml(index: dict) -> bool:
+    """Tenta carregar via XML oficial da Comissão Europeia. Retorna True se bem-sucedido."""
+    logger.info("EU Sanctions: tentando XML via webgate.ec.europa.eu…")
     try:
         resp = requests.get(
             EU_XML_URL,
-            timeout=120,
-            headers={"User-Agent": "Subradar/1.0 (dados-publicos; contato@subradar.com.br)"},
+            timeout=60,
+            headers={
+                "User-Agent": "Mozilla/5.0 (compatible; Subradar/1.0; +https://subradar.com.br)",
+                "Accept": "application/xml, text/xml, */*",
+            },
         )
-        resp.raise_for_status()
+        if resp.status_code != 200 or len(resp.content) < 1000:
+            logger.warning("EU Sanctions XML: HTTP %d — usando fallback OpenSanctions", resp.status_code)
+            return False
         content = resp.content
     except Exception as e:
-        logger.error("EU Sanctions: falha ao baixar XML: %s", e)
-        _cache_index = _cache_index or {}
-        return _cache_index
-
-    index: dict[str, list[dict]] = {}
+        logger.warning("EU Sanctions XML: %s — usando fallback OpenSanctions", e)
+        return False
 
     try:
         root = ET.fromstring(content)
-        # Remove namespace prefix for easier parsing
         ns = ""
         if root.tag.startswith("{"):
             ns = root.tag.split("}")[0] + "}"
@@ -80,20 +103,14 @@ def _load_eu() -> dict[str, list[dict]]:
             return f"{ns}{t}"
 
         for entity in root.iter(tag("sanctionEntity")):
-            # Collect names from nameAlias elements
             names = []
             for alias in entity.iter(tag("nameAlias")):
                 n = alias.get("wholeName") or alias.get("lastName") or alias.get("firstName") or ""
                 n = n.strip()
                 if n:
                     names.append(n)
-
-            # Regulation info
             regulation = entity.find(tag("regulation"))
-            reg_programme = ""
-            if regulation is not None:
-                reg_programme = regulation.get("programme", "") or ""
-
+            reg_programme = regulation.get("programme", "") if regulation is not None else ""
             entity_data = {
                 "nome": names[0] if names else "N/I",
                 "aliases": names[1:],
@@ -101,33 +118,77 @@ def _load_eu() -> dict[str, list[dict]]:
                 "tipo": entity.get("subjectType", ""),
                 "uid": entity.get("logicalId", ""),
             }
-
-            # Index by document numbers
             for ident in entity.iter(tag("identification")):
                 number = ident.get("number", "").strip()
                 id_type = ident.get("identificationTypeCode", "").strip()
                 if number and len(number) >= 5:
-                    digits = _strip(number)
-                    if 5 <= len(digits) <= 20:
-                        norm = _normalize(digits)
+                    for norm in (_normalize(_strip(number)), _normalize(number)):
                         index.setdefault(norm, []).append({**entity_data, "tipo_doc": id_type, "numero_doc": number})
-                    # Also index raw normalized
-                    norm_raw = _normalize(number)
-                    index.setdefault(norm_raw, []).append({**entity_data, "tipo_doc": id_type, "numero_doc": number})
-
-            # Index by names
             for name in names:
                 if len(name) > 4:
-                    name_key = f"NAME:{_normalize(name)}"
-                    index.setdefault(name_key, []).append(entity_data)
-
+                    index.setdefault(f"NAME:{_normalize(name)}", []).append(entity_data)
+        return bool(index)
     except Exception as e:
-        logger.error("EU Sanctions: erro ao parsear XML: %s", e)
+        logger.error("EU Sanctions XML: erro ao parsear: %s", e)
+        return False
 
-    _cache_index = index
-    _cache_ts = time.monotonic()
-    logger.info("EU Sanctions: %d identificadores indexados", len(index))
-    return index
+
+def _load_eu_ftm(index: dict) -> None:
+    """
+    Fallback: carrega via OpenSanctions FTM NDJSON (eu_fsf dataset público).
+    Formato: uma entidade JSON por linha com properties.registrationNumber e properties.name.
+    """
+    import json as _json
+    logger.info("EU Sanctions: carregando via OpenSanctions FTM (fallback)…")
+    try:
+        resp = requests.get(
+            EU_FTM_URL,
+            timeout=120,
+            stream=True,
+            headers={"User-Agent": "Subradar/1.0 (dados-publicos; contato@subradar.com.br)"},
+        )
+        if resp.status_code != 200:
+            logger.error("EU Sanctions FTM: HTTP %d — sem dados disponíveis", resp.status_code)
+            return
+    except Exception as e:
+        logger.error("EU Sanctions FTM: %s", e)
+        return
+
+    count = 0
+    for raw_line in resp.iter_lines():
+        if not raw_line:
+            continue
+        try:
+            ent = _json.loads(raw_line)
+        except Exception:
+            continue
+
+        props = ent.get("properties", {})
+        names = props.get("name", []) + props.get("alias", [])
+        reg_numbers = props.get("registrationNumber", [])
+        caption = ent.get("caption", names[0] if names else "N/I")
+
+        entity_data = {
+            "nome": caption,
+            "aliases": names[1:] if names else [],
+            "regime": "EU FSF",
+            "tipo": ent.get("schema", ""),
+            "uid": ent.get("id", ""),
+        }
+
+        for number in reg_numbers:
+            if number and len(number) >= 5:
+                digits = _strip(number)
+                for norm in filter(None, [_normalize(digits) if digits else None, _normalize(number)]):
+                    index.setdefault(norm, []).append({**entity_data, "numero_doc": number})
+
+        for name in names:
+            if name and len(name) > 4:
+                index.setdefault(f"NAME:{_normalize(name)}", []).append(entity_data)
+
+        count += 1
+
+    logger.info("EU Sanctions FTM: %d entidades processadas", count)
 
 
 class EUSanctionsConnector(SubradarSource):

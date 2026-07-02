@@ -56,7 +56,10 @@ def _fetch_csv_urls() -> list[str]:
                 if resource.get("format", "").upper() in ("CSV", "XLS", "XLSX", "JSON"):
                     urls.append(resource["url"])
     except Exception as e:
-        logger.warning("ANTAQ: falha ao buscar CKAN: %s", e)
+        logger.warning(
+            "ANTAQ: DNS failure em dadosabertos.antaq.gov.br (jul/2026 — domínio offline ou migrado). "
+            "Erro: %s", e
+        )
     return urls
 
 

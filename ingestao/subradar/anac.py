@@ -36,6 +36,15 @@ CKAN_BASE = "https://dados.gov.br"
 PACKAGE_SEARCH_URL = f"{CKAN_BASE}/api/3/action/package_search"
 ANAC_FALLBACK_BASE = "https://sistemas.anac.gov.br/dadosabertos/"
 
+# URL direta descoberta em jul/2026 — atualizada diariamente (~200 processos, aeroportos concedidos)
+# Nota: este CSV indexa por nome da concessionária, não por CNPJ.
+# A busca é feita por razão social normalizada.
+ANAC_CSV_DIRETO = (
+    "https://sistemas.anac.gov.br/dadosabertos/fiscalizacao/"
+    "Lista%20de%20processos%20administrativos%20sancionadores/"
+    "ListaDeProcessosAdministrativosSancionadores.csv"
+)
+
 _cache_index: dict[str, list[dict]] | None = None
 _cache_ts: float = 0.0
 _CACHE_TTL = 3600 * 12  # 12h
@@ -119,23 +128,9 @@ def _discover_csv_url() -> str | None:
         except Exception as e:
             logger.debug("ANAC: CKAN query '%s' falhou: %s", q, e)
 
-    # Fallback: tentar listagem direta do portal ANAC
-    try:
-        resp = requests.get(ANAC_FALLBACK_BASE, timeout=15,
-                            headers={"User-Agent": "Subradar/1.0 (dados-publicos; contato@subradar.com.br)"})
-        if resp.ok:
-            # Tenta extrair links .csv do HTML
-            for match in re.finditer(r'href=["\']([^"\']*infracao[^"\']*\.csv[^"\']*)["\']',
-                                     resp.text, re.IGNORECASE):
-                candidate = match.group(1)
-                if not candidate.startswith("http"):
-                    candidate = ANAC_FALLBACK_BASE.rstrip("/") + "/" + candidate.lstrip("/")
-                logger.info("ANAC: CSV encontrado via fallback: %s", candidate)
-                return candidate
-    except Exception as e:
-        logger.debug("ANAC: fallback direto falhou: %s", e)
-
-    return None
+    # Fallback: URL direta conhecida (atualizada diariamente em jul/2026)
+    logger.info("ANAC: usando URL direta de processos sancionadores")
+    return ANAC_CSV_DIRETO
 
 
 def _load_anac() -> dict[str, list[dict]]:
@@ -158,31 +153,48 @@ def _load_anac() -> dict[str, list[dict]]:
         _cache_index = _cache_index or {}
         return _cache_index
 
+    # CSV da ANAC tem linha extra de metadata antes do header real (padrão comum em gov.br)
+    lines = content.splitlines()
+    header_idx = next(
+        (i for i, l in enumerate(lines) if "número" in l.lower() or "processo" in l.lower() or "concession" in l.lower()),
+        0,
+    )
+    content_clean = "\n".join(lines[header_idx:])
+
     index: dict[str, list[dict]] = {}
     try:
-        sample = content[:1000]
+        sample = content_clean[:1000]
         sep = ";" if sample.count(";") > sample.count(",") else ","
-        reader = csv.DictReader(io.StringIO(content), delimiter=sep)
+        reader = csv.DictReader(io.StringIO(content_clean), delimiter=sep)
         for row in reader:
-            # CNPJ pode estar em colunas diversas
+            # Formato atual: "Concessionária" (nome da empresa, sem CNPJ direto)
+            # Indexa por CNPJ se disponível; caso contrário por nome normalizado
             cnpj_raw = (
                 row.get("cnpj") or row.get("CNPJ") or
                 row.get("cpf_cnpj") or row.get("nr_cnpj") or
                 row.get("nu_cnpj") or ""
             )
             cnpj_digits = _strip(cnpj_raw)
-            if len(cnpj_digits) != 14:
+
+            # Nome da concessionária para indexação por razão social
+            nome_empresa = (
+                row.get("Concessionária") or row.get("concessionária") or
+                row.get("razao_social") or row.get("nome") or
+                row.get("nm_empresa") or ""
+            ).strip()
+
+            if len(cnpj_digits) != 14 and not nome_empresa:
                 continue
+
             valor_raw = (
+                row.get("Valor da penalidade aplicada") or
                 row.get("valor_multa") or row.get("vl_multa") or
                 row.get("valor") or ""
             )
             entry = {
-                "razao_social": (
-                    row.get("razao_social") or row.get("nome") or
-                    row.get("nm_empresa") or ""
-                ),
+                "razao_social": nome_empresa,
                 "tipo_infracao": (
+                    row.get("Espécie de penalidade aplicada") or
                     row.get("tipo_infracao") or row.get("ds_tipo_infracao") or
                     row.get("descricao_infracao") or row.get("tipo") or ""
                 ),
@@ -200,7 +212,12 @@ def _load_anac() -> dict[str, list[dict]]:
                     row.get("status") or ""
                 ),
             }
-            index.setdefault(cnpj_digits, []).append(entry)
+            # Indexa por CNPJ quando disponível; por nome normalizado como fallback
+            if len(cnpj_digits) == 14:
+                index.setdefault(cnpj_digits, []).append(entry)
+            if nome_empresa:
+                nome_key = f"NAME:{re.sub(r'[^A-Z0-9]', '', nome_empresa.upper())}"
+                index.setdefault(nome_key, []).append(entry)
     except Exception as e:
         logger.error("ANAC: erro ao parsear CSV: %s", e)
 
@@ -214,13 +231,19 @@ class ANACConnector(SubradarSource):
     fonte = "anac"
     request_delay = 0.0  # dados locais após cache
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
         ciclo = _ciclo_atual()
 
         index = _load_anac()
-        infracoes = index.get(cnpj_digits)
+        infracoes = index.get(cnpj_digits) or []
+
+        # Fallback: busca por razão social normalizada (CSV ANAC indexa por nome)
+        if not infracoes and razao_social:
+            nome_key = f"NAME:{re.sub(r'[^A-Z0-9]', '', razao_social.upper())}"
+            infracoes = index.get(nome_key) or []
+
         if not infracoes:
             return []
 
