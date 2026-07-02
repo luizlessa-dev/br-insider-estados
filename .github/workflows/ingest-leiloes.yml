@@ -1,0 +1,95 @@
+name: Ingestão Leilões — DataJud + Leiloeiros RFB
+
+# Cadência: mensal, dia 5 às 02:00 UTC (23:00 BRT do dia 4).
+# Horário noturno para evitar sobrecarga da API DataJud (pico comercial = 429).
+#
+# Fonte A: DataJud/CNJ — processos de execução (classes 159, 1116, 1028, 154, 1199)
+#   21 tribunais (TJSP, TJRJ, TJMG, TRFs 1-6, ...)
+#   Tempo estimado: 2-4 horas (sleep 2s/pág, ~1k resultados/pág por tribunal)
+#
+# Fonte B: Receita Federal — leiloeiros CNAE 8299-7/04
+#   10 partições Estabelecimentos (~7 GB descomprimido total)
+#   Tempo estimado: 30-60 minutos
+#
+# LIMITAÇÃO CONHECIDA: DataJud API pública não expõe campo `partes` (CPF/CNPJ).
+# Cruzamento com emendas via leiloeiro CNPJ (Fonte B) ou futuro PUBLICJUD scraper.
+
+on:
+  schedule:
+    - cron: "0 2 5 * *"
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Componente a executar: datajud | leiloeiros | ambos"
+        default: "ambos"
+        required: false
+
+concurrency:
+  group: ingest-leiloes
+  cancel-in-progress: false
+
+jobs:
+  datajud:
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.modo == 'datajud' || github.event.inputs.modo == 'ambos' || github.event.inputs.modo == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300   # 5h — DataJud é lento com 21 tribunais
+
+    env:
+      SUPABASE_URL:                       ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:          ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      INTERNAL_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.INTERNAL_SUPABASE_SERVICE_ROLE_KEY }}
+      DATAJUD_API_KEY:                    ${{ secrets.DATAJUD_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingestao/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: DataJud — extrair processos de execução
+        run: python3 -m ingestao.leiloes.datajud_connector extract
+
+      - name: DataJud — carregar no Supabase
+        run: python3 -m ingestao.leiloes.datajud_connector load
+
+      - name: Notificar falha
+        if: failure()
+        run: echo "::error::Falha na ingestão DataJud leilões — verificar logs acima."
+
+  leiloeiros:
+    if: ${{ github.event_name == 'schedule' || github.event.inputs.modo == 'leiloeiros' || github.event.inputs.modo == 'ambos' || github.event.inputs.modo == '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120   # 2h — download 10 partições RFB
+
+    env:
+      SUPABASE_URL:                       ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:          ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      INTERNAL_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.INTERNAL_SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingestao/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: RFB — extrair leiloeiros CNAE 8299-7/04
+        run: python3 -m ingestao.leiloes.leiloeiros_connector extract
+
+      - name: RFB — carregar no Supabase
+        run: python3 -m ingestao.leiloes.leiloeiros_connector load
+
+      - name: Notificar falha
+        if: failure()
+        run: echo "::error::Falha na ingestão leiloeiros RFB — verificar logs acima."
