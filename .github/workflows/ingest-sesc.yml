@@ -1,0 +1,52 @@
+name: Ingestão SESC — Contratos e Convênios
+
+# Cadência: mensal, dia 7 às 08:00 UTC (05:00 BRT).
+# Fonte: transparencia-[uf].sesc.com.br — CSV público (sem autenticação)
+# Portais: DN + 27 DRs estaduais (28 portais)
+# Datasets: 178 (contratos firmados), 179 (contratos pagos), 180 (convênios), 183 (convênios pagos)
+# Tempo estimado: ~10 minutos (112 requisições CSV)
+
+on:
+  schedule:
+    - cron: "0 8 7 * *"
+  workflow_dispatch:
+    inputs:
+      modo:
+        description: "Modo de execução: all | extract | load"
+        default: "all"
+
+concurrency:
+  group: ingest-sesc
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SUPABASE_URL:                       ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY:          ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      INTERNAL_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.INTERNAL_SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingestao/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Ingerir SESC
+        run: |
+          MODO="${{ github.event.inputs.modo || 'all' }}"
+          python -m ingestao.sesc_connector "$MODO"
+
+      - name: Notificar falha
+        if: failure()
+        run: |
+          echo "::error::Falha na ingestão SESC — verificar logs acima."
