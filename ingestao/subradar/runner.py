@@ -64,6 +64,7 @@ from .escavador import EscavadorConnector
 from .opensanctions_pro import OpenSanctionsProConnector
 from .directdata import DirectDataConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
+from .socios_compliance import SociosComplianceConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -116,6 +117,7 @@ FONTES = [
     EscavadorConnector(),         # Escavador — processos judiciais nacionais (ESCAVADOR_API_KEY)
     OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
     BigDataCorpConnector(),       # BigDataCorp — protestos cartoriais + processos sócios (BIGDATA_CORP_TOKEN)
+    SociosComplianceConnector(),  # Sócios PF — CEIS/CNEP/MTE/PGFN/sanções internacionais por CPF
 ]
 
 # Fontes exclusivas para consulta avulsa (dossiê pontual R$ 197).
