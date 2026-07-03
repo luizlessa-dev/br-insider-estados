@@ -63,6 +63,7 @@ from .ana import ANAConnector
 from .escavador import EscavadorConnector
 from .opensanctions_pro import OpenSanctionsProConnector
 from .directdata import DirectDataConnector
+from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,12 +115,14 @@ FONTES = [
     ANAConnector(),               # ANA — sanções em recursos hídricos e saneamento
     EscavadorConnector(),         # Escavador — processos judiciais nacionais (ESCAVADOR_API_KEY)
     OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
+    BigDataCorpConnector(),       # BigDataCorp — protestos cartoriais + processos sócios (BIGDATA_CORP_TOKEN)
 ]
 
 # Fontes exclusivas para consulta avulsa (dossiê pontual R$ 197).
-# Não incluídas no ciclo de monitoramento — Direct Data cobra por dossie (R$ 15,70).
+# Não incluídas no ciclo de monitoramento — cobram por consulta.
 FONTES_AVULSA = FONTES + [
-    DirectDataConnector(),        # Direct Data — dossiê PJ completo 22 APIs (DIRECT_DATA_TOKEN + DIRECT_DATA_TEMPLATE)
+    DirectDataConnector(),        # Direct Data — dossiê PJ completo 22 APIs (~R$ 15,70/consulta)
+    BigDataCorpScoreConnector(),  # BigDataCorp Score Quod/Boa Vista PJ (~R$ 2,41/consulta)
 ]
 
 
