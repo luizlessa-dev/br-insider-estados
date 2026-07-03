@@ -1,0 +1,179 @@
+name: Subradar PF — Entrega de Dossiê
+
+on:
+  workflow_dispatch:
+    inputs:
+      cpf:
+        description: "CPF do consultado (somente dígitos)"
+        required: true
+      nome:
+        description: "Nome completo do consultado"
+        required: true
+      tipo:
+        description: "Tipo de consulta: simples ou completa"
+        required: true
+        default: "simples"
+      email_cliente:
+        description: "E-mail do cliente para entrega do dossiê"
+        required: true
+      consulta_id:
+        description: "UUID da consulta em sub_pf_consultas"
+        required: true
+
+concurrency:
+  group: subradar-pf-${{ github.event.inputs.consulta_id }}
+  cancel-in-progress: false
+
+jobs:
+  rodar-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Executar pipeline PF
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          BIGDATA_CORP_TOKEN: ${{ secrets.BIGDATA_CORP_TOKEN }}
+          ESCAVADOR_TOKEN: ${{ secrets.ESCAVADOR_TOKEN }}
+          DIRECT_DATA_TOKEN: ${{ secrets.DIRECT_DATA_TOKEN }}
+          OPENSANCTIONS_PRO_KEY: ${{ secrets.OPENSANCTIONS_PRO_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          AVULSA_FLAG=""
+          if [ "${{ github.event.inputs.tipo }}" = "completa" ]; then
+            AVULSA_FLAG="--avulsa"
+          fi
+
+          python3 -m ingestao.subradar.runner_pf \
+            --cpf "${{ github.event.inputs.cpf }}" \
+            --nome "${{ github.event.inputs.nome }}" \
+            --cliente-id "${{ github.event.inputs.consulta_id }}" \
+            $AVULSA_FLAG \
+            2>&1 | tee /tmp/pf_output.txt
+
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+
+      - name: Marcar consulta como concluída no Supabase
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          STATUS="concluida"
+          if [ "$EXIT_CODE" != "0" ]; then STATUS="erro"; fi
+          python3 - <<'EOF'
+          import os, requests
+          url = os.environ["SUPABASE_URL"]
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          consulta_id = "${{ github.event.inputs.consulta_id }}"
+          status = "$STATUS" if "$STATUS" != "" else "concluida"
+          requests.patch(
+              f"{url}/rest/v1/sub_pf_consultas?id=eq.{consulta_id}",
+              json={"status": status},
+              headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+          )
+          EOF
+
+      - name: Enviar dossiê por e-mail
+        if: env.EXIT_CODE == '0'
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          python3 - <<'EOF'
+          import os, smtplib, re
+          from email.mime.multipart import MIMEMultipart
+          from email.mime.text import MIMEText
+
+          cpf_raw = "${{ github.event.inputs.cpf }}"
+          cpf_fmt = f"{cpf_raw[:3]}.{cpf_raw[3:6]}.{cpf_raw[6:9]}-{cpf_raw[9:11]}"
+          nome = "${{ github.event.inputs.nome }}"
+          tipo = "${{ github.event.inputs.tipo }}"
+          email_cliente = "${{ github.event.inputs.email_cliente }}"
+
+          with open("/tmp/pf_output.txt") as f:
+              raw = f.read()
+
+          # Extrair alertas do log
+          alertas = [l for l in raw.splitlines() if "[CRITICO]" in l or "[ATENCAO]" in l or "[INFO]" in l]
+          n_criticos = sum(1 for l in alertas if "[CRITICO]" in l)
+
+          if alertas:
+              status_cor = "#dc2626" if n_criticos else "#d97706"
+              status_txt = f"{n_criticos} alerta(s) crítico(s)" if n_criticos else "Alertas de atenção encontrados"
+          else:
+              status_cor = "#16a34a"
+              status_txt = "Nenhuma ocorrência encontrada"
+
+          alertas_html = "".join(
+              f'<li style="margin-bottom:6px;color:#374151">{re.sub(r"^.*\[(CRITICO|ATENCAO|INFO)\]", lambda m: f"<strong>[{m.group(1)}]</strong>", l)}</li>'
+              for l in alertas
+          ) or "<li style='color:#6b7280'>Nenhuma ocorrência registrada nas fontes consultadas.</li>"
+
+          html = f"""
+          <div style="font-family:system-ui,sans-serif;max-width:600px;margin:auto;color:#0f172a">
+            <div style="background:#0f172a;padding:24px 32px;border-radius:8px 8px 0 0">
+              <p style="color:#fff;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:0 0 4px">SUBRADAR PF</p>
+              <p style="color:#94a3b8;font-size:11px;margin:0">Dossiê de Compliance — Pessoa Física</p>
+            </div>
+            <div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:none">
+              <h2 style="margin:0 0 4px;font-size:20px">{nome}</h2>
+              <p style="color:#64748b;margin:0 0 24px;font-size:14px">CPF: {cpf_fmt} · Consulta {tipo.title()}</p>
+              <div style="padding:16px;border-radius:8px;background:#f8fafc;border-left:4px solid {status_cor};margin-bottom:24px">
+                <p style="margin:0;font-weight:700;color:{status_cor}">{status_txt}</p>
+              </div>
+              <h3 style="font-size:14px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:0 0 12px">Fontes consultadas</h3>
+              <ul style="padding-left:20px;margin:0 0 24px">
+                {alertas_html}
+              </ul>
+              <p style="font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:16px;margin:0">
+                Lessa Labs Tecnologia Ltda · CNPJ 65.659.055/0001-53<br>
+                Dúvidas: <a href="mailto:luiz@lessalabs.com">luiz@lessalabs.com</a>
+              </p>
+            </div>
+          </div>
+          """
+
+          msg = MIMEMultipart("alternative")
+          msg["Subject"] = f"Subradar PF — Dossiê {nome} ({status_txt})"
+          msg["From"] = os.environ["GMAIL_USER"]
+          msg["To"] = email_cliente
+          msg["Bcc"] = "luiz@lessalabs.com"
+          msg.attach(MIMEText(html, "html"))
+
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+              s.login(os.environ["GMAIL_USER"], os.environ["GMAIL_APP_PASSWORD"])
+              s.send_message(msg)
+          print(f"Dossiê enviado para {email_cliente}")
+          EOF
+
+      - name: Notificar erro ao operador
+        if: env.EXIT_CODE != '0'
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: |
+          python3 - <<'EOF'
+          import os, smtplib
+          from email.mime.text import MIMEText
+          with open("/tmp/pf_output.txt") as f:
+              log = f.read()[-3000:]
+          msg = MIMEText(f"Pipeline PF falhou.\n\nID: ${{ github.event.inputs.consulta_id }}\nCPF: ${{ github.event.inputs.cpf }}\n\nLog:\n{log}")
+          msg["Subject"] = "[Subradar PF] ERRO — pipeline falhou"
+          msg["From"] = os.environ["GMAIL_USER"]
+          msg["To"] = "luiz@lessalabs.com"
+          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+              s.login(os.environ["GMAIL_USER"], os.environ["GMAIL_APP_PASSWORD"])
+              s.send_message(msg)
+          EOF
