@@ -39,6 +39,9 @@ from .uk_sanctions import UKSanctionsConnector
 from .eu_sanctions import EUSanctionsConnector
 from .un_sanctions import UNSanctionsConnector
 from .worldbank_debarment import WorldBankDebarmentConnector
+from .cpf_situacao import CPFSituacaoConnector
+from .qsa_reverso import QSAReversoConnector
+from .conselhos_profissionais import ConselhosProfissionaisConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,14 +55,17 @@ logger = logging.getLogger("subradar.runner_pf")
 # ---------------------------------------------------------------------------
 
 FONTES_PF = [
-    CEISConnector(),              # CEIS — sanções PF (cpf_cnpj indexa CPF)
-    CNEPConnector(),              # CNEP — punições PF
-    ListaSujaConnector(),         # MTE lista suja — trabalho escravo
-    DividaAtivaConnector(),       # PGFN dívida ativa PF
-    OFACConnector(),              # OFAC SDN — busca por nome
-    UKSanctionsConnector(),       # UK Sanctions — busca por nome
-    EUSanctionsConnector(),       # EU Sanctions — busca por nome
-    UNSanctionsConnector(),       # ONU — busca por nome
+    CPFSituacaoConnector(),        # Situação cadastral do CPF na RFB — verificação base
+    QSAReversoConnector(),         # Empresas onde o CPF é sócio + situação delas
+    ConselhosProfissionaisConnector(), # Registro em conselhos de classe (CREA, CRM, OAB…)
+    CEISConnector(),               # CEIS — sanções PF
+    CNEPConnector(),               # CNEP — punições PF
+    ListaSujaConnector(),          # MTE lista suja — trabalho escravo
+    DividaAtivaConnector(),        # PGFN dívida ativa PF
+    OFACConnector(),               # OFAC SDN — busca por nome
+    UKSanctionsConnector(),        # UK Sanctions — busca por nome
+    EUSanctionsConnector(),        # EU Sanctions — busca por nome
+    UNSanctionsConnector(),        # ONU — busca por nome
     WorldBankDebarmentConnector(), # World Bank — busca por nome
 ]
 
