@@ -43,6 +43,9 @@ from .cpf_situacao import CPFSituacaoConnector
 from .qsa_reverso import QSAReversoConnector
 from .conselhos_profissionais import ConselhosProfissionaisConnector
 from .cfc_contadores import CFCContadoresConnector
+from .infosimples_conselhos import InfosimplesConselhosPFConnector
+from .dou_pf import DOUPFConnector
+from .cepim_pf import CEPIMRepresentantePFConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,6 +63,9 @@ FONTES_PF = [
     QSAReversoConnector(),         # Empresas onde o CPF é sócio + situação delas
     ConselhosProfissionaisConnector(), # Registro em conselhos de classe (CREA, CRM, OAB…)
     CFCContadoresConnector(),      # CFC — contador ativo/inativo (API pública gratuita)
+    InfosimplesConselhosPFConnector(), # CRO/CRF/CFM/CFMV/CFP/CFBM/COREN via Infosimples
+    CEPIMRepresentantePFConnector(),   # CEPIM — sócio de entidade impedida de receber convênios
+    DOUPFConnector(),                  # DOU — menções do nome nos últimos 30 dias (DO1/DO2/DO3)
     CEISConnector(),               # CEIS — sanções PF
     CNEPConnector(),               # CNEP — punições PF
     ListaSujaConnector(),          # MTE lista suja — trabalho escravo
