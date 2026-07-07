@@ -113,11 +113,15 @@ def _parse_mun_uf(v: str) -> tuple[Optional[str], Optional[str]]:
 def _download_zip(ano: int) -> bytes:
     url = f"{BASE_URL}/{ano}"
     logger.info("Baixando CPGF %d … (%s)", ano, url)
+    # CGU exige Referer do portal para liberar o redirect ao dadosabertos-download
+    req_headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; BRInsider/1.0; contato@thebrinsider.com)",
+        "Referer": "https://portaldatransparencia.gov.br/",
+        "Accept": "application/zip,application/octet-stream,*/*",
+    }
     for attempt in range(4):
         try:
-            r = requests.get(url, timeout=300, headers={
-                "User-Agent": "BRInsider/1.0 (contato@thebrinsider.com)"
-            })
+            r = requests.get(url, timeout=300, headers=req_headers, allow_redirects=True)
             if r.status_code == 404:
                 logger.warning("Ano %d não disponível (404)", ano)
                 return b""
