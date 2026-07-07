@@ -1,0 +1,37 @@
+name: Ingestão IBAMA Bulk
+
+# Cadência: mensal, dia 5 às 09:00 UTC (06:00 BRT).
+# O ZIP do IBAMA é atualizado mensalmente com todos os autos desde 1977.
+# Upsert idempotente por num_auto_infracao — re-execuções são seguras.
+
+on:
+  schedule:
+    - cron: "0 9 5 * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ingest-ibama-bulk
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Seed IBAMA (PF + PJ)
+        run: python -m ingestao.portal.ibama_bulk
