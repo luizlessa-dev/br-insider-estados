@@ -46,7 +46,9 @@ def _supabase_session() -> tuple[str, requests.Session]:
         os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
         or os.environ.get("INTERNAL_SUPABASE_SERVICE_ROLE_KEY")
         or ""
-    )
+    ).strip()
+    # Garante header ASCII-puro (Python 3.14+ recusa non-latin-1 em headers)
+    key = key.encode("ascii", "ignore").decode("ascii")
     if not url or not key:
         raise SystemExit("Faltando SUPABASE_URL e/ou SUPABASE_SERVICE_ROLE_KEY")
 
@@ -73,7 +75,7 @@ def _jsonable(value: Any) -> Any:
 def _upsert_batch(url: str, sess: requests.Session, rows: list[dict]) -> None:
     resp = sess.post(
         f"{url}/rest/v1/{TABLE}",
-        data=json.dumps([_jsonable(r) for r in rows]),
+        data=json.dumps([_jsonable(r) for r in rows], ensure_ascii=True).encode("utf-8"),
         timeout=30,
     )
     if not resp.ok:
