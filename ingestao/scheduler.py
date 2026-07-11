@@ -51,7 +51,7 @@ def run_ingestion(
     data_fim: date,
     persist: bool = True,
     entidades: tuple[str, ...] = ENTIDADES_DEFAULT,
-) -> None:
+) -> dict[str, list[str]]:
     targets = assembly_ids or list(REGISTRY.keys())
     entidades = tuple(entidades)
     resultados = {"ok": [], "stub": [], "erro": []}
@@ -125,6 +125,8 @@ def run_ingestion(
     print(f"  ❌ Erros: {len(resultados['erro'])} ({', '.join(resultados['erro']) or '—'})")
     print()
 
+    return resultados
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingestão de dados das assembleias estaduais")
@@ -147,10 +149,19 @@ def main() -> None:
     data_inicio = data_fim - timedelta(days=args.dias)
     logger.info("Período: %s → %s", data_inicio, data_fim)
 
-    run_ingestion(
+    resultados = run_ingestion(
         args.assembly, data_inicio, data_fim,
         persist=not args.no_persist, entidades=tuple(args.entidades),
     )
+
+    # Só falha o processo (exit != 0) quando casas específicas foram pedidas
+    # via --assembly: aí "erro" é uma regressão real, não um stub esperado.
+    # No sweep completo (--assembly vazio = todas as 27), casas com bloqueio
+    # conhecido (ex: ALEP) sempre vão dar erro e isso não deve derrubar o
+    # workflow do GitHub Actions inteiro — só o cron local por-casa precisa
+    # de um sinal de falha confiável pro guard de marker mensal funcionar.
+    if args.assembly and resultados["erro"]:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
