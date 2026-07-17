@@ -238,3 +238,70 @@ def test_gate_parsed_diferente_de_staged():
     with pytest.raises(QualityGateError):
         load_year("receitas", 2022, src, be, cfg=FAST, sleep=NO_SLEEP)
     assert be.count_final("receitas", 2022) == 100  # final intacta
+
+
+# ═══ Testes adicionais (revisão): fingerprint, resume, sent-vs-inserted ═══════
+from ingestao.tse.safe_loader import (  # noqa: E402
+    FINGERPRINT_CAMPOS, TRANSFORMER_VERSION, pode_retomar, row_fingerprint,
+)
+
+
+def test_fingerprint_deterministico_e_distingue_por_ordinal():
+    c = FINGERPRINT_CAMPOS["despesas"]
+    r = {"ano_eleicao": 2024, "numero_documento": None, "cpf_candidato": "X", "valor_despesa": 10.0}
+    assert row_fingerprint(r, 5, c) == row_fingerprint(r, 5, c)          # determinístico
+    assert row_fingerprint(r, 5, c) != row_fingerprint(r, 6, c)          # ordinal distingue idênticas
+    assert row_fingerprint(r, 5, c) == row_fingerprint({**r, "cpf_candidato": " x "}, 5, c)  # normaliza
+
+
+def test_resume_mesmo_hash_permite():
+    run = {"phase": "staging", "status": "running", "dataset": "receitas", "ano": 2024,
+           "zip_sha256": "abc", "zip_bytes": 100, "transformer_version": TRANSFORMER_VERSION}
+    assert pode_retomar(run, "abc", 100, "receitas", 2024) is True
+
+
+def test_resume_hash_diferente_obriga_novo_run():
+    run = {"phase": "staging", "status": "running", "dataset": "receitas", "ano": 2024,
+           "zip_sha256": "abc", "zip_bytes": 100, "transformer_version": TRANSFORMER_VERSION}
+    assert pode_retomar(run, "XYZ", 100, "receitas", 2024) is False      # conteúdo mudou
+    assert pode_retomar(run, "abc", 999, "receitas", 2024) is False      # tamanho mudou
+    assert pode_retomar({**run, "transformer_version": "0"}, "abc", 100, "receitas", 2024) is False
+    assert pode_retomar({**run, "phase": "promovido"}, "abc", 100, "receitas", 2024) is False
+
+
+def test_sent_vs_inserted_conflito_inesperado_sem_resume():
+    """stage_rows do backend real: conflito inesperado (sem resume) → erro.
+    Testado com um backend fake que simula o count antes/depois."""
+    from ingestao.tse.safe_backend import PostgrestBackend, PersistenceError
+
+    class FakeSession:
+        def __init__(self): self.n = 0
+        def post(self, *a, **k):
+            # simula que só metade "entrou" (conflito): count sobe só 1 por batch de 2
+            self.n += 1
+            class R: status_code = 200; text = ""
+            return R()
+        def get(self, *a, **k):
+            class R:
+                status_code = 200
+                headers = {"content-range": f"*/{_be.calls}"}
+                text = ""
+            return R()
+        def patch(self, *a, **k):
+            class R: status_code = 200; text = ""
+            return R()
+
+    class W: url = "http://x"; session = FakeSession()
+    _be = PostgrestBackend(W(), sleep=lambda s: None)
+    # força count: before=0, after=1 (só 1 de 2 entrou) → ignoradas=1 sem resume → erro
+    seq = iter([0, 1])
+    _be._count = lambda t, r: next(seq)
+    _be._patch_run = lambda r, f: None
+    _be._post_batch = lambda *a, **k: None
+    try:
+        _be.stage_rows("despesas", "run1",
+                       [{"ano_eleicao": 2024, "valor_despesa": 1.0},
+                        {"ano_eleicao": 2024, "valor_despesa": 2.0}], resume=False)
+        assert False, "deveria ter levantado por conflito inesperado"
+    except PersistenceError as e:
+        assert "conflito inesperado" in str(e)

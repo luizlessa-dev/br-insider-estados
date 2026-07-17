@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from .persistence import PersistenceError, TSEWriter
-from .safe_loader import Backend, RunRecord
+from .safe_loader import FINGERPRINT_CAMPOS, Backend, RunRecord, row_fingerprint
 
 logger = logging.getLogger("tse.safe_backend")
 
@@ -22,7 +22,6 @@ CHUNK = 500                       # linhas por chamada PostgREST
 MAX_BATCH_RETRIES = 4             # tentativas por batch
 BATCH_BACKOFF_S = 3.0             # backoff base por batch
 INSERT_TIMEOUT_S = 300           # timeout por chamada de INSERT
-_NATKEY = {"receitas": "numero_recibo", "despesas": "numero_documento"}
 _STAGING = {"receitas": "tse_receitas_staging", "despesas": "tse_despesas_staging"}
 _FINAL = {"receitas": "tse_receitas", "despesas": "tse_despesas"}
 
@@ -45,24 +44,49 @@ class PostgrestBackend(Backend):
         cr = resp.headers.get("content-range", "*/0")
         return int(cr.split("/")[-1] or 0)
 
-    def stage_rows(self, dataset: str, run_id: str, rows: Iterable[dict]) -> int:
-        """Insere em batches com ON CONFLICT DO NOTHING (idempotente por
-        (run_id, ano_eleicao, chave natural)). Retomável: reexecutar o mesmo
-        arquivo re-insere; conflitos são ignorados, sem duplicar. Atualiza o
-        progresso persistido (batch_atual, ultimo_batch_confirmado) por batch."""
+    def stage_rows(self, dataset: str, run_id: str, rows: Iterable[dict],
+                   resume: bool = False) -> int:
+        """Insere em batches com ON CONFLICT DO NOTHING sobre (run_id,
+        row_fingerprint). Conta e REGISTRA por batch: enviadas, inseridas,
+        ignoradas (contagem no banco antes/depois — não confia no silêncio do
+        DO NOTHING). Conflito inesperado (ignoradas>0) SÓ é aceito com
+        resume=True (retomada do MESMO arquivo/run); senão ERRO. Retorna
+        o total INSERIDO (não enviado)."""
         table = _STAGING[dataset]
-        conflict = f"run_id,ano_eleicao,{_NATKEY[dataset]}"
-        total, batch, idx = 0, [], 0
-        for r in rows:
-            batch.append({**r, "run_id": run_id})
-            if len(batch) >= CHUNK:
-                idx += 1
-                total += self._insert_batch(table, batch, conflict, run_id, idx)
-                batch = []
-        if batch:
+        campos = FINGERPRINT_CAMPOS[dataset]
+        enviadas = inseridas = ignoradas = idx = ordinal = 0
+        batch = []
+
+        def flush(b):
+            nonlocal enviadas, inseridas, ignoradas, idx
             idx += 1
-            total += self._insert_batch(table, batch, conflict, run_id, idx)
-        return total
+            before = self._count(table, run_id)
+            self._post_batch(table, b, run_id, idx)
+            after = self._count(table, run_id)
+            ins = after - before
+            ign = len(b) - ins
+            enviadas += len(b); inseridas += ins; ignoradas += ign
+            if ign > 0 and not resume:
+                raise PersistenceError(
+                    f"conflito inesperado no batch #{idx} de {table}: enviadas={len(b)} "
+                    f"inseridas={ins} ignoradas={ign} (run={run_id}). Sem resume, indica "
+                    f"fingerprint colidindo ou reenvio não idempotente.")
+            self._patch_run(run_id, {
+                "batch_atual": idx, "ultimo_batch_confirmado": idx,
+                "linhas_enviadas": enviadas, "linhas_inseridas": inseridas,
+                "linhas_ignoradas": ignoradas})
+
+        for r in rows:
+            ordinal += 1
+            fp = row_fingerprint(r, ordinal, campos)
+            batch.append({**r, "run_id": run_id, "row_fingerprint": fp})
+            if len(batch) >= CHUNK:
+                flush(batch); batch = []
+        if batch:
+            flush(batch)
+        logger.info("stage %s run=%s: enviadas=%d inseridas=%d ignoradas=%d",
+                    dataset, run_id, enviadas, inseridas, ignoradas)
+        return inseridas
 
     def count_staging(self, dataset: str, run_id: str) -> int:
         resp = self.w.session.get(
@@ -75,31 +99,39 @@ class PostgrestBackend(Backend):
             raise PersistenceError(f"count_staging {dataset}: {resp.status_code} {resp.text[:200]}")
         return int(resp.headers.get("content-range", "*/0").split("/")[-1] or 0)
 
-    def _insert_batch(self, table, rows, conflict, run_id, batch_idx) -> int:
-        """Um batch com retry/backoff. ON CONFLICT DO NOTHING garante que
-        repetir o MESMO batch não duplica (idempotência de retomada)."""
+    def _post_batch(self, table, rows, run_id, batch_idx):
+        """POST com retry/backoff. ON CONFLICT DO NOTHING sobre
+        (run_id, row_fingerprint) → repetir o MESMO batch não duplica."""
         last = None
         for attempt in range(1, MAX_BATCH_RETRIES + 1):
             resp = self.w.session.post(
                 f"{self.w.url}/rest/v1/{table}",
-                params={"on_conflict": conflict},
+                params={"on_conflict": "run_id,row_fingerprint"},
                 headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
                 json=rows,
                 timeout=INSERT_TIMEOUT_S,
             )
             if resp.status_code < 300:
-                self.w.session.patch(
-                    f"{self.w.url}/rest/v1/tse_load_runs",
-                    params={"run_id": f"eq.{run_id}"},
-                    headers={"Prefer": "return=minimal"},
-                    json={"batch_atual": batch_idx, "ultimo_batch_confirmado": batch_idx},
-                    timeout=30,
-                )
-                return len(rows)
+                return
             last = f"{resp.status_code} {resp.text[:200]}"
             if attempt < MAX_BATCH_RETRIES:
                 self._sleep(BATCH_BACKOFF_S * (2 ** (attempt - 1)))
         raise PersistenceError(f"stage batch {table} #{batch_idx} falhou apos {MAX_BATCH_RETRIES}: {last}")
+
+    def _count(self, table, run_id) -> int:
+        resp = self.w.session.get(
+            f"{self.w.url}/rest/v1/{table}",
+            params={"run_id": f"eq.{run_id}", "select": "run_id"},
+            headers={"Prefer": "count=exact", "Range": "0-0"}, timeout=60)
+        if resp.status_code >= 300:
+            raise PersistenceError(f"count {table}: {resp.status_code} {resp.text[:200]}")
+        return int(resp.headers.get("content-range", "*/0").split("/")[-1] or 0)
+
+    def _patch_run(self, run_id, fields):
+        self.w.session.patch(
+            f"{self.w.url}/rest/v1/tse_load_runs",
+            params={"run_id": f"eq.{run_id}"},
+            headers={"Prefer": "return=minimal"}, json=fields, timeout=30)
 
     def promote(self, dataset: str, ano: int, run_id: str, min_expected: int) -> dict:
         resp = self.w.session.post(
