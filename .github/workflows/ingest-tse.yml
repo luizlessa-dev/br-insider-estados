@@ -17,22 +17,49 @@ name: Ingestão TSE
 #   despesas:   ~600k registros
 #
 # Tempo estimado: ~10-20min por dataset/ano (download ZIP + delete + insert)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# ⚠️  CONTENÇÃO EMERGENCIAL — receitas e despesas SUSPENSAS (2026-07-16)
+#
+# Motivo: o caminho de receitas/despesas usa delete-before-load — apaga o ano
+# na tabela final ANTES de baixar o ZIP do TSE. Em 2026-06-20 o CDN do TSE
+# ficou indisponível: os deletes de 2014/2018 rodaram e os downloads falharam,
+# deixando os anos sem reposição. O mesmo mecanismo atinge 2022/2024 (anos
+# servidos por /eleicoes). Enquanto o pipeline seguro (staging + swap atômico)
+# não estiver em produção, qualquer execução de receitas/despesas é
+# potencialmente destrutiva e fica BLOQUEADA.
+#
+# O que permanece liberado: `candidatos` — usa upsert (on_conflict=id), NÃO
+# executa delete-before-load. Confirmado em ingestao/tse/persistence.py
+# (upsert_candidatos → _upsert), sem chamada a _delete_year.
+#
+# COMO REATIVAR (depois da correção segura):
+#   1. Fazer merge do pipeline seguro (branch fix/tse-safe-pipeline):
+#      staging tables + RPC de swap atômico + quality gate + advisory lock.
+#   2. Aplicar as migrations de staging/logs no banco.
+#   3. Reverter este arquivo: descomentar o bloco `schedule` abaixo e remover
+#      o step "Guarda de segurança (contenção emergencial)".
+#   4. Rodar primeiro um dispatch manual de `receitas`/`despesas` de UM ano
+#      não-servido para validar o swap antes de tocar 2022/2024.
+# ─────────────────────────────────────────────────────────────────────────────
 
 on:
-  schedule:
-    # Roda toda segunda de novembro/dezembro em anos eleitorais (pós-resultado)
-    - cron: "0 8 * 11-12 1"
+  # CRON SUSPENSO durante a contenção emergencial. NÃO descomentar sem o
+  # pipeline seguro em produção (ver bloco acima).
+  # schedule:
+  #   # Roda toda segunda de novembro/dezembro em anos eleitorais (pós-resultado)
+  #   - cron: "0 8 * 11-12 1"
   workflow_dispatch:
     inputs:
       dataset:
-        description: "Dataset a ingerir"
+        description: "Dataset a ingerir (receitas/despesas/todos BLOQUEADOS na contenção)"
         type: choice
         options:
-          - todos
           - candidatos
+          - todos
           - receitas
           - despesas
-        default: todos
+        default: candidatos
       anos:
         description: "Anos separados por espaço (ex: 2022 2024)"
         default: "2022 2024"
@@ -51,6 +78,35 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
     steps:
+      # ⚠️ PRIMEIRO step, antes de checkout/setup/instalação/qualquer acesso ao
+      # banco. Falha imediata para datasets destrutivos durante a contenção.
+      - name: Guarda de segurança (contenção emergencial)
+        env:
+          DATASET: ${{ github.event.inputs.dataset || 'candidatos' }}
+        run: |
+          echo "Dataset solicitado: '$DATASET'"
+          case "$DATASET" in
+            receitas|despesas|todos)
+              echo "::error title=TSE receitas/despesas suspensos::O dataset '$DATASET' está TEMPORARIAMENTE SUSPENSO por segurança."
+              echo ""
+              echo "Motivo: o pipeline de receitas/despesas usa delete-before-load e pode apagar"
+              echo "dados de campanha sem reposição se o CDN do TSE falhar (incidente de 2026-06-20)."
+              echo "Enquanto o pipeline seguro (staging + swap atômico) não estiver em produção,"
+              echo "estas execuções ficam bloqueadas."
+              echo ""
+              echo "Apenas 'candidatos' está liberado (usa upsert, não deleta antes de carregar)."
+              echo "Reativação: ver instruções no cabeçalho de .github/workflows/ingest-tse.yml"
+              exit 1
+              ;;
+            candidatos)
+              echo "Dataset 'candidatos' liberado: usa upsert (on_conflict=id), sem delete-before-load."
+              ;;
+            *)
+              echo "::error::Dataset desconhecido: '$DATASET'"
+              exit 1
+              ;;
+          esac
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -64,7 +120,7 @@ jobs:
       - name: Resolver parâmetros
         id: params
         run: |
-          DATASET="${{ github.event.inputs.dataset || 'todos' }}"
+          DATASET="${{ github.event.inputs.dataset || 'candidatos' }}"
           ANOS="${{ github.event.inputs.anos || '2022 2024' }}"
           echo "dataset=$DATASET" >> $GITHUB_OUTPUT
           echo "anos=$ANOS"       >> $GITHUB_OUTPUT
