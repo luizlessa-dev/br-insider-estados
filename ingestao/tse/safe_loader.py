@@ -16,13 +16,83 @@ testável sem rede nem banco — ver ingestao/tse/tests/test_safe_loader.py.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 import uuid
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Callable, Iterable, Protocol
 
 logger = logging.getLogger("tse.safe_loader")
+
+
+def _norm(v) -> str:
+    """Normalização determinística p/ o fingerprint: None→'', datas ISO,
+    numéricos com 2 casas, texto strip+upper (case/espaço não distinguem)."""
+    if v is None:
+        return ""
+    if isinstance(v, (date, datetime)):
+        return v.isoformat()
+    if isinstance(v, float):
+        return f"{v:.2f}"
+    if isinstance(v, int):
+        return str(v)
+    return str(v).strip().upper()
+
+
+def row_fingerprint(row: dict, ordinal: int, campos: list) -> str:
+    """SHA-256 de (ano | ordinal_no_arquivo | conteúdo normalizado).
+
+    ordinal = posição determinística na sequência de parse de um ZIP estático
+    pós-eleição: distingue linhas legítimas idênticas em conteúdo. conteúdo =
+    todos os campos capturados, normalizados (detecta drift do arquivo).
+    Reenviar o MESMO arquivo/run reproduz o mesmo hash → ON CONFLICT DO NOTHING
+    idempotente. Colisão: só a do SHA-256 (~2^-128)."""
+    partes = [_norm(row.get("ano_eleicao")), str(ordinal)]
+    partes += [_norm(row.get(c)) for c in campos]
+    return hashlib.sha256("|".join(partes).encode("utf-8")).hexdigest()
+
+
+FINGERPRINT_CAMPOS = {
+    "receitas": ["numero_recibo", "cpf_candidato", "nome_candidato", "cargo",
+                 "sigla_partido", "uf", "cpf_cnpj_doador", "nome_doador", "tipo_doador",
+                 "setor_economico_doador", "cpf_cnpj_doador_originario",
+                 "nome_doador_originario", "natureza_receita", "origem_receita",
+                 "especie_recurso", "fonte_recurso", "valor", "data_receita",
+                 "data_prestacao_contas"],
+    "despesas": ["numero_documento", "cpf_candidato", "nome_candidato", "cargo",
+                 "sigla_partido", "uf", "cpf_cnpj_fornecedor", "nome_fornecedor",
+                 "tipo_despesa", "descricao_despesa", "origem_despesa",
+                 "especie_recurso", "fonte_recurso", "valor_despesa", "valor_prestado",
+                 "data_despesa"],
+}
+
+
+TRANSFORMER_VERSION = "1"  # muda quando o parser altera a semântica das linhas
+
+
+def pode_retomar(run_existente: dict, zip_sha256: str, zip_bytes: int,
+                 dataset: str, ano: int) -> bool:
+    """Decide se um run pode ser RETOMADO (mesmo run_id) ou exige um NOVO run.
+    Ver ingestao/tse/RESUME_PROTOCOL.md. Retomar exige: não promovido, mesmo
+    conteúdo de arquivo (sha256+bytes), mesmo dataset/ano e mesma versão do
+    transformador. Qualquer divergência → False (novo run obrigatório)."""
+    if run_existente is None:
+        return False
+    if run_existente.get("phase") == "promovido":
+        return False
+    if run_existente.get("status") not in ("running",):
+        return False
+    if run_existente.get("dataset") != dataset or run_existente.get("ano") != ano:
+        return False
+    if run_existente.get("zip_sha256") != zip_sha256:
+        return False
+    if run_existente.get("zip_bytes") != zip_bytes:
+        return False
+    if run_existente.get("transformer_version") != TRANSFORMER_VERSION:
+        return False
+    return True
 
 
 class SourceError(Exception):

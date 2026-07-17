@@ -15,6 +15,20 @@
 -- Constraint copiada/adaptada: a UNIQUE natural. Ver nota de unicidade abaixo.
 -- ============================================================================
 
+-- IDENTIDADE — row_fingerprint (ver análise de unicidade).
+-- Descoberta empírica (produção, 2026-07-16): numero_recibo (receitas) e
+-- numero_documento (despesas) são 100% NULL nos anos recentes (2022/2024). A
+-- chave natural do TSE (SQ_RECEITA/SQ_DESPESA) NÃO é capturada pelo parser
+-- atual. Um NULLS NOT DISTINCT sobre a natkey colapsaria TODAS as linhas nulas
+-- num único registro → perda massiva. Um hash só de conteúdo colapsa ~5–6% de
+-- linhas legítimas idênticas.
+--
+-- Solução: row_fingerprint = SHA-256( ano | ordinal_no_arquivo | conteúdo
+-- normalizado ). O ordinal (posição determinística na sequência de parse de um
+-- ZIP estático pós-eleição) distingue linhas legítimas idênticas; o conteúdo
+-- detecta drift do arquivo. UNIQUE (run_id, row_fingerprint) → idempotência de
+-- reenvio do mesmo arquivo/run e zero colapso de duplicatas legítimas.
+
 -- ── 1. Staging receitas ─────────────────────────────────────────────────────
 create table if not exists public.tse_receitas_staging (
   ano_eleicao                smallint      not null,
@@ -39,17 +53,11 @@ create table if not exists public.tse_receitas_staging (
   data_prestacao_contas      date,
   -- controle
   run_id                     uuid          not null,
+  row_fingerprint            text          not null,
   staged_at                  timestamptz   not null default now()
 );
-
--- UNICIDADE por (run_id, ano_eleicao, chave natural):
--- Garante que DOIS run_ids diferentes PODEM conter a mesma chave natural sem
--- conflito (o run_id entra na chave), enquanto DENTRO de um run a chave natural
--- não duplica. Também torna o re-INSERT de um batch idempotente (ON CONFLICT
--- DO NOTHING). NULLS NOT DISTINCT: trata dois numero_recibo nulos como iguais
--- dentro do mesmo run (evita acumular lixo em reprocessos).
-create unique index if not exists uq_tse_receitas_staging_run_nat
-  on public.tse_receitas_staging (run_id, ano_eleicao, numero_recibo) nulls not distinct;
+create unique index if not exists uq_tse_receitas_staging_fp
+  on public.tse_receitas_staging (run_id, row_fingerprint);
 
 -- ── 2. Staging despesas ─────────────────────────────────────────────────────
 create table if not exists public.tse_despesas_staging (
@@ -71,14 +79,11 @@ create table if not exists public.tse_despesas_staging (
   valor_prestado      numeric(16,2),
   data_despesa        date,
   run_id              uuid          not null,
+  row_fingerprint     text          not null,
   staged_at           timestamptz   not null default now()
 );
-
--- despesas.numero_documento é nullable e SEM unique na final. A unicidade de
--- staging é a mesma forma (run_id, ano, doc), NULLS NOT DISTINCT, apenas para
--- idempotência de batch. Linhas com doc nulo repetido dentro do run colapsam.
-create unique index if not exists uq_tse_despesas_staging_run_nat
-  on public.tse_despesas_staging (run_id, ano_eleicao, numero_documento) nulls not distinct;
+create unique index if not exists uq_tse_despesas_staging_fp
+  on public.tse_despesas_staging (run_id, row_fingerprint);
 
 -- Postura pós-P0: RLS ligada, sem policy (só service_role), sem grant anon/auth.
 alter table public.tse_receitas_staging enable row level security;
@@ -102,6 +107,13 @@ create table if not exists public.tse_load_runs (
   ultimo_batch_confirmado int    default 0,
   linhas_parseadas       bigint  default 0,
   linhas_staged          bigint  default 0,
+  linhas_enviadas        bigint  default 0,   -- soma de linhas POST enviadas
+  linhas_inseridas       bigint  default 0,   -- efetivamente inseridas (não-conflito)
+  linhas_ignoradas       bigint  default 0,   -- ON CONFLICT DO NOTHING (retomada)
+  -- proveniência / retomada (um staging pertence a UM arquivo)
+  zip_sha256             text,
+  pipeline_commit        text,
+  transformer_version    text,
   -- swap
   rows_final_before bigint,
   rows_final_after  bigint,
@@ -234,7 +246,7 @@ begin
     into v_cols
     from information_schema.columns
    where table_schema = 'public' and table_name = v_stage
-     and column_name not in ('run_id','staged_at');
+     and column_name not in ('run_id','staged_at','row_fingerprint');
 
   -- 4.7 SWAP ATÔMICO (mesma transação)
   execute format('delete from %I where ano_eleicao = $1', v_final) using p_ano;
