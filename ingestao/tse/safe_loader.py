@@ -55,13 +55,13 @@ def row_fingerprint(row: dict, ordinal: int, campos: list) -> str:
 
 
 FINGERPRINT_CAMPOS = {
-    "receitas": ["numero_recibo", "cpf_candidato", "nome_candidato", "cargo",
+    "receitas": ["source_id", "numero_recibo", "cpf_candidato", "nome_candidato", "cargo",
                  "sigla_partido", "uf", "cpf_cnpj_doador", "nome_doador", "tipo_doador",
                  "setor_economico_doador", "cpf_cnpj_doador_originario",
                  "nome_doador_originario", "natureza_receita", "origem_receita",
                  "especie_recurso", "fonte_recurso", "valor", "data_receita",
                  "data_prestacao_contas"],
-    "despesas": ["numero_documento", "cpf_candidato", "nome_candidato", "cargo",
+    "despesas": ["source_id", "numero_documento", "cpf_candidato", "nome_candidato", "cargo",
                  "sigla_partido", "uf", "cpf_cnpj_fornecedor", "nome_fornecedor",
                  "tipo_despesa", "descricao_despesa", "origem_despesa",
                  "especie_recurso", "fonte_recurso", "valor_despesa", "valor_prestado",

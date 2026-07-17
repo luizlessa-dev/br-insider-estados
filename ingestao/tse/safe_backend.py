@@ -9,6 +9,7 @@ sql/0001_tse_safe_pipeline.sql.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
@@ -106,7 +107,7 @@ class PostgrestBackend(Backend):
         for attempt in range(1, MAX_BATCH_RETRIES + 1):
             resp = self.w.session.post(
                 f"{self.w.url}/rest/v1/{table}",
-                params={"on_conflict": "run_id,row_fingerprint"},
+                params={"on_conflict": "run_id,identity_key"},
                 headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
                 json=rows,
                 timeout=INSERT_TIMEOUT_S,
@@ -133,15 +134,34 @@ class PostgrestBackend(Backend):
             params={"run_id": f"eq.{run_id}"},
             headers={"Prefer": "return=minimal"}, json=fields, timeout=30)
 
-    def promote(self, dataset: str, ano: int, run_id: str, min_expected: int) -> dict:
+    def promote(self, dataset: str, ano: int, run_id: str, min_expected: int,
+                override: bool = False, override_motivo: str | None = None,
+                override_by: str | None = None) -> dict:
+        payload = {
+            "p_dataset": dataset, "p_ano": ano, "p_run_id": run_id,
+            "p_min_expected": min_expected,
+        }
+        if override:
+            # contexto de auditoria vindo do GitHub Actions (secrets/env do runner)
+            payload.update({
+                "p_override": True,
+                "p_override_motivo": override_motivo,
+                "p_override_by": override_by or os.environ.get("GITHUB_ACTOR"),
+                "p_override_ctx": {
+                    "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+                    "github_actor": os.environ.get("GITHUB_ACTOR"),
+                    "github_sha": os.environ.get("GITHUB_SHA"),
+                    "run_url": (
+                        f"{os.environ.get('GITHUB_SERVER_URL','')}/"
+                        f"{os.environ.get('GITHUB_REPOSITORY','')}/actions/runs/"
+                        f"{os.environ.get('GITHUB_RUN_ID','')}"
+                        if os.environ.get("GITHUB_RUN_ID") else None
+                    ),
+                },
+            })
         resp = self.w.session.post(
             f"{self.w.url}/rest/v1/rpc/tse_promote_year",
-            json={
-                "p_dataset": dataset,
-                "p_ano": ano,
-                "p_run_id": run_id,
-                "p_min_expected": min_expected,
-            },
+            json=payload,
             timeout=600,
         )
         if resp.status_code >= 300:

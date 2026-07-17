@@ -100,6 +100,7 @@ class Candidato:
 @dataclass
 class Receita:
     ano_eleicao: int
+    source_id: Optional[str]          # SQ_RECEITA — id oficial único do TSE
     numero_recibo: Optional[str]
     cpf_candidato: Optional[str]
     nome_candidato: Optional[str]
@@ -124,6 +125,7 @@ class Receita:
 @dataclass
 class Despesa:
     ano_eleicao: int
+    source_id: Optional[str]          # SQ_DESPESA — id oficial único do TSE
     numero_documento: Optional[str]
     cpf_candidato: Optional[str]
     nome_candidato: Optional[str]
@@ -338,6 +340,8 @@ def _parse_receitas_file(reader: csv.DictReader, ano: int) -> Iterator[Receita]:
             continue
         yield Receita(
             ano_eleicao=ano,
+            # SQ_RECEITA — id oficial único do TSE (layout moderno, 2018+).
+            source_id=(row.get("sq_receita") or row.get("SQ_RECEITA", "")).strip() or None,
             numero_recibo=(row.get("numero_recibo") or row.get("NR_RECIBO_ELEITORAL", "")).strip() or None,
             cpf_candidato=_cpf(row.get("cpf") or row.get("NR_CPF_CANDIDATO")),
             nome_candidato=(row.get("nome") or row.get("NM_CANDIDATO", "")).strip() or None,
@@ -400,6 +404,8 @@ def _parse_despesas_file(reader: csv.DictReader, ano: int) -> Iterator[Despesa]:
             continue
         yield Despesa(
             ano_eleicao=ano,
+            # SQ_DESPESA — id oficial único do TSE (layout moderno, 2018+).
+            source_id=(row.get("sq_despesa") or row.get("SQ_DESPESA", "")).strip() or None,
             numero_documento=(
                 row.get("nr_documento_despesa") or row.get("NR_DOCUMENTO_DESPESA", "")
             ).strip() or None,
