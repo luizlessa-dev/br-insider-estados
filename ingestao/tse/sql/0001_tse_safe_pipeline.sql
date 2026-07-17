@@ -62,8 +62,16 @@ create table if not exists public.tse_receitas_staging (
   -- controle
   run_id                     uuid          not null,
   row_fingerprint            text          not null,
-  identity_key               text generated always as (coalesce(source_id, row_fingerprint)) stored,
-  staged_at                  timestamptz   not null default now()
+  -- IDENTIDADE = fingerprint. A validação de parsing (2018/2022/2024) provou que
+  -- SQ_RECEITA/SQ_DESPESA são preenchidos mas NÃO ÚNICOS (CSV denormalizado por
+  -- doador originário / item), com 4–18% de duplicatas. Portanto source_id NÃO
+  -- pode ser identidade/unique — só o fingerprint (conteúdo+ordinal) distingue
+  -- essas linhas legítimas. source_id fica como dado e entra no conteúdo do
+  -- fingerprint (integridade/detecção de alteração).
+  identity_key               text generated always as ('fingerprint:' || row_fingerprint) stored,
+  staged_at                  timestamptz   not null default now(),
+  constraint ck_tse_receitas_stg_identidade check (source_id is not null or row_fingerprint is not null),
+  constraint ck_tse_receitas_stg_fp_sha256 check (row_fingerprint is null or row_fingerprint ~ '^[0-9a-f]{64}$')
 );
 create unique index if not exists uq_tse_receitas_staging_ident
   on public.tse_receitas_staging (run_id, identity_key);
@@ -90,15 +98,34 @@ create table if not exists public.tse_despesas_staging (
   data_despesa        date,
   run_id              uuid          not null,
   row_fingerprint     text          not null,
-  identity_key        text generated always as (coalesce(source_id, row_fingerprint)) stored,
-  staged_at           timestamptz   not null default now()
+  -- IDENTIDADE = fingerprint (SQ_DESPESA não é único — ver validação).
+  identity_key        text generated always as ('fingerprint:' || row_fingerprint) stored,
+  staged_at           timestamptz   not null default now(),
+  constraint ck_tse_despesas_stg_identidade check (source_id is not null or row_fingerprint is not null),
+  constraint ck_tse_despesas_stg_fp_sha256 check (row_fingerprint is null or row_fingerprint ~ '^[0-9a-f]{64}$')
 );
 create unique index if not exists uq_tse_despesas_staging_ident
   on public.tse_despesas_staging (run_id, identity_key);
 
 -- source_id nas tabelas FINAIS (id oficial do TSE preservado no dado servido).
+-- NULLABLE de propósito: registros antigos (2014/2016) e anos sem SQ_* ficam com
+-- source_id NULL. SEM NOT NULL, SEM unique global (quebraria dados legados que
+-- não têm source_id e podem ter repetições).
 alter table public.tse_receitas add column if not exists source_id text;
 alter table public.tse_despesas add column if not exists source_id text;
+
+-- ÍNDICE PARCIAL (ano_eleicao, source_id): **NÃO VIÁVEL / NÃO CRIAR.**
+-- A validação de parsing (2018/2022/2024) mostrou source_id preenchido mas
+-- DUPLICADO (receitas ~4–5%, despesas ~15–18%) por denormalização do CSV. Um
+-- unique (ano_eleicao, source_id) seria rejeitado pelos dados reais. Mantido
+-- apenas como registro do porquê de NÃO existir:
+--   -- create unique index uq_tse_receitas_source
+--   --   on public.tse_receitas (ano_eleicao, source_id) where source_id is not null;  -- FALHA
+--
+-- Consulta de cobertura de source_id por ano (diagnóstico, não habilita índice):
+--   select ano_eleicao, count(*) as total, count(source_id) as com_source_id
+--   from public.tse_receitas group by ano_eleicao order by ano_eleicao;
+--   (idem para tse_despesas)
 
 -- Postura pós-P0: RLS ligada, sem policy (só service_role), sem grant anon/auth.
 alter table public.tse_receitas_staging enable row level security;
@@ -233,17 +260,12 @@ begin
   if v_wrong_year > 0 then
     raise exception 'mistura de anos: % linhas com ano != % (run %)', v_wrong_year, p_ano, p_run_id;
   end if;
-  -- (b) zero duplicidade do IDENTIFICADOR OFICIAL (source_id) não nulo dentro do
-  -- run — o SQ_RECEITA/SQ_DESPESA é único no TSE; repetição indica dado corrompido.
-  execute format(
-    'select coalesce(sum(c-1),0) from (select count(*) c from %I where run_id=$1 and source_id is not null group by source_id having count(*)>1) d',
-    v_stage)
-    into v_dups using p_run_id;
-  if v_dups > 0 then
-    raise exception 'duplicidade de source_id (id oficial TSE): % repeticoes (run %)', v_dups, p_run_id;
-  end if;
-  -- (c) linhas SEM id oficial (source_id null) — usam fallback fingerprint;
-  -- contadas e visíveis (não bloqueia; a final permite source_id null).
+  -- (b) NÃO há gate de duplicidade de source_id: a validação de parsing provou
+  -- que SQ_RECEITA/SQ_DESPESA repetem legitimamente (CSV denormalizado). A
+  -- unicidade de linha é garantida pelo índice UNIQUE(run_id, identity_key), onde
+  -- identity_key = fingerprint (conteúdo+ordinal). v_dups fica em 0 por design.
+  v_dups := 0;
+  -- (c) linhas SEM id oficial (source_id null) — contadas e visíveis.
   execute format('select count(*) from %I where run_id=$1 and source_id is null', v_stage)
     into v_null_key using p_run_id;
 
