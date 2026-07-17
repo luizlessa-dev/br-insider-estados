@@ -49,6 +49,36 @@ O staging é particionado por `run_id`, e o `run_id` está amarrado a
 diferente → hash diferente → **exige** novo run_id → staging isolado. Nunca há
 reaproveitamento cruzado.
 
+## Retomada com transporte COPY (copy_backend.py)
+
+- **Temp table é EFÊMERA:** o COPY carrega numa temp `_tse_copy_<run>` `on commit
+  drop`. Ela existe só dentro da transação/sessão; um restart NÃO a preserva.
+  A temp nunca é o checkpoint.
+- **Staging persistente é o CHECKPOINT:** após o COPY na temp, um
+  `INSERT ... SELECT ... ON CONFLICT (run_id, identity_key) DO NOTHING` move para
+  `tse_*_staging` (persistente). O que sobrevive a um restart é o staging.
+- **`ultimo_batch_confirmado`:** no caminho PostgREST marca o último batch cujo
+  INSERT foi confirmado. No caminho COPY a carga é uma transação única (não há
+  batches parciais persistidos): ou o COMMIT grava tudo no staging, ou o ROLLBACK
+  não grava nada. `linhas_enviadas/inseridas/ignoradas` são gravadas no COMMIT.
+- **Comportamento no restart:** reabrir o MESMO run_id (após validar hash/tamanho/
+  transformer_version) e refazer o COPY do arquivo inteiro. O
+  `ON CONFLICT (run_id, identity_key) DO NOTHING` ignora o que já está no staging;
+  só entra o que falta. Idempotente.
+- **Batches pulados ou reenviados:** no COPY não há "pular" — reenvia-se o arquivo
+  todo; o dedup por `identity_key` (source_id oficial, ou fingerprint+ordinal no
+  fallback) descarta o já presente. Nenhuma linha duplica; nenhuma some.
+- **Falha DURANTE o COPY:** dentro da transação → `ROLLBACK`; a temp some, o
+  staging fica como estava antes, a FINAL nunca é tocada.
+- **Falha DURANTE a consolidação** (INSERT temp→staging): mesma transação →
+  `ROLLBACK`; nada persiste no staging. Retomar reexecuta do zero (idempotente).
+- **Validação obrigatória antes de retomar:** `zip_sha256` E `zip_bytes` E
+  `transformer_version` iguais aos gravados no run. Qualquer divergência ⇒ o
+  arquivo/semântica mudou ⇒ **novo run_id** (staging não reutilizável).
+- **Quando OBRIGATORIAMENTE criar novo run_id:** `zip_sha256` diferente;
+  `zip_bytes` diferente; `transformer_version` diferente; dataset/ano diferentes;
+  run já `promovido`.
+
 ## Runs abandonados
 
 `tse_gc_staging(interval)` marca runs `running` mais velhos que o intervalo como
