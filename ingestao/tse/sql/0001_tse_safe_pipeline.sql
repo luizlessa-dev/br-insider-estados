@@ -29,9 +29,17 @@
 -- detecta drift do arquivo. UNIQUE (run_id, row_fingerprint) → idempotência de
 -- reenvio do mesmo arquivo/run e zero colapso de duplicatas legítimas.
 
+-- IDENTIDADE PREFERENCIAL: source_id (SQ_RECEITA/SQ_DESPESA, id oficial do TSE).
+-- identity_key = coalesce(source_id, row_fingerprint): usa o id oficial quando
+-- existe; cai para o fingerprint (com ordinal) só quando o oficial está ausente.
+-- UNIQUE(run_id, identity_key) é a chave de idempotência. O row_fingerprint
+-- permanece SEMPRE (verificação de integridade e detecção de alteração do
+-- arquivo), mesmo quando source_id manda na identidade.
+
 -- ── 1. Staging receitas ─────────────────────────────────────────────────────
 create table if not exists public.tse_receitas_staging (
   ano_eleicao                smallint      not null,
+  source_id                  text,         -- SQ_RECEITA
   numero_recibo              text,
   cpf_candidato              text,
   nome_candidato             text,
@@ -54,14 +62,16 @@ create table if not exists public.tse_receitas_staging (
   -- controle
   run_id                     uuid          not null,
   row_fingerprint            text          not null,
+  identity_key               text generated always as (coalesce(source_id, row_fingerprint)) stored,
   staged_at                  timestamptz   not null default now()
 );
-create unique index if not exists uq_tse_receitas_staging_fp
-  on public.tse_receitas_staging (run_id, row_fingerprint);
+create unique index if not exists uq_tse_receitas_staging_ident
+  on public.tse_receitas_staging (run_id, identity_key);
 
 -- ── 2. Staging despesas ─────────────────────────────────────────────────────
 create table if not exists public.tse_despesas_staging (
   ano_eleicao         smallint      not null,
+  source_id           text,          -- SQ_DESPESA
   numero_documento    text,
   cpf_candidato       text,
   nome_candidato      text,
@@ -80,10 +90,15 @@ create table if not exists public.tse_despesas_staging (
   data_despesa        date,
   run_id              uuid          not null,
   row_fingerprint     text          not null,
+  identity_key        text generated always as (coalesce(source_id, row_fingerprint)) stored,
   staged_at           timestamptz   not null default now()
 );
-create unique index if not exists uq_tse_despesas_staging_fp
-  on public.tse_despesas_staging (run_id, row_fingerprint);
+create unique index if not exists uq_tse_despesas_staging_ident
+  on public.tse_despesas_staging (run_id, identity_key);
+
+-- source_id nas tabelas FINAIS (id oficial do TSE preservado no dado servido).
+alter table public.tse_receitas add column if not exists source_id text;
+alter table public.tse_despesas add column if not exists source_id text;
 
 -- Postura pós-P0: RLS ligada, sem policy (só service_role), sem grant anon/auth.
 alter table public.tse_receitas_staging enable row level security;
@@ -124,6 +139,11 @@ create table if not exists public.tse_load_runs (
   override_motivo   text,
   override_by       text,
   override_at       timestamptz,
+  override_pct_drop numeric,           -- % de queda ignorado no override
+  override_github_run_id text,
+  override_github_actor  text,
+  override_github_sha    text,
+  override_run_url       text,
   source_url        text,
   zip_bytes         bigint,
   error             text,
@@ -147,7 +167,8 @@ create or replace function public.tse_promote_year(
   p_min_expected bigint,
   p_override     boolean default false,
   p_override_motivo text default null,
-  p_override_by  text default null
+  p_override_by  text default null,
+  p_override_ctx jsonb default null   -- {github_run_id, github_actor, github_sha, run_url}
 ) returns jsonb
 language plpgsql
 security definer
@@ -212,16 +233,18 @@ begin
   if v_wrong_year > 0 then
     raise exception 'mistura de anos: % linhas com ano != % (run %)', v_wrong_year, p_ano, p_run_id;
   end if;
-  -- (b) zero duplicidade da chave natural NÃO NULA (evita violar unique da final)
+  -- (b) zero duplicidade do IDENTIFICADOR OFICIAL (source_id) não nulo dentro do
+  -- run — o SQ_RECEITA/SQ_DESPESA é único no TSE; repetição indica dado corrompido.
   execute format(
-    'select coalesce(sum(c-1),0) from (select count(*) c from %I where run_id=$1 and %I is not null group by %I having count(*)>1) d',
-    v_stage, v_natkey, v_natkey)
+    'select coalesce(sum(c-1),0) from (select count(*) c from %I where run_id=$1 and source_id is not null group by source_id having count(*)>1) d',
+    v_stage)
     into v_dups using p_run_id;
   if v_dups > 0 then
-    raise exception 'duplicidade de chave natural: % repeticoes de % (run %)', v_dups, v_natkey, p_run_id;
+    raise exception 'duplicidade de source_id (id oficial TSE): % repeticoes (run %)', v_dups, p_run_id;
   end if;
-  -- (c) chaves naturais nulas: contadas e visíveis (a final PERMITE null; não bloqueia)
-  execute format('select count(*) from %I where run_id=$1 and %I is null', v_stage, v_natkey)
+  -- (c) linhas SEM id oficial (source_id null) — usam fallback fingerprint;
+  -- contadas e visíveis (não bloqueia; a final permite source_id null).
+  execute format('select count(*) from %I where run_id=$1 and source_id is null', v_stage)
     into v_null_key using p_run_id;
 
   -- 4.6 GATE DE CONTAGEM — este SIM pode ser sobreposto pelo override auditado.
@@ -229,10 +252,18 @@ begin
     if p_override then
       update public.tse_load_runs
          set override_gate = true, override_motivo = p_override_motivo,
-             override_by = coalesce(p_override_by, session_user), override_at = now()
+             override_by = coalesce(p_override_by, session_user), override_at = now(),
+             override_pct_drop = round((p_min_expected - v_staged)::numeric / nullif(p_min_expected,0) * 100, 2),
+             override_github_run_id = p_override_ctx->>'github_run_id',
+             override_github_actor  = p_override_ctx->>'github_actor',
+             override_github_sha    = p_override_ctx->>'github_sha',
+             override_run_url       = p_override_ctx->>'run_url'
        where run_id = p_run_id;
-      raise warning 'OVERRIDE gate de contagem: staged=% < min=% (run % por % motivo=%)',
-        v_staged, p_min_expected, p_run_id, coalesce(p_override_by, session_user), p_override_motivo;
+      raise warning 'OVERRIDE gate de contagem: staged=% < min=% (queda %%%) run=% por=% motivo=% gh_run=%',
+        v_staged, p_min_expected,
+        round((p_min_expected - v_staged)::numeric / nullif(p_min_expected,0) * 100, 2),
+        p_run_id, coalesce(p_override_by, session_user), p_override_motivo,
+        p_override_ctx->>'github_run_id';
     else
       raise exception 'queda anormal: staged=% < min_expected=% (dataset=% ano=%). Use override auditado se intencional.',
         v_staged, p_min_expected, p_dataset, p_ano;
@@ -246,7 +277,7 @@ begin
     into v_cols
     from information_schema.columns
    where table_schema = 'public' and table_name = v_stage
-     and column_name not in ('run_id','staged_at','row_fingerprint');
+     and column_name not in ('run_id','staged_at','row_fingerprint','identity_key');
 
   -- 4.7 SWAP ATÔMICO (mesma transação)
   execute format('delete from %I where ano_eleicao = $1', v_final) using p_ano;
@@ -271,9 +302,9 @@ begin
 end;
 $$;
 
-revoke all on function public.tse_promote_year(text,int,uuid,bigint,boolean,text,text) from public, anon, authenticated;
-grant execute on function public.tse_promote_year(text,int,uuid,bigint,boolean,text,text) to service_role;
-alter function public.tse_promote_year(text,int,uuid,bigint,boolean,text,text) owner to postgres;
+revoke all on function public.tse_promote_year(text,int,uuid,bigint,boolean,text,text,jsonb) from public, anon, authenticated;
+grant execute on function public.tse_promote_year(text,int,uuid,bigint,boolean,text,text,jsonb) to service_role;
+alter function public.tse_promote_year(text,int,uuid,bigint,boolean,text,text,jsonb) owner to postgres;
 
 -- ── 5. GC de staging + runs abandonados ─────────────────────────────────────
 create or replace function public.tse_gc_staging(p_abandon_after interval default interval '2 hours')

@@ -19,7 +19,8 @@ logger = logging.getLogger("tse.zip_source")
 
 def _receita_to_dict(r) -> dict:
     return {
-        "ano_eleicao": r.ano_eleicao, "numero_recibo": r.numero_recibo,
+        "ano_eleicao": r.ano_eleicao, "source_id": r.source_id,
+        "numero_recibo": r.numero_recibo,
         "cpf_candidato": r.cpf_candidato, "nome_candidato": r.nome_candidato,
         "cargo": r.cargo, "sigla_partido": r.sigla_partido, "uf": r.uf,
         "cpf_cnpj_doador": r.cpf_cnpj_doador, "nome_doador": r.nome_doador,
@@ -35,7 +36,8 @@ def _receita_to_dict(r) -> dict:
 
 def _despesa_to_dict(d) -> dict:
     return {
-        "ano_eleicao": d.ano_eleicao, "numero_documento": d.numero_documento,
+        "ano_eleicao": d.ano_eleicao, "source_id": d.source_id,
+        "numero_documento": d.numero_documento,
         "cpf_candidato": d.cpf_candidato, "nome_candidato": d.nome_candidato,
         "cargo": d.cargo, "sigla_partido": d.sigla_partido, "uf": d.uf,
         "cpf_cnpj_fornecedor": d.cpf_cnpj_fornecedor, "nome_fornecedor": d.nome_fornecedor,
