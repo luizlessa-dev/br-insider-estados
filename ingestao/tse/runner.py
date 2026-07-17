@@ -72,17 +72,54 @@ def run_candidatos(writer: TSEWriter, ano: int) -> None:
         raise
 
 
+# Caminho seguro (staging + swap atômico). O flag DEVE valer exatamente "1" para
+# habilitar receitas/despesas. Qualquer outro valor (ausente, "0", inválido)
+# BLOQUEIA receitas/despesas com erro explícito — nunca há fallback para o
+# delete-before-load antigo. O código legado (upsert_receitas/upsert_despesas
+# com _delete_year) permanece na classe TSEWriter mas é INALCANÇÁVEL por execução
+# normal do runner: nenhum caminho abaixo o chama.
+SAFE_LOADER = os.environ.get("TSE_SAFE_LOADER") == "1"
+
+
+class SafeLoaderDisabled(RuntimeError):
+    """Receitas/despesas exigem TSE_SAFE_LOADER=1 (pipeline seguro)."""
+
+
+def _exigir_safe_loader(dataset: str) -> None:
+    if not SAFE_LOADER:
+        raise SafeLoaderDisabled(
+            f"'{dataset}' BLOQUEADO: exige TSE_SAFE_LOADER=1 (pipeline seguro com "
+            f"staging + swap atômico). O fluxo antigo delete-before-load foi "
+            f"desativado por segurança e não é alcançável. Aplique a migration "
+            f"sql/0001_tse_safe_pipeline.sql e defina TSE_SAFE_LOADER=1."
+        )
+
+
+def _run_safe(writer: TSEWriter, dataset: str, ano: int) -> int:
+    """Executa receitas/despesas modernas pelo pipeline seguro. Retorna linhas finais."""
+    from .safe_backend import PostgrestBackend
+    from .safe_loader import load_year
+    from .zip_source import ZipYearSource
+
+    source = ZipYearSource(dataset, ano)
+    backend = PostgrestBackend(writer)
+    result = load_year(dataset, ano, source, backend)
+    return int(result.get("rows_after") or 0)
+
+
 def run_receitas(writer: TSEWriter, ano: int) -> None:
     dataset = f"receitas_{ano}"
     log_id = writer.start_log(dataset)
     try:
         if ano in ANOS_LEGADOS:
-            # 2014/2016: ZIP tem formato .txt e URL diferente — delega ao ingest_legado
-            zip_path = _baixar_zip_legado(ano)
-            n = ingerir_receitas_legado(ano, zip_path) or 0
-        else:
-            # iter_receitas é um generator — processa UF a UF sem acumular tudo na RAM
-            n = writer.upsert_receitas(iter_receitas(ano), ano=ano)
+            # 2014/2016: ainda usam ingest_legado (delete-before-load). NÃO liberar
+            # como teste seguro. Bloqueado até o legado ganhar o mesmo tratamento.
+            raise SafeLoaderDisabled(
+                f"receitas {ano}: ano legado ainda usa ingest_legado "
+                f"(delete-before-load). Bloqueado até migração para o pipeline seguro."
+            )
+        _exigir_safe_loader("receitas")
+        n = _run_safe(writer, "receitas", ano)
         writer.finish_log(log_id, "ok", n_novos=n)
         logger.info("receitas %d: %d gravadas", ano, n)
     except Exception as exc:
@@ -96,12 +133,14 @@ def run_despesas(writer: TSEWriter, ano: int, skip_delete: bool = False) -> None
     log_id = writer.start_log(dataset)
     try:
         if ano in ANOS_LEGADOS:
-            # 2014/2016: ZIP tem formato .txt e URL diferente — delega ao ingest_legado
-            zip_path = _baixar_zip_legado(ano)
-            n = ingerir_despesas_legado(ano, zip_path, skip_delete=skip_delete) or 0
-        else:
-            # iter_despesas é um generator — processa UF a UF sem acumular tudo na RAM
-            n = writer.upsert_despesas(iter_despesas(ano), ano=ano, skip_delete=skip_delete)
+            raise SafeLoaderDisabled(
+                f"despesas {ano}: ano legado ainda usa ingest_legado "
+                f"(delete-before-load). Bloqueado até migração para o pipeline seguro."
+            )
+        _exigir_safe_loader("despesas")
+        # o pipeline seguro substitui o ano inteiro atomicamente; skip_delete
+        # não se aplica (não há delete-antes-do-load para pular).
+        n = _run_safe(writer, "despesas", ano)
         writer.finish_log(log_id, "ok", n_novos=n)
         logger.info("despesas %d: %d gravadas", ano, n)
     except Exception as exc:

@@ -1,0 +1,210 @@
+"""
+Backend real do pipeline seguro TSE — fala com o Supabase via PostgREST/RPC.
+
+Usa a mesma sessão autenticada do TSEWriter. O swap atômico e o quality gate
+acontecem no banco (função tse_promote_year); aqui só orquestramos as chamadas.
+Nenhuma DDL é criada em runtime — staging/logs/RPC vêm da migration
+sql/0001_tse_safe_pipeline.sql.
+"""
+from __future__ import annotations
+
+import logging
+import os
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Iterable
+
+from .persistence import PersistenceError, TSEWriter
+from .safe_loader import FINGERPRINT_CAMPOS, Backend, RunRecord, row_fingerprint
+
+logger = logging.getLogger("tse.safe_backend")
+
+CHUNK = 500                       # linhas por chamada PostgREST
+MAX_BATCH_RETRIES = 4             # tentativas por batch
+BATCH_BACKOFF_S = 3.0             # backoff base por batch
+INSERT_TIMEOUT_S = 300           # timeout por chamada de INSERT
+_STAGING = {"receitas": "tse_receitas_staging", "despesas": "tse_despesas_staging"}
+_FINAL = {"receitas": "tse_receitas", "despesas": "tse_despesas"}
+
+
+class PostgrestBackend(Backend):
+    def __init__(self, writer: TSEWriter, sleep=time.sleep) -> None:
+        self.w = writer
+        self._sleep = sleep
+
+    def count_final(self, dataset: str, ano: int) -> int:
+        # HEAD com count=exact devolve a contagem sem trafegar linhas.
+        resp = self.w.session.get(
+            f"{self.w.url}/rest/v1/{_FINAL[dataset]}",
+            params={"ano_eleicao": f"eq.{ano}", "select": "ano_eleicao"},
+            headers={"Prefer": "count=exact", "Range": "0-0"},
+            timeout=60,
+        )
+        if resp.status_code >= 300:
+            raise PersistenceError(f"count_final {dataset} {ano}: {resp.status_code} {resp.text[:200]}")
+        cr = resp.headers.get("content-range", "*/0")
+        return int(cr.split("/")[-1] or 0)
+
+    def stage_rows(self, dataset: str, run_id: str, rows: Iterable[dict],
+                   resume: bool = False) -> int:
+        """Insere em batches com ON CONFLICT DO NOTHING sobre (run_id,
+        row_fingerprint). Conta e REGISTRA por batch: enviadas, inseridas,
+        ignoradas (contagem no banco antes/depois — não confia no silêncio do
+        DO NOTHING). Conflito inesperado (ignoradas>0) SÓ é aceito com
+        resume=True (retomada do MESMO arquivo/run); senão ERRO. Retorna
+        o total INSERIDO (não enviado)."""
+        table = _STAGING[dataset]
+        campos = FINGERPRINT_CAMPOS[dataset]
+        enviadas = inseridas = ignoradas = idx = ordinal = 0
+        batch = []
+
+        def flush(b):
+            nonlocal enviadas, inseridas, ignoradas, idx
+            idx += 1
+            before = self._count(table, run_id)
+            self._post_batch(table, b, run_id, idx)
+            after = self._count(table, run_id)
+            ins = after - before
+            ign = len(b) - ins
+            enviadas += len(b); inseridas += ins; ignoradas += ign
+            if ign > 0 and not resume:
+                raise PersistenceError(
+                    f"conflito inesperado no batch #{idx} de {table}: enviadas={len(b)} "
+                    f"inseridas={ins} ignoradas={ign} (run={run_id}). Sem resume, indica "
+                    f"fingerprint colidindo ou reenvio não idempotente.")
+            self._patch_run(run_id, {
+                "batch_atual": idx, "ultimo_batch_confirmado": idx,
+                "linhas_enviadas": enviadas, "linhas_inseridas": inseridas,
+                "linhas_ignoradas": ignoradas})
+
+        for r in rows:
+            ordinal += 1
+            fp = row_fingerprint(r, ordinal, campos)
+            batch.append({**r, "run_id": run_id, "row_fingerprint": fp})
+            if len(batch) >= CHUNK:
+                flush(batch); batch = []
+        if batch:
+            flush(batch)
+        logger.info("stage %s run=%s: enviadas=%d inseridas=%d ignoradas=%d",
+                    dataset, run_id, enviadas, inseridas, ignoradas)
+        return inseridas
+
+    def count_staging(self, dataset: str, run_id: str) -> int:
+        resp = self.w.session.get(
+            f"{self.w.url}/rest/v1/{_STAGING[dataset]}",
+            params={"run_id": f"eq.{run_id}", "select": "run_id"},
+            headers={"Prefer": "count=exact", "Range": "0-0"},
+            timeout=60,
+        )
+        if resp.status_code >= 300:
+            raise PersistenceError(f"count_staging {dataset}: {resp.status_code} {resp.text[:200]}")
+        return int(resp.headers.get("content-range", "*/0").split("/")[-1] or 0)
+
+    def _post_batch(self, table, rows, run_id, batch_idx):
+        """POST com retry/backoff. ON CONFLICT DO NOTHING sobre
+        (run_id, row_fingerprint) → repetir o MESMO batch não duplica."""
+        last = None
+        for attempt in range(1, MAX_BATCH_RETRIES + 1):
+            resp = self.w.session.post(
+                f"{self.w.url}/rest/v1/{table}",
+                params={"on_conflict": "run_id,identity_key"},
+                headers={"Prefer": "resolution=ignore-duplicates,return=minimal"},
+                json=rows,
+                timeout=INSERT_TIMEOUT_S,
+            )
+            if resp.status_code < 300:
+                return
+            last = f"{resp.status_code} {resp.text[:200]}"
+            if attempt < MAX_BATCH_RETRIES:
+                self._sleep(BATCH_BACKOFF_S * (2 ** (attempt - 1)))
+        raise PersistenceError(f"stage batch {table} #{batch_idx} falhou apos {MAX_BATCH_RETRIES}: {last}")
+
+    def _count(self, table, run_id) -> int:
+        resp = self.w.session.get(
+            f"{self.w.url}/rest/v1/{table}",
+            params={"run_id": f"eq.{run_id}", "select": "run_id"},
+            headers={"Prefer": "count=exact", "Range": "0-0"}, timeout=60)
+        if resp.status_code >= 300:
+            raise PersistenceError(f"count {table}: {resp.status_code} {resp.text[:200]}")
+        return int(resp.headers.get("content-range", "*/0").split("/")[-1] or 0)
+
+    def _patch_run(self, run_id, fields):
+        self.w.session.patch(
+            f"{self.w.url}/rest/v1/tse_load_runs",
+            params={"run_id": f"eq.{run_id}"},
+            headers={"Prefer": "return=minimal"}, json=fields, timeout=30)
+
+    def promote(self, dataset: str, ano: int, run_id: str, min_expected: int,
+                override: bool = False, override_motivo: str | None = None,
+                override_by: str | None = None) -> dict:
+        payload = {
+            "p_dataset": dataset, "p_ano": ano, "p_run_id": run_id,
+            "p_min_expected": min_expected,
+        }
+        if override:
+            # contexto de auditoria vindo do GitHub Actions (secrets/env do runner)
+            payload.update({
+                "p_override": True,
+                "p_override_motivo": override_motivo,
+                "p_override_by": override_by or os.environ.get("GITHUB_ACTOR"),
+                "p_override_ctx": {
+                    "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+                    "github_actor": os.environ.get("GITHUB_ACTOR"),
+                    "github_sha": os.environ.get("GITHUB_SHA"),
+                    "run_url": (
+                        f"{os.environ.get('GITHUB_SERVER_URL','')}/"
+                        f"{os.environ.get('GITHUB_REPOSITORY','')}/actions/runs/"
+                        f"{os.environ.get('GITHUB_RUN_ID','')}"
+                        if os.environ.get("GITHUB_RUN_ID") else None
+                    ),
+                },
+            })
+        resp = self.w.session.post(
+            f"{self.w.url}/rest/v1/rpc/tse_promote_year",
+            json=payload,
+            timeout=600,
+        )
+        if resp.status_code >= 300:
+            # O quality gate e o swap falham aqui de forma atômica — final intacta.
+            raise PersistenceError(f"promote {dataset} {ano}: {resp.status_code} {resp.text[:300]}")
+        return resp.json() if resp.text else {}
+
+    def clear_staging(self, dataset: str, run_id: str) -> None:
+        self.w.session.delete(
+            f"{self.w.url}/rest/v1/{_STAGING[dataset]}",
+            params={"run_id": f"eq.{run_id}"},
+            headers={"Prefer": "return=minimal"},
+            timeout=120,
+        )
+
+    def record_run(self, run: RunRecord) -> None:
+        expires = None
+        if run.staging_expires_at_days:
+            expires = (datetime.now(timezone.utc)
+                       + timedelta(days=run.staging_expires_at_days)).isoformat()
+        payload = {
+            "run_id": run.run_id,
+            "dataset": run.dataset,
+            "ano": run.ano,
+            "phase": run.phase,
+            "status": run.status,
+            "rows_downloaded": run.rows_downloaded,
+            "rows_staged": run.rows_staged,
+            "rows_final_before": run.rows_final_before,
+            "rows_final_after": run.rows_final_after,
+            "min_expected": run.min_expected,
+            "error": run.error,
+            "staging_expires_at": expires,
+        }
+        if run.status in ("ok", "erro"):
+            payload["finished_at"] = datetime.now(timezone.utc).isoformat()
+        # upsert por run_id (idempotente: cada fase re-grava a mesma linha)
+        resp = self.w.session.post(
+            f"{self.w.url}/rest/v1/tse_load_runs",
+            params={"on_conflict": "run_id"},
+            headers={"Prefer": "resolution=merge-duplicates,return=minimal"},
+            json=[payload],
+            timeout=30,
+        )
+        if resp.status_code >= 300:
+            logger.warning("record_run falhou: %s %s", resp.status_code, resp.text[:200])
