@@ -1,0 +1,5 @@
+# Artefatos derivados/pesados — regeneráveis e/ou imutáveis fora do Git
+snapshot/
+baseline_canonicalizado.sql
+0000_baseline_candidato.sql
+*.log
