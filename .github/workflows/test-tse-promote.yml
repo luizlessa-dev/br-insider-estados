@@ -1,0 +1,46 @@
+# CI isolado do safe pipeline TSE (promoção por interseção).
+# Roda SOMENTE em PRs que tocam os arquivos TSE relevantes. Sem secrets, sem
+# Supabase remoto, sem Portal, sem dados eleitorais — Postgres local efêmero
+# na MESMA imagem da produção.
+name: test-tse-promote
+
+on:
+  pull_request:
+    paths:
+      - "ingestao/tse/sql/0001_tse_safe_pipeline.sql"
+      - "ingestao/tse/tests/test_promote_intersecao.sql"
+      - "ingestao/tse/tests/fixtures_finais_teste.sql"
+      - ".github/workflows/test-tse-promote.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (9 cenários de promoção)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: public.ecr.aws/supabase/postgres:17.6.1.063
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: fixture (schema real das finais) + migration 0001 + 9 cenários
+        env:
+          PGPASSWORD: postgres
+          PGHOST: 127.0.0.1
+          PGUSER: postgres
+        run: |
+          psql -c "create database teste_prom"
+          psql -d teste_prom -v ON_ERROR_STOP=1 -f ingestao/tse/tests/fixtures_finais_teste.sql
+          psql -d teste_prom -v ON_ERROR_STOP=1 -f ingestao/tse/sql/0001_tse_safe_pipeline.sql
+          psql -d teste_prom -v ON_ERROR_STOP=1 -f ingestao/tse/tests/test_promote_intersecao.sql
