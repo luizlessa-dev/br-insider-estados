@@ -39,8 +39,8 @@ create table if not exists public.tse_despesas (
   valor_despesa numeric(16,2) not null
 );
 
--- replica o estado vulnerável observado em produção
-grant select, insert, update, delete, truncate, references, trigger
+-- replica o estado vulnerável observado em produção (inclui MAINTAIN/PG17)
+grant select, insert, update, delete, truncate, references, trigger, maintain
   on public.tse_receitas, public.tse_despesas to anon, authenticated;
 grant usage, select, update
   on sequence public.tse_receitas_id_seq, public.tse_despesas_id_seq
@@ -75,8 +75,8 @@ declare
 begin
   foreach t in array array['public.tse_receitas', 'public.tse_despesas'] loop
     foreach r in array array['anon', 'authenticated'] loop
-      -- escrita e privilégios estruturais: revogados
-      foreach p in array array['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] loop
+      -- escrita, privilégios estruturais e MAINTAIN: revogados
+      foreach p in array array['INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN'] loop
         if has_table_privilege(r, t, p) then
           raise exception 'FALHA: % ainda tem % em %', r, p, t;
         end if;
@@ -86,12 +86,16 @@ begin
         raise exception 'FALHA: SELECT de % em % foi indevidamente revogado', r, t;
       end if;
     end loop;
-    -- service_role permanece operacional (loaders)
-    foreach p in array array['SELECT','INSERT','UPDATE','DELETE'] loop
+    -- service_role permanece operacional (loaders), postura anterior intacta
+    foreach p in array array['SELECT','INSERT','UPDATE','DELETE','MAINTAIN'] loop
       if not has_table_privilege('service_role', t, p) then
         raise exception 'FALHA: service_role perdeu % em %', p, t;
       end if;
     end loop;
+    -- postgres (owner) conserva MAINTAIN
+    if not has_table_privilege('postgres', t, 'MAINTAIN') then
+      raise exception 'FALHA: postgres perdeu MAINTAIN em %', t;
+    end if;
   end loop;
 
   -- sequences: anon/authenticated sem nextval/setval; service_role intacto

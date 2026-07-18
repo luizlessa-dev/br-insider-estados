@@ -26,6 +26,14 @@ revoke insert, update, delete, truncate, references, trigger
   on table public.tse_despesas
   from anon, authenticated;
 
+-- 1b. MAINTAIN (PG17): permite VACUUM/ANALYZE/REFRESH/LOCK TABLE — com a anon
+--     key pública, LOCK TABLE vira vetor de DoS. Auditoria confirmou grant
+--     direto de postgres para ambos os roles. postgres (owner) e a postura de
+--     service_role não são alterados; pg_maintain intocada.
+revoke maintain
+  on table public.tse_receitas, public.tse_despesas
+  from anon, authenticated;
+
 -- 2. Sequences associadas: anon/authenticated não geram ids
 --    (USAGE/UPDATE permitem nextval/setval; SELECT em sequence é inofensivo
 --    e permanece, coerente com a decisão de não mexer em leitura.)
