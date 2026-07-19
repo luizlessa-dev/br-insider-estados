@@ -9,7 +9,7 @@ banco); este arquivo é o rastro auditável do lado do repositório.
 | Arquivo | `db/migrations/0047_tse_revoke_privilegios_escrita.sql` |
 | Checksum SHA-256 | `cff2481223eb1fd5eda356f96bccfa8d7925da15dbb1001843fd3c49108d0ec5` |
 | Merge SHA que introduziu o arquivo | `d308f9a` ([PR #7](https://github.com/luizlessa-dev/br-insider-estados/pull/7)) |
-| Projeto Supabase | `redggdtakzmsabwvjzhb` |
+| Projeto Supabase | `redgg…jzhb` (ref mascarado — documento público) |
 | Data/hora de aplicação (UTC) | início `2026-07-18T23:56:22.3Z` — fim `2026-07-18T23:56:30.3Z` |
 | Duração | ≈ 8 segundos |
 | Role executora | `postgres` (`current_user` = `session_user` = `postgres`) |
