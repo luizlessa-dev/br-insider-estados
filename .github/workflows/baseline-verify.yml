@@ -1,0 +1,23 @@
+# CI isolado do pacote de baseline: roda o baseline-verify local em PRs que
+# tocam db/baseline/**. Zero secrets, zero Supabase remoto — a única rede é o
+# pull da imagem Postgres. O script remove o container via trap em qualquer
+# saída (e o runner é efêmero).
+name: baseline-verify
+
+on:
+  pull_request:
+    paths:
+      - "db/baseline/**"
+      - ".github/workflows/baseline-verify.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: baseline-verify (aplicação + hardening + 11 digests)
+        run: ./db/baseline/tools/50_baseline_verify.sh
