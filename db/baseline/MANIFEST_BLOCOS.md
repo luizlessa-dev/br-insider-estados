@@ -20,4 +20,4 @@ Ordem de aplicação = ordem numérica. Checksums SHA-256 (16 hex iniciais).
 | 14_comments | blocks/14_comments.sql | comments | 05,08 | 188 | `0d3d50f00a4341e2` |
 | 15_grants | blocks/15_grants.sql | grants (fiel a produção) | 05,08 | 1892 | `e9830202f2f9d4f1` |
 | 16_default_privileges | blocks/16_default_privileges.sql | default ACLs (fiel; decisão A/B pendente) | 02 | 12 | `03477512ceecdde5` |
-| 17_hardening | blocks/17_hardening.sql | hardening TSE (espelha 0047) | 15 | 4 | `99f57db8828ebcb3` |
+| 17_hardening | blocks/17_hardening.sql | hardening TSE (espelha 0047, corrigido na PROVA 1B: inclui REVOKE MAINTAIN) | 15 | 5 | `b6392349ceb94b1b` |
