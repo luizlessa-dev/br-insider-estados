@@ -11,7 +11,7 @@ Ordem de aplicação = ordem numérica. Checksums SHA-256 (16 hex iniciais).
 | 04_sequences | blocks/04_sequences.sql | sequences | 02 | 86 | `471970c282980a88` |
 | 05_tables | blocks/05_tables.sql | tabelas (+col defaults) | 01,02,03,04 | 456 | `f6073a48ef4ff5e3` |
 | 06_constraints | blocks/06_constraints.sql | PK/UNIQUE/CHECK/FK + seq OWNED BY | 05 | 699 | `cb43a8ac914aca64` |
-| 07_functions | blocks/07_functions.sql | funções/procedures | 05 | 156 | `ae25eab7695f0a0b` |
+| 07_functions | blocks/07_functions.sql | funções/procedures | 05 | 156 | `719eea5d42d4e1cd` |
 | 08_views_e_matviews | blocks/08_views_e_matviews.sql | views+MVs COMBINADAS (deps bidirecionais; ordem pg_dump) | 05,06,07 | 193 | `25c1a55921d59203` |
 | 10_indexes | blocks/10_indexes.sql | índices não-constraint | 05,08,01(pg_trgm) | 785 | `5da0c88e3ea342c4` |
 | 11_triggers | blocks/11_triggers.sql | triggers | 05,07 | 3 | `14d13a4f5778a065` |

@@ -1,6 +1,6 @@
 colunas ce968ccd103f043c53a976eeb032166d
 constraints 9f8232b66d7318413cdff3b0470cae87
-functions 50854bb1abddb9f248e7f7cede44e878
+functions 72bc32efd43ea1e3821f77716cb9e70d
 grants_tabelas 0747a918dfbd634c59cc9c2e0efc3e74
 indexes b564f0c15362c8bbee4749d1aef8b5d2
 matviews 6ae886c0f71f79f009bba35f627e4f43
