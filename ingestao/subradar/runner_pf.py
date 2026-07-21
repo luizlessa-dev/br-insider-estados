@@ -46,6 +46,7 @@ from .cfc_contadores import CFCContadoresConnector
 from .infosimples_conselhos import InfosimplesConselhosPFConnector
 from .dou_pf import DOUPFConnector
 from .cepim_pf import CEPIMRepresentantePFConnector
+from .opensanctions_pro import OpenSanctionsProPFConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,6 +76,7 @@ FONTES_PF = [
     EUSanctionsConnector(),        # EU Sanctions — busca por nome
     UNSanctionsConnector(),        # ONU — busca por nome
     WorldBankDebarmentConnector(), # World Bank — busca por nome
+    OpenSanctionsProPFConnector(), # OpenSanctions Pro — PEPs, INTERPOL, 400+ listas (R$0,60/query)
 ]
 
 # Fontes pagas — somente modo avulsa
