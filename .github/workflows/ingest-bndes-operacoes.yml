@@ -1,0 +1,44 @@
+name: Ingestão BNDES — Operações Não Automáticas
+
+# Cadência: mensal, dia 7 às 09:00 UTC (06:00 BRT) — o CKAN do BNDES atualiza
+# este resource mensalmente (última mudança observada: dia 3 do mês).
+# Upsert idempotente por (numero_do_contrato, cnpj, valor_contratado_reais,
+# data_da_contratacao) — re-execuções são seguras.
+
+on:
+  schedule:
+    - cron: "0 9 7 * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ingest-bndes-operacoes
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingestao/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: Ingerir BNDES operações não automáticas
+        run: python -m ingestao.bndes_operacoes_connector
+
+      - name: Notificar falha
+        if: failure()
+        run: |
+          echo "::error::Falha na ingestão BNDES operações — verificar logs acima."
