@@ -19,5 +19,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      - name: Instalar Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.0
+
       - name: baseline-verify (aplicação + hardening + 11 digests)
         run: ./db/baseline/tools/50_baseline_verify.sh
