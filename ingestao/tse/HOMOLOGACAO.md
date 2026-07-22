@@ -120,9 +120,7 @@ Aprovar SOMENTE se TODOS forem verdadeiros:
 - [ ] staging retomável apenas com mesmo hash + tamanho + `transformer_version`;
 - [ ] segunda promoção do mesmo (dataset, ano) AGUARDA o advisory lock;
 - [ ] ausência de duplicação na retomada (contagem estável);
-- [ ] `source_id` preservado no staging; na final somente se a coluna existir
-      (a promoção usa a interseção staging∩final — o schema real de produção
-      não tem `source_id` nas finais);
+- [ ] `source_id` preservado no staging e na final;
 - [ ] `row_fingerprint` válido (`^[0-9a-f]{64}$`) em 100% das linhas (CHECK);
 - [ ] contagem final == contagem validada do arquivo (parsed == staged == final);
 - [ ] `tse_load_runs` com proveniência completa (zip_sha256, zip_bytes,

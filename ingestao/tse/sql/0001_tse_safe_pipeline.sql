@@ -107,13 +107,12 @@ create table if not exists public.tse_despesas_staging (
 create unique index if not exists uq_tse_despesas_staging_ident
   on public.tse_despesas_staging (run_id, identity_key);
 
--- source_id nas tabelas FINAIS: **esta migration NÃO altera as finais.**
--- O schema real de produção não tem source_id em tse_receitas/tse_despesas, e a
--- promoção usa a interseção staging∩final (ver tse_promote_year 4.6b) — funciona
--- com ou sem a coluna. Se um dia for aprovado adicionar source_id às finais
--- (proveniência por linha), isso será uma migration própria e auditada; a
--- promoção passará a incluí-la automaticamente. Se existir, será NULLABLE e SEM
--- unique (SQ_RECEITA/SQ_DESPESA repetem legitimamente — CSV denormalizado).
+-- source_id nas tabelas FINAIS (id oficial do TSE preservado no dado servido).
+-- NULLABLE de propósito: registros antigos (2014/2016) e anos sem SQ_* ficam com
+-- source_id NULL. SEM NOT NULL, SEM unique global (quebraria dados legados que
+-- não têm source_id e podem ter repetições).
+alter table public.tse_receitas add column if not exists source_id text;
+alter table public.tse_despesas add column if not exists source_id text;
 
 -- ÍNDICE PARCIAL (ano_eleicao, source_id): **NÃO VIÁVEL / NÃO CRIAR.**
 -- A validação de parsing (2018/2022/2024) mostrou source_id preenchido mas
@@ -207,10 +206,6 @@ declare
   v_stage   text;
   v_natkey  text;
   v_cols    text;
-  v_promoted   text[];
-  v_discarded  text[];
-  v_required   text[];
-  v_missing    text[];
   v_run     record;
   v_staged  bigint;
   v_wrong_year bigint;
@@ -300,49 +295,11 @@ begin
   execute format('select count(*) from %I where ano_eleicao = $1', v_final)
     into v_before using p_ano;
 
-  -- 4.6b COLUNAS PROMOVIDAS = INTERSEÇÃO (staging ∩ final), na ordem da FINAL.
-  -- Nunca presume coluna do staging na final (ex.: source_id existe no staging
-  -- mas NÃO no schema real de tse_receitas/tse_despesas em produção; se um dia
-  -- a final ganhar a coluna, ela passa a ser promovida automaticamente).
-  -- 'id' também fica de fora: é identidade serial da final, nunca vem da carga.
-  select string_agg(quote_ident(f.column_name), ', ' order by f.ordinal_position),
-         array_agg(f.column_name order by f.ordinal_position)
-    into v_cols, v_promoted
-    from information_schema.columns f
-    join information_schema.columns s
-      on  s.table_schema = 'public' and s.table_name = v_stage
-      and s.column_name  = f.column_name
-   where f.table_schema = 'public' and f.table_name = v_final
-     and f.column_name not in ('run_id','staged_at','row_fingerprint','identity_key','id');
-
-  select coalesce(array_agg(s.column_name order by s.ordinal_position), '{}')
-    into v_discarded
-    from information_schema.columns s
-   where s.table_schema = 'public' and s.table_name = v_stage
-     and s.column_name not in ('run_id','staged_at','row_fingerprint','identity_key','id')
-     and not exists (select 1 from information_schema.columns f
-                      where f.table_schema = 'public' and f.table_name = v_final
-                        and f.column_name  = s.column_name);
-
-  -- Colunas obrigatórias por dataset: sem qualquer uma delas na interseção,
-  -- aborta AQUI — antes do delete e do insert; a final não é tocada.
-  if p_dataset = 'receitas' then
-    v_required := array['ano_eleicao','numero_recibo','valor'];
-  else
-    v_required := array['ano_eleicao','numero_documento','valor_despesa'];
-  end if;
-  select coalesce(array_agg(r), '{}') into v_missing
-    from unnest(v_required) r
-   where v_promoted is null or r <> all (v_promoted);
-  if v_cols is null or cardinality(v_missing) > 0 then
-    raise exception
-      'promocao abortada (dataset=% ano=% run=%): colunas obrigatorias ausentes da intersecao staging com final: % — nenhuma linha foi apagada ou promovida',
-      p_dataset, p_ano, p_run_id, v_missing;
-  end if;
-
-  raise notice 'tse_promote_year dataset=% ano=% run=%: % colunas promovidas [%]; descartadas do staging [%]',
-    p_dataset, p_ano, p_run_id,
-    cardinality(v_promoted), array_to_string(v_promoted, ','), array_to_string(v_discarded, ',');
+  select string_agg(quote_ident(column_name), ', ')
+    into v_cols
+    from information_schema.columns
+   where table_schema = 'public' and table_name = v_stage
+     and column_name not in ('run_id','staged_at','row_fingerprint','identity_key');
 
   -- 4.7 SWAP ATÔMICO (mesma transação)
   execute format('delete from %I where ano_eleicao = $1', v_final) using p_ano;
@@ -363,8 +320,6 @@ begin
   return jsonb_build_object('dataset', p_dataset, 'ano', p_ano, 'run_id', p_run_id,
                             'rows_before', v_before, 'rows_staged', v_staged,
                             'rows_after', v_after, 'null_key_count', v_null_key,
-                            'promoted_columns', to_jsonb(v_promoted),
-                            'discarded_staging_columns', to_jsonb(v_discarded),
                             'override', p_override);
 end;
 $$;
