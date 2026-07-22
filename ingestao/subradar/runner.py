@@ -74,6 +74,8 @@ from .inpi_marcas_pj import INPIMarcasConnector
 from .midia_adversa_pj import MidiaAdversaPJConnector
 from .doe_estaduais_pj import DOEEstaduaisPJConnector
 from .grafo_socios_pj import GrafoSociosPJConnector
+from .infosimples_cnd_estadual_pj import InfosimplesCNDEstadualPJConnector
+from .bndes_devedores_pj import BNDESDevedoresPJConnector
 from .directdata import DirectDataConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
 from .socios_compliance import SociosComplianceConnector
@@ -138,10 +140,12 @@ FONTES = [
     OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
     BigDataCorpConnector(),       # BigDataCorp — protestos cartoriais + processos sócios (BIGDATA_CORP_TOKEN)
     SociosComplianceConnector(),  # Sócios PF — CEIS/CNEP/MTE/PGFN/sanções internacionais por CPF
-    GrafoSociosPJConnector(),     # Grafo de sócios — vínculos cruzados, paraíso fiscal, concentração
-    INPIMarcasConnector(),        # INPI — marcas registradas, oposições e nulidades
-    MidiaAdversaPJConnector(),    # Mídia adversa — NewsAPI + Haiku (razão social, 90 dias)
-    DOEEstaduaisPJConnector(),    # DOE estaduais — SP/MG/RJ (interdição, embargo, autuação)
+    GrafoSociosPJConnector(),              # Grafo de sócios — vínculos cruzados, paraíso fiscal, concentração
+    INPIMarcasConnector(),                 # INPI — marcas registradas, oposições e nulidades
+    MidiaAdversaPJConnector(),             # Mídia adversa — NewsAPI + Haiku (razão social, 90 dias)
+    DOEEstaduaisPJConnector(),             # DOE estaduais — SP/MG/RJ (interdição, embargo, autuação)
+    InfosimplesCNDEstadualPJConnector(),   # Infosimples — CND estadual 27 UFs (INFOSIMPLES_TOKEN)
+    BNDESDevedoresPJConnector(),           # BNDES — lista de inadimplentes (portal público)
 ]
 
 # Fontes exclusivas para consulta avulsa (dossiê pontual R$ 197).
