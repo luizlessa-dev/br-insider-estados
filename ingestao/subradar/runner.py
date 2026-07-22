@@ -65,6 +65,11 @@ from .opensanctions_pro import OpenSanctionsProConnector
 from .cndt_tst_pj import CNDTTrabalhiPJConnector
 from .crf_fgts_pj import CRFFGTSPJConnector
 from .simples_nacional_pj import SimplesNacionalConnector
+from .cnd_federal_pj import CNDFederalPJConnector
+from .sefaz_estadual_pj import SEFAZEstadualPJConnector
+from .iss_municipal_pj import ISSMunicipalPJConnector
+from .tce_estaduais_pj import TCEEstaduaisPJConnector
+from .contratos_transparencia_pj import ContratosTransparenciaPJConnector
 from .directdata import DirectDataConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
 from .socios_compliance import SociosComplianceConnector
@@ -92,9 +97,14 @@ FONTES = [
     ANVISAConnector(),         # ANVISA — AFE/AE (token gov.br opcional)
     ListaSujaConnector(),      # Lista Suja MTE — trabalho análogo à escravidão
     SituacaoCadastralConnector(), # Situação Cadastral RFB — ativo/suspenso/inapto/baixado
-    SimplesNacionalConnector(),   # Simples Nacional — regime tributário e exclusões recentes
-    CNDTTrabalhiPJConnector(),    # CNDT/TST — débitos trabalhistas como empregadora
-    CRFFGTSPJConnector(),         # CRF/FGTS — Certificado de Regularidade FGTS (Caixa)
+    SimplesNacionalConnector(),         # Simples Nacional — regime tributário e exclusões recentes
+    CNDTTrabalhiPJConnector(),          # CNDT/TST — débitos trabalhistas como empregadora
+    CRFFGTSPJConnector(),               # CRF/FGTS — Certificado de Regularidade FGTS (Caixa)
+    CNDFederalPJConnector(),            # CND Federal — certidão RFB+PGFN consolidada
+    SEFAZEstadualPJConnector(),         # SEFAZ — dívida ativa estadual (SP/MG/RJ)
+    ISSMunicipalPJConnector(),          # ISS — dívida ativa municipal (SP/BH/RJ)
+    TCEEstaduaisPJConnector(),          # TCE-SP/MG/RJ — irregularidades em contratos públicos
+    ContratosTransparenciaPJConnector(), # Portal Transparência — contratos federais ativos/rescindidos
     BACENConnector(),          # BACEN — entidades supervisionadas (bancos, fintechs)
     MTEAutosConnector(),       # MTE — autos de infração trabalhista
     ANEELConnector(),          # ANEEL — autos de infração setor elétrico
