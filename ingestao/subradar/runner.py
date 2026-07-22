@@ -62,6 +62,9 @@ from .anac import ANACConnector
 from .ana import ANAConnector
 from .escavador import EscavadorConnector
 from .opensanctions_pro import OpenSanctionsProConnector
+from .cndt_tst_pj import CNDTTrabalhiPJConnector
+from .crf_fgts_pj import CRFFGTSPJConnector
+from .simples_nacional_pj import SimplesNacionalConnector
 from .directdata import DirectDataConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
 from .socios_compliance import SociosComplianceConnector
@@ -89,6 +92,9 @@ FONTES = [
     ANVISAConnector(),         # ANVISA — AFE/AE (token gov.br opcional)
     ListaSujaConnector(),      # Lista Suja MTE — trabalho análogo à escravidão
     SituacaoCadastralConnector(), # Situação Cadastral RFB — ativo/suspenso/inapto/baixado
+    SimplesNacionalConnector(),   # Simples Nacional — regime tributário e exclusões recentes
+    CNDTTrabalhiPJConnector(),    # CNDT/TST — débitos trabalhistas como empregadora
+    CRFFGTSPJConnector(),         # CRF/FGTS — Certificado de Regularidade FGTS (Caixa)
     BACENConnector(),          # BACEN — entidades supervisionadas (bancos, fintechs)
     MTEAutosConnector(),       # MTE — autos de infração trabalhista
     ANEELConnector(),          # ANEEL — autos de infração setor elétrico
