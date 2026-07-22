@@ -70,6 +70,10 @@ from .sefaz_estadual_pj import SEFAZEstadualPJConnector
 from .iss_municipal_pj import ISSMunicipalPJConnector
 from .tce_estaduais_pj import TCEEstaduaisPJConnector
 from .contratos_transparencia_pj import ContratosTransparenciaPJConnector
+from .inpi_marcas_pj import INPIMarcasConnector
+from .midia_adversa_pj import MidiaAdversaPJConnector
+from .doe_estaduais_pj import DOEEstaduaisPJConnector
+from .grafo_socios_pj import GrafoSociosPJConnector
 from .directdata import DirectDataConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
 from .socios_compliance import SociosComplianceConnector
@@ -134,6 +138,10 @@ FONTES = [
     OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
     BigDataCorpConnector(),       # BigDataCorp — protestos cartoriais + processos sócios (BIGDATA_CORP_TOKEN)
     SociosComplianceConnector(),  # Sócios PF — CEIS/CNEP/MTE/PGFN/sanções internacionais por CPF
+    GrafoSociosPJConnector(),     # Grafo de sócios — vínculos cruzados, paraíso fiscal, concentração
+    INPIMarcasConnector(),        # INPI — marcas registradas, oposições e nulidades
+    MidiaAdversaPJConnector(),    # Mídia adversa — NewsAPI + Haiku (razão social, 90 dias)
+    DOEEstaduaisPJConnector(),    # DOE estaduais — SP/MG/RJ (interdição, embargo, autuação)
 ]
 
 # Fontes exclusivas para consulta avulsa (dossiê pontual R$ 197).
@@ -189,20 +197,41 @@ def _buscar_ou_criar_dossie(cliente_id: str, cnpj: str, razao_social: str | None
     return None
 
 
+_PESOS_PJ = {"critico": 30, "atencao": 10, "info": 2}
+_CAT_JUDICIAL_PJ   = {"datajud", "tcu", "cade", "tce_estaduais_pj", "cndt_tst_pj"}
+_CAT_INTL_PJ       = {"ofac", "uk_sanctions", "eu_sanctions", "un_sanctions",
+                       "worldbank_debarment", "opensanctions_pro", "opensanctions"}
+_CAT_CGU_PJ        = {"ceis", "cnep", "cepim", "lista_suja", "sicaf", "leniencia"}
+_CAT_FISCAL_PJ     = {"cnd_federal", "crf_fgts", "sefaz_estadual", "divida_ativa"}
+
+_FAIXAS_PJ = [
+    (0,  20,  "VERDE",    "Sem ocorrências significativas"),
+    (21, 50,  "AMARELO",  "Atenção — verificar contexto antes de contratar"),
+    (51, 80,  "LARANJA",  "Risco elevado — due diligence aprofundada recomendada"),
+    (81, 100, "VERMELHO", "Risco crítico — contraindicado sem apuração especializada"),
+]
+
+
 def _calcular_score(alertas: list[dict]) -> tuple[int, str]:
-    """Calcula score de risco 0-100 e texto baseado nos alertas."""
-    pts = sum(
-        {"critico": 40, "atencao": 15, "info": 2, "ok": 0}.get(a.get("severidade", ""), 0)
-        for a in alertas
-    )
-    score = min(pts, 100)
-    if score >= 70:
-        return score, "critico"
-    if score >= 40:
-        return score, "alto"
-    if score >= 15:
-        return score, "medio"
-    return score, "baixo"
+    """Calcula score de risco proprietário 0-100 com bônus por categoria."""
+    score = sum(_PESOS_PJ.get(a.get("severidade", ""), 0) for a in alertas)
+
+    fontes = {(a.get("fonte") or "").lower() for a in alertas}
+    if fontes & _CAT_JUDICIAL_PJ:
+        score += 10
+    if fontes & _CAT_INTL_PJ:
+        score += 10
+    if fontes & _CAT_CGU_PJ:
+        score += 5
+    if fontes & _CAT_FISCAL_PJ:
+        score += 5
+
+    score = min(score, 100)
+
+    for lo, hi, cor, _ in _FAIXAS_PJ:
+        if lo <= score <= hi:
+            return score, cor.lower()
+    return score, "vermelho"
 
 
 def _atualizar_dossie(dossie_id: str, alertas: list[dict]) -> None:
