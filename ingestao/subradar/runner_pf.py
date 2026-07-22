@@ -47,6 +47,9 @@ from .infosimples_conselhos import InfosimplesConselhosPFConnector
 from .dou_pf import DOUPFConnector
 from .cepim_pf import CEPIMRepresentantePFConnector
 from .opensanctions_pro import OpenSanctionsProPFConnector
+from .bnmp_pf import BNMPMandadosPrisaoPFConnector
+from .tse_situacao_pf import TSESituacaoEleitoralPFConnector
+from .crea_cau_pf import CREACONFEAPFConnector, CAUBRPFConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,23 +63,27 @@ logger = logging.getLogger("subradar.runner_pf")
 # ---------------------------------------------------------------------------
 
 FONTES_PF = [
-    CPFSituacaoConnector(),        # Situação cadastral do CPF na RFB — verificação base
-    QSAReversoConnector(),         # Empresas onde o CPF é sócio + situação delas
-    ConselhosProfissionaisConnector(), # Registro em conselhos de classe (CREA, CRM, OAB…)
-    CFCContadoresConnector(),      # CFC — contador ativo/inativo (API pública gratuita)
-    InfosimplesConselhosPFConnector(), # CRO/CRF/CFM/CFMV/CFP/CFBM/COREN via Infosimples
-    CEPIMRepresentantePFConnector(),   # CEPIM — sócio de entidade impedida de receber convênios
-    DOUPFConnector(),                  # DOU — menções do nome nos últimos 30 dias (DO1/DO2/DO3)
-    CEISConnector(),               # CEIS — sanções PF
-    CNEPConnector(),               # CNEP — punições PF
-    ListaSujaConnector(),          # MTE lista suja — trabalho escravo
-    DividaAtivaConnector(),        # PGFN dívida ativa PF
-    OFACConnector(),               # OFAC SDN — busca por nome
-    UKSanctionsConnector(),        # UK Sanctions — busca por nome
-    EUSanctionsConnector(),        # EU Sanctions — busca por nome
-    UNSanctionsConnector(),        # ONU — busca por nome
-    WorldBankDebarmentConnector(), # World Bank — busca por nome
-    OpenSanctionsProPFConnector(), # OpenSanctions Pro — PEPs, INTERPOL, 400+ listas (R$0,60/query)
+    CPFSituacaoConnector(),             # Situação cadastral do CPF na RFB — verificação base
+    QSAReversoConnector(),              # Empresas onde o CPF é sócio + situação delas
+    BNMPMandadosPrisaoPFConnector(),    # BNMP/CNJ — mandados de prisão ativos (via Direct Data v3)
+    TSESituacaoEleitoralPFConnector(),  # TSE — quitação eleitoral (via Direct Data v3)
+    CREACONFEAPFConnector(),            # CREA/CONFEA — engenheiros e agrônomos
+    CAUBRPFConnector(),                 # CAU-BR — arquitetos e urbanistas
+    ConselhosProfissionaisConnector(),  # Conselhos via Implanta API (CREA, CRM, OAB…)
+    CFCContadoresConnector(),           # CFC — contador ativo/inativo (API pública gratuita)
+    InfosimplesConselhosPFConnector(),  # CRO/CRF/CFM/CFMV/CFP/CFBM/COREN via Infosimples
+    CEPIMRepresentantePFConnector(),    # CEPIM — sócio de entidade impedida de receber convênios
+    DOUPFConnector(),                   # DOU — menções do nome nos últimos 30 dias (DO1/DO2/DO3)
+    CEISConnector(),                    # CEIS — sanções PF
+    CNEPConnector(),                    # CNEP — punições PF
+    ListaSujaConnector(),               # MTE lista suja — trabalho escravo
+    DividaAtivaConnector(),             # PGFN dívida ativa PF
+    OFACConnector(),                    # OFAC SDN — busca por nome
+    UKSanctionsConnector(),             # UK Sanctions — busca por nome
+    EUSanctionsConnector(),             # EU Sanctions — busca por nome
+    UNSanctionsConnector(),             # ONU — busca por nome
+    WorldBankDebarmentConnector(),      # World Bank — busca por nome
+    OpenSanctionsProPFConnector(),      # OpenSanctions Pro — PEPs, INTERPOL, 400+ listas (R$0,60/query)
 ]
 
 # Fontes pagas — somente modo avulsa
