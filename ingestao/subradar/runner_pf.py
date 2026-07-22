@@ -297,8 +297,8 @@ def processar_cpf(
             upsert("sub_alertas", todos_alertas)
             logger.info("Gravados %d alertas para %s", len(todos_alertas), cpf_fmt)
 
-        # Grava score na tabela de consultas PF (campo score_risco como JSON)
-        upsert("sub_pf_consultas", [{
+        # Grava score na tabela de resultados PF
+        upsert("sub_pf_resultados", [{
             "cpf": cpf_fmt,
             "cliente_id": cliente_id,
             "ciclo": ciclo,
