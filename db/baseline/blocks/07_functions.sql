@@ -257,7 +257,7 @@ CREATE OR REPLACE FUNCTION "public"."buscar_emendas_municipio"("p_uf" "text", "p
          valor_empenhado, valor_pago, parlamentar_id
   FROM public.emendas
   WHERE UPPER(uf_destino) = UPPER(p_uf)
-    AND unaccent(lower(COALESCE(municipio_nome, ''))) 
+    AND unaccent(lower(COALESCE(municipio_nome, '')))
         ILIKE '%' || unaccent(lower(replace(p_slug, '-', ' '))) || '%'
   ORDER BY valor_pago DESC NULLS LAST
   LIMIT 500;
