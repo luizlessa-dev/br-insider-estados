@@ -55,6 +55,7 @@ from .midia_adversa_pf import MidiaAdversaPFConnector
 from .doe_estaduais_pf import DOEEstaduaisPFConnector
 from .cvm_insider_pf import CVMInsiderPFConnector
 from .tce_estaduais_pf import TCEEstaduaisPFConnector
+from .escavador_pf import EscavadorPFConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,6 +76,7 @@ FONTES_PF = [
     # ── Judicial / Penal ─────────────────────────────────────────────────────
     BNMPMandadosPrisaoPFConnector(),    # BNMP/CNJ — mandados de prisão ativos
     CNDTTrabalhiPFConnector(),          # CNDT/TST — débitos trabalhistas como empregador
+    EscavadorPFConnector(),             # Escavador — processos judiciais nacionais por CPF
 
     # ── Eleitoral / Idoneidade ───────────────────────────────────────────────
     TSESituacaoEleitoralPFConnector(),  # TSE — quitação eleitoral
@@ -126,7 +128,7 @@ try:
 except ImportError:
     _ESCAVADOR_PF = None
 
-FONTES_PF_AVULSA = FONTES_PF + [f for f in [_BDC_SCORE_PF, _ESCAVADOR_PF] if f]
+FONTES_PF_AVULSA = FONTES_PF + [f for f in [_BDC_SCORE_PF] if f]
 
 
 def _strip(cpf: str) -> str:
