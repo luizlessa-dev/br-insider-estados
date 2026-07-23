@@ -2,8 +2,10 @@ name: Ingestão BNDES — Operações Não Automáticas
 
 # Cadência: mensal, dia 7 às 09:00 UTC (06:00 BRT) — o CKAN do BNDES atualiza
 # este resource mensalmente (última mudança observada: dia 3 do mês).
-# Upsert idempotente por (numero_do_contrato, cnpj, valor_contratado_reais,
-# data_da_contratacao) — re-execuções são seguras.
+# Full refresh (DELETE + INSERT) a cada execução — não há chave natural
+# única para upsert (subcréditos do mesmo contrato colidem em todos os
+# campos, confirmado em 2026-07-22). Re-execuções são seguras porque cada
+# rodada limpa a tabela antes de reinserir.
 
 on:
   schedule:
