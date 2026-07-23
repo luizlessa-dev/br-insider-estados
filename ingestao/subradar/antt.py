@@ -26,11 +26,7 @@ from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
 
 logger = logging.getLogger("subradar.antt")
 
-# Dataset ID novo (mudou em 2024; URL antiga retorna 404)
-_ANTT_DATASET_ID = "c7edbb2b-a6ea-49d9-b807-0db8f336022b"
-_ANTT_CKAN = f"https://dados.antt.gov.br/api/3/action/package_show?id={_ANTT_DATASET_ID}"
-
-# Fallbacks hardcoded — atualizados jun/2026
+# CSVs canônicos da ANTT — atualizados in-place no mesmo path (jun/2026)
 # Estrutura: razao_social;cnpj;numero_tar;vigencia
 _ANTT_CSV_FALLBACKS = [
     # Transporte regular (maior base, ~50k empresas)
@@ -56,30 +52,13 @@ def _fmt(cnpj: str) -> str:
 
 def _descobrir_urls_antt() -> list[str]:
     """
-    Descobre URLs dos CSVs atuais via CKAN, ignorando arquivos históricos mensais.
-    O CKAN da ANTT publica um CSV por mês (sufixo _MM_YYYY.csv) além do arquivo
-    corrente sem sufixo. Baixar todos os históricos leva ~15 min — só o corrente basta.
+    Retorna os 2 CSVs correntes da ANTT (regular + fretamento).
+
+    O CKAN da ANTT publica centenas de recursos (um por mês desde 2020) com o
+    mesmo filename mas UUIDs distintos. Parsear o catálogo e tentar filtrar os
+    "atuais" é frágil e lento. A ANTT atualiza os dois arquivos canônicos no
+    mesmo path — hardcoded é mais rápido e confiável.
     """
-    try:
-        r = requests.get(_ANTT_CKAN, timeout=15, headers={
-            "User-Agent": "Subradar/1.0 (dados-publicos; contato@subradar.com.br)"
-        })
-        if r.ok:
-            resources = r.json().get("result", {}).get("resources", [])
-            urls = []
-            for res in resources:
-                url = res.get("url", "")
-                fname = url.split("/")[-1]
-                if not url.endswith(".csv") or "habilitad" not in url.lower():
-                    continue
-                # Pula arquivos históricos mensais (ex: empresas_habilitadas_regular_07_2026.csv)
-                if re.search(r"_\d{2}_\d{4}\.csv$", fname):
-                    continue
-                urls.append(url)
-            if urls:
-                return urls
-    except Exception:
-        pass
     return _ANTT_CSV_FALLBACKS
 
 
