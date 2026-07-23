@@ -138,8 +138,6 @@ class ContratosTransparenciaPJConnector(SubradarSource):
                         "cnpjContratado": cnpj_limpo,
                         "pagina": pagina,
                         "tamanhoPagina": 10,
-                        "ordenarPor": "dataFimVigencia",
-                        "direcao": "desc",
                     },
                     headers=self._api_headers(),
                 )

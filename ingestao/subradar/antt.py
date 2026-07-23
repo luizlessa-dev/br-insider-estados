@@ -55,17 +55,27 @@ def _fmt(cnpj: str) -> str:
 
 
 def _descobrir_urls_antt() -> list[str]:
-    """Tenta descobrir URLs atuais via CKAN API; usa fallbacks se falhar."""
+    """
+    Descobre URLs dos CSVs atuais via CKAN, ignorando arquivos históricos mensais.
+    O CKAN da ANTT publica um CSV por mês (sufixo _MM_YYYY.csv) além do arquivo
+    corrente sem sufixo. Baixar todos os históricos leva ~15 min — só o corrente basta.
+    """
     try:
         r = requests.get(_ANTT_CKAN, timeout=15, headers={
             "User-Agent": "Subradar/1.0 (dados-publicos; contato@subradar.com.br)"
         })
         if r.ok:
             resources = r.json().get("result", {}).get("resources", [])
-            urls = [
-                res["url"] for res in resources
-                if res.get("url", "").endswith(".csv") and "habilitad" in res.get("url", "").lower()
-            ]
+            urls = []
+            for res in resources:
+                url = res.get("url", "")
+                fname = url.split("/")[-1]
+                if not url.endswith(".csv") or "habilitad" not in url.lower():
+                    continue
+                # Pula arquivos históricos mensais (ex: empresas_habilitadas_regular_07_2026.csv)
+                if re.search(r"_\d{2}_\d{4}\.csv$", fname):
+                    continue
+                urls.append(url)
             if urls:
                 return urls
     except Exception:
