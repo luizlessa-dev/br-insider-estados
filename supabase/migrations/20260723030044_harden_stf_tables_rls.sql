@@ -360,13 +360,17 @@ BEGIN
   END IF;
 
   -- 6.9 service_role e postgres não tiveram privilégios reduzidos (grant permanece ALL)
+  -- Verificação individual por privilégio: has_table_privilege com lista agregada
+  -- ('SELECT, INSERT, UPDATE, DELETE') tem semântica OR e aprovaria mesmo faltando privilégios.
   FOREACH v_tbl IN ARRAY (v_public_tables || ARRAY['stf_processos_politicos', 'stf_v_ministros_scores']) LOOP
-    IF NOT has_table_privilege('service_role', 'public.' || quote_ident(v_tbl), 'SELECT, INSERT, UPDATE, DELETE') THEN
-      RAISE EXCEPTION 'POSTCONDITION FALHOU: service_role perdeu privilégio em public.%', v_tbl;
-    END IF;
-    IF NOT has_table_privilege('postgres', 'public.' || quote_ident(v_tbl), 'SELECT, INSERT, UPDATE, DELETE') THEN
-      RAISE EXCEPTION 'POSTCONDITION FALHOU: postgres (owner) perdeu privilégio em public.%', v_tbl;
-    END IF;
+    FOREACH v_priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE'] LOOP
+      IF NOT has_table_privilege('service_role', 'public.' || quote_ident(v_tbl), v_priv) THEN
+        RAISE EXCEPTION 'POSTCONDITION FALHOU: service_role perdeu privilégio % em public.%', v_priv, v_tbl;
+      END IF;
+      IF NOT has_table_privilege('postgres', 'public.' || quote_ident(v_tbl), v_priv) THEN
+        RAISE EXCEPTION 'POSTCONDITION FALHOU: postgres (owner) perdeu privilégio % em public.%', v_priv, v_tbl;
+      END IF;
+    END LOOP;
   END LOOP;
 END $$;
 
