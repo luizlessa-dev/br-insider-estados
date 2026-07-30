@@ -261,9 +261,10 @@ def processar_cpf(
 
     for fonte in fontes:
         try:
-            # Conectores de listas internacionais aceitam razao_social como nome
-            if hasattr(fonte, "consultar_cnpj"):
-                alertas = fonte.consultar_cnpj(cpf_digits, razao_social=nome)
+            if hasattr(fonte, "consultar_cpf"):
+                alertas = fonte.consultar_cpf(cpf_digits)
+            elif hasattr(fonte, "consultar_cnpj"):
+                alertas = fonte.consultar_cnpj(cpf_digits)
             else:
                 alertas = []
 
