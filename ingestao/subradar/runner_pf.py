@@ -265,9 +265,9 @@ def processar_cpf(
     for fonte in fontes:
         try:
             if hasattr(fonte, "consultar_cpf"):
-                alertas = fonte.consultar_cpf(cpf_digits)
+                alertas = fonte.consultar_cpf(cpf_digits, nome=nome)
             elif hasattr(fonte, "consultar_cnpj"):
-                alertas = fonte.consultar_cnpj(cpf_digits)
+                alertas = fonte.consultar_cnpj(cpf_digits, nome=nome)
             else:
                 alertas = []
 
