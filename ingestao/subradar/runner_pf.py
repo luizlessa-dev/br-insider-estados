@@ -56,6 +56,7 @@ from .doe_estaduais_pf import DOEEstaduaisPFConnector
 from .cvm_insider_pf import CVMInsiderPFConnector
 from .tce_estaduais_pf import TCEEstaduaisPFConnector
 from .escavador_pf import EscavadorPFConnector
+from .bdc_ondemand_async import submit_ondemand_pf
 
 logging.basicConfig(
     level=logging.INFO,
@@ -301,7 +302,10 @@ def processar_cpf(
             logger.info("Gravados %d alertas para %s", len(todos_alertas), cpf_fmt)
 
         # Grava score na tabela de resultados PF
+        import uuid as _uuid
+        resultado_id = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{cpf_digits}-{ciclo}"))
         upsert("sub_pf_resultados", [{
+            "id": resultado_id,
             "cpf": cpf_fmt,
             "cliente_id": cliente_id,
             "ciclo": ciclo,
@@ -310,6 +314,14 @@ def processar_cpf(
             "total_alertas": score["total_alertas"],
             "score_detalhes": score,
         }])
+
+        # Submete queries async BDC on-demand PF (resultado chega via webhook)
+        try:
+            n_bdc = submit_ondemand_pf(cpf_digits, resultado_id)
+            if n_bdc:
+                logger.info("%s: %d queries BDC on-demand PF submetidas (async)", cpf_fmt, n_bdc)
+        except Exception as e:
+            logger.warning("%s: falha ao submeter BDC on-demand PF (não bloqueante): %s", cpf_fmt, e)
 
     return todos_alertas
 

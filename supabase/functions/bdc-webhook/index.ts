@@ -341,32 +341,44 @@ Deno.serve(async (req: Request) => {
     received_at: new Date().toISOString(),
   }).eq("id", queryRow.id);
 
-  // Busca dossie para contexto
+  // Busca contexto: tenta sub_dossies (PJ) e depois sub_pf_resultados (PF)
+  let entityId = queryRow.dossie_id;
+  let entityDoc = queryRow.cnpj;
+
   const { data: dossie } = await supabase
     .from("sub_dossies")
-    .select("id, cnpj, razao_social")
+    .select("id, cnpj")
     .eq("id", queryRow.dossie_id)
-    .single();
+    .maybeSingle();
 
   if (!dossie) {
-    await supabase.from("sub_bdc_queries").update({
-      status: "error",
-      erro: "dossie não encontrado",
-    }).eq("id", queryRow.id);
-    return new Response("dossie not found", { status: 200 });
+    // Tenta como resultado PF
+    const { data: pfRow } = await supabase
+      .from("sub_pf_resultados")
+      .select("id, cpf")
+      .eq("id", queryRow.dossie_id)
+      .maybeSingle();
+
+    if (!pfRow) {
+      // Não encontrado em nenhuma tabela — ainda assim processa para não perder o dado
+      console.warn("bdc-webhook: dossie_id não encontrado em sub_dossies nem sub_pf_resultados:", queryRow.dossie_id);
+    } else {
+      entityId = pfRow.id;
+      entityDoc = pfRow.cpf ?? queryRow.cnpj;
+    }
   }
 
   // Parseia dataset → alertas
   const data = (body["Result"] ?? body["Data"] ?? body) as Record<string, unknown>;
-  const alertas = parseDataset(queryRow.dataset, data, queryRow.cnpj);
+  const alertas = parseDataset(queryRow.dataset, data, entityDoc);
 
   // Insere alertas
   let alertasCriados = 0;
   if (alertas.length > 0) {
     const rows = alertas.map((a) => ({
       ...a,
-      dossie_id: dossie.id,
-      cnpj: queryRow.cnpj,
+      dossie_id: entityId,
+      cnpj: entityDoc,
       is_novo: true,
     }));
     const { error: insErr } = await supabase.from("sub_alertas").upsert(rows, {
