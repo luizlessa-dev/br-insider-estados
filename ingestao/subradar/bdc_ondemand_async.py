@@ -46,8 +46,8 @@ logger = logging.getLogger("subradar.bdc_ondemand")
 
 _BDC_URL     = "https://plataforma.bigdatacorp.com.br/pessoas"
 _BDC_URL_PJ  = "https://plataforma.bigdatacorp.com.br/empresas"
-_TOKEN_ID    = os.environ.get("BDC_TOKEN_ID", "")
-_ACCESS_TOKEN = os.environ.get("BDC_ACCESS_TOKEN", "")
+_TOKEN_ID    = os.environ.get("BDC_TOKEN_ID") or os.environ.get("BIGDATA_CORP_TOKEN_ID", "")
+_ACCESS_TOKEN = os.environ.get("BDC_ACCESS_TOKEN") or os.environ.get("BIGDATA_CORP_ACCESS_TOKEN") or os.environ.get("BIGDATA_CORP_TOKEN", "")
 _WEBHOOK_URL = os.environ.get(
     "BDC_WEBHOOK_URL",
     "https://redggdtakzmsabwvjzhb.supabase.co/functions/v1/bdc-webhook",

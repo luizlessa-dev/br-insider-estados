@@ -51,7 +51,8 @@ from .bnmp_pf import BNMPMandadosPrisaoPFConnector
 from .tse_situacao_pf import TSESituacaoEleitoralPFConnector
 from .crea_cau_pf import CREACONFEAPFConnector, CAUBRPFConnector
 from .cndt_tst_pf import CNDTTrabalhiPFConnector
-# MidiaAdversaPFConnector desativado — NewsAPI exige plano pago USD 49/mês; aguardar BDC mídia
+from .midia_adversa_gdelt_pf import MidiaAdversaGDELTPFConnector
+from .infosimples_pgfn_pf import InfosimplesPGFNPFConnector
 from .doe_estaduais_pf import DOEEstaduaisPFConnector
 from .cvm_insider_pf import CVMInsiderPFConnector
 from .tce_estaduais_pf import TCEEstaduaisPFConnector
@@ -94,7 +95,8 @@ FONTES_PF = [
     CEISConnector(),                    # CEIS — inidôneos CGU
     CNEPConnector(),                    # CNEP — punidos CGU
     ListaSujaConnector(),               # MTE — trabalho escravo
-    DividaAtivaConnector(),             # PGFN — dívida ativa PF
+    DividaAtivaConnector(),             # PGFN — dívida ativa PF (portal público)
+    InfosimplesPGFNPFConnector(),       # PGFN/RFB — certidão conjunta via Infosimples (INFOSIMPLES_TOKEN)
 
     # ── Diários Oficiais ─────────────────────────────────────────────────────
     DOUPFConnector(),                   # DOU — menções nos últimos 30 dias (DO1/DO2/DO3)
@@ -105,7 +107,7 @@ FONTES_PF = [
     CVMInsiderPFConnector(),            # CVM — processos sancionadores (insider, fraude)
 
     # ── Reputação / Mídia ────────────────────────────────────────────────────
-    # MidiaAdversaPFConnector(),         # desativado — NewsAPI USD 49/mês; substituir por BDC mídia
+    MidiaAdversaGDELTPFConnector(),      # Mídia adversa PF — GDELT Doc API (gratuito, sem chave)
 
     # ── Listas internacionais ────────────────────────────────────────────────
     OFACConnector(),                    # OFAC SDN — EUA

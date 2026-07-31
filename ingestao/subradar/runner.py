@@ -71,7 +71,7 @@ from .iss_municipal_pj import ISSMunicipalPJConnector
 from .tce_estaduais_pj import TCEEstaduaisPJConnector
 from .contratos_transparencia_pj import ContratosTransparenciaPJConnector
 from .inpi_marcas_pj import INPIMarcasConnector
-# MidiaAdversaPJConnector desativado — NewsAPI exige plano pago USD 49/mês; aguardar BDC mídia
+from .midia_adversa_gdelt_pj import MidiaAdversaGDELTPJConnector
 from .doe_estaduais_pj import DOEEstaduaisPJConnector
 from .grafo_socios_pj import GrafoSociosPJConnector
 from .infosimples_cnd_estadual_pj import InfosimplesCNDEstadualPJConnector
@@ -144,7 +144,7 @@ FONTES = [
     SociosComplianceConnector(),  # Sócios PF — CEIS/CNEP/MTE/PGFN/sanções internacionais por CPF
     GrafoSociosPJConnector(),              # Grafo de sócios — vínculos cruzados, paraíso fiscal, concentração
     INPIMarcasConnector(),                 # INPI — marcas registradas, oposições e nulidades
-    # MidiaAdversaPJConnector(),           # desativado — NewsAPI USD 49/mês; substituir por BDC mídia
+    MidiaAdversaGDELTPJConnector(),        # Mídia adversa PJ — GDELT Doc API (gratuito, sem chave)
     DOEEstaduaisPJConnector(),             # DOE estaduais — SP/MG/RJ (interdição, embargo, autuação)
     InfosimplesCNDEstadualPJConnector(),   # Infosimples — CND estadual (desativado: requer auth GOV.BR)
     InfosimplesPGFNPJConnector(),          # Infosimples — PGFN/RFB certidão conjunta (INFOSIMPLES_TOKEN)
