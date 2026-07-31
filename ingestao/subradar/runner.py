@@ -79,6 +79,7 @@ from .infosimples_pgfn_pj import InfosimplesPGFNPJConnector
 from .bndes_devedores_pj import BNDESDevedoresPJConnector
 from .directdata import DirectDataConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
+from .bigdatacorp_negativacoes import BDCNegativacoesPJConnector, BDCFinanceiroPJConnector
 from .socios_compliance import SociosComplianceConnector
 from .bdc_ondemand_async import submit_ondemand_pj
 
@@ -141,6 +142,8 @@ FONTES = [
     EscavadorConnector(),         # Escavador — processos judiciais nacionais (ESCAVADOR_API_KEY)
     OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
     BigDataCorpConnector(),       # BigDataCorp — protestos cartoriais + processos sócios (BIGDATA_CORP_TOKEN)
+    BDCNegativacoesPJConnector(), # BigDataCorp — negativações/restrições bureaus PJ (negative_data)
+    BDCFinanceiroPJConnector(),   # BigDataCorp — dados financeiros estimados PJ (financial_data)
     SociosComplianceConnector(),  # Sócios PF — CEIS/CNEP/MTE/PGFN/sanções internacionais por CPF
     GrafoSociosPJConnector(),              # Grafo de sócios — vínculos cruzados, paraíso fiscal, concentração
     INPIMarcasConnector(),                 # INPI — marcas registradas, oposições e nulidades
