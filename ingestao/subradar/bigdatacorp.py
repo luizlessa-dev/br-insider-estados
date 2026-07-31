@@ -42,7 +42,9 @@ from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
 
 logger = logging.getLogger("subradar.bigdatacorp")
 
-BDC_TOKEN = os.environ.get("BIGDATA_CORP_TOKEN", "")
+BDC_TOKEN_ID     = os.environ.get("BIGDATA_CORP_TOKEN_ID", "") or os.environ.get("BIGDATA_CORP_TOKEN", "")
+BDC_ACCESS_TOKEN = os.environ.get("BIGDATA_CORP_ACCESS_TOKEN", "") or os.environ.get("BIGDATA_CORP_TOKEN", "")
+BDC_TOKEN        = BDC_ACCESS_TOKEN  # compat
 
 _BASE_EMPRESAS    = "https://plataforma.bigdatacorp.com.br/empresas"
 _BASE_ONDEMAND    = "https://plataforma.bigdatacorp.com.br/ondemand"
@@ -70,7 +72,8 @@ def _headers() -> dict:
     return {
         "accept": "application/json",
         "content-type": "application/json",
-        "AccessToken": BDC_TOKEN,
+        "TokenId": BDC_TOKEN_ID,
+        "AccessToken": BDC_ACCESS_TOKEN,
     }
 
 
@@ -126,18 +129,33 @@ def _parse_protestos(result: dict) -> list[dict]:
 
 
 def _parse_socios_processos(result: dict) -> list[dict]:
-    """Extrai processos dos sócios vinculados ao CNPJ."""
+    """Extrai processos dos sócios vinculados ao CNPJ.
+
+    OwnersLawsuits.Lawsuits é um dict {cpf: {Lawsuits: [...], TotalLawsuits: N}}.
+    """
     dados = result.get("OwnersLawsuits") or result.get("Lawsuits") or {}
-    processos = dados.get("Lawsuits") or dados.get("Items") or []
-    total = dados.get("TotalLawsuits") or len(processos)
+    total = dados.get("TotalLawsuits") or 0
 
     if not total:
         return []
 
+    # Coleta amostra de processos de cada sócio
+    lawsuits_por_socio = dados.get("Lawsuits") or {}
+    amostra: list[dict] = []
+    if isinstance(lawsuits_por_socio, dict):
+        for cpf, owner_data in lawsuits_por_socio.items():
+            processos = owner_data.get("Lawsuits") or [] if isinstance(owner_data, dict) else []
+            for p in processos[:3]:
+                amostra.append({"cpf_socio": cpf, **p})
+            if len(amostra) >= 5:
+                break
+    elif isinstance(lawsuits_por_socio, list):
+        amostra = lawsuits_por_socio[:5]
+
     return [{
         "tipo": "processo_socio",
         "total": total,
-        "amostra": processos[:5],
+        "amostra": amostra,
         "_severidade": "atencao",
     }]
 
