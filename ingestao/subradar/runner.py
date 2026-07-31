@@ -71,14 +71,16 @@ from .iss_municipal_pj import ISSMunicipalPJConnector
 from .tce_estaduais_pj import TCEEstaduaisPJConnector
 from .contratos_transparencia_pj import ContratosTransparenciaPJConnector
 from .inpi_marcas_pj import INPIMarcasConnector
-from .midia_adversa_pj import MidiaAdversaPJConnector
+# MidiaAdversaPJConnector desativado — NewsAPI exige plano pago USD 49/mês; aguardar BDC mídia
 from .doe_estaduais_pj import DOEEstaduaisPJConnector
 from .grafo_socios_pj import GrafoSociosPJConnector
 from .infosimples_cnd_estadual_pj import InfosimplesCNDEstadualPJConnector
+from .infosimples_pgfn_pj import InfosimplesPGFNPJConnector
 from .bndes_devedores_pj import BNDESDevedoresPJConnector
 from .directdata import DirectDataConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
 from .socios_compliance import SociosComplianceConnector
+from .bdc_ondemand_async import submit_ondemand_pj
 
 logging.basicConfig(
     level=logging.INFO,
@@ -142,9 +144,10 @@ FONTES = [
     SociosComplianceConnector(),  # Sócios PF — CEIS/CNEP/MTE/PGFN/sanções internacionais por CPF
     GrafoSociosPJConnector(),              # Grafo de sócios — vínculos cruzados, paraíso fiscal, concentração
     INPIMarcasConnector(),                 # INPI — marcas registradas, oposições e nulidades
-    MidiaAdversaPJConnector(),             # Mídia adversa — NewsAPI + Haiku (razão social, 90 dias)
+    # MidiaAdversaPJConnector(),           # desativado — NewsAPI USD 49/mês; substituir por BDC mídia
     DOEEstaduaisPJConnector(),             # DOE estaduais — SP/MG/RJ (interdição, embargo, autuação)
-    InfosimplesCNDEstadualPJConnector(),   # Infosimples — CND estadual 27 UFs (INFOSIMPLES_TOKEN)
+    InfosimplesCNDEstadualPJConnector(),   # Infosimples — CND estadual (desativado: requer auth GOV.BR)
+    InfosimplesPGFNPJConnector(),          # Infosimples — PGFN/RFB certidão conjunta (INFOSIMPLES_TOKEN)
     BNDESDevedoresPJConnector(),           # BNDES — lista de inadimplentes (portal público)
 ]
 
@@ -276,7 +279,7 @@ def processar_cnpj(
     fontes_ativas = FONTES_AVULSA if avulsa else FONTES
     for fonte in fontes_ativas:
         try:
-            alertas = fonte.consultar_cnpj(cnpj)
+            alertas = fonte.consultar_cnpj(cnpj, razao_social=razao_social)
             todos_alertas.extend(alertas)
         except Exception as e:
             logger.error("Fonte %s falhou para %s: %s", fonte.fonte, cnpj, e)
@@ -306,6 +309,14 @@ def processar_cnpj(
 
     # Atualiza score no dossiê
     _atualizar_dossie(dossie_id, todos_alertas)
+
+    # Submete queries async BDC on-demand (resultado chega via webhook, não bloqueia)
+    try:
+        n_bdc = submit_ondemand_pj(cnpj, dossie_id)
+        if n_bdc:
+            logger.info("%s: %d queries BDC on-demand submetidas (async)", cnpj, n_bdc)
+    except Exception as e:
+        logger.warning("%s: falha ao submeter BDC on-demand (não bloqueante): %s", cnpj, e)
 
     # Gera PDF do dossiê
     pdf_dir = os.environ.get("SUBRADAR_PDF_DIR", "/tmp/subradar")

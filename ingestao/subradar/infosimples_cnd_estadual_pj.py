@@ -1,22 +1,15 @@
 """
 Conector: Infosimples — Certidão Negativa de Débitos Estaduais (CND) para PJ
 
-Consulta a situação fiscal estadual de um CNPJ via API Infosimples, cobrindo
-todas as UFs disponíveis na plataforma (27 unidades federativas).
+LIMITAÇÃO CONFIRMADA (2026-07-31): o endpoint sefaz/{uf}/certidao-debitos exige
+autenticação no GOV.BR (login_cpf + login_senha) ou certificado digital A1
+(pkcs12_cert + pkcs12_pass). Sem essas credenciais, retorna code=606.
+→ Conector desativado graciosamente até que seja viável coletar credenciais dos clientes.
+→ Covertura estadual mantida pelo sefaz_estadual_pj.py (scraping SP/MG/RJ).
 
-UFs cobertas: SP, RJ, MG, RS, PR, SC, BA, GO, PE, CE, ES, MT, MS, RO, TO,
-              PI, MA, PB, RN, AL, SE, AP, AC, AM, RR, PA, DF
-
-Nota sobre sobreposição com sefaz_estadual_pj.py:
-  O conector sefaz_estadual_pj.py cobre SP, MG e RJ via scraping direto nos
-  portais das SEFAZ. Este conector também inclui SP, MG e RJ, mas via API
-  Infosimples (resposta estruturada, sem parsing HTML). Em caso de conflito
-  nos alertas, o resultado deste conector tem precedência — a resposta
-  Infosimples é mais estruturada e confiável.
-
-Padrão de endpoint:
-  GET https://api.infosimples.com/api/v2/consultas/sefaz/{uf}/certidao-negativa-debitos
-      ?cnpj={cnpj14}&token={TOKEN}
+Padrão de endpoint (para referência futura):
+  POST https://api.infosimples.com/api/v2/consultas/sefaz/{uf}/certidao-debitos
+       body: cnpj=... + token=... + login_cpf=... + login_senha=...
 
 Response padrão Infosimples:
   {
@@ -142,14 +135,15 @@ def _consultar_uf(uf: str, cnpj14: str) -> dict | None:
     """
     Consulta a CND estadual de uma UF via Infosimples.
 
-    Retorna dict com keys: situacao, numero, validade, url_fonte
-    ou None em caso de falha gracioso.
+    Endpoint correto (confirmado na doc): POST sefaz/{uf}/certidao-debitos
+    Retorna dict com keys: certidao_negativa, certidao_tipo, numero, validade
+    ou None em caso de falha graciosa.
     """
-    url = f"{_BASE}/{uf.lower()}/certidao-negativa-debitos"
-    params = {"cnpj": cnpj14, "token": TOKEN, "timeout": 600}
+    url = f"{_BASE}/{uf.lower()}/certidao-debitos"
+    body = {"cnpj": cnpj14, "token": TOKEN, "timeout": 600}
 
     try:
-        resp = requests.get(url, params=params, timeout=30)
+        resp = requests.post(url, data=body, timeout=660)
     except Exception as exc:
         logger.debug("infosimples_cnd/%s: erro de rede — %s", uf, exc)
         return None
@@ -186,20 +180,20 @@ def _consultar_uf(uf: str, cnpj14: str) -> dict | None:
 
     # Usa o primeiro registro (normalmente há apenas um por UF)
     reg = registros[0]
-    situacao = (
-        reg.get("situacao") or
-        reg.get("status") or
-        reg.get("resultado") or
-        ""
-    )
-    numero = reg.get("numero") or reg.get("numero_certidao") or ""
-    validade = reg.get("validade") or reg.get("data_validade") or ""
+
+    # Campo principal: certidao_negativa (bool) — True = regular, False = irregular
+    # Fallback: certidao_tipo string ("Negativa", "Positiva", etc.)
+    certidao_negativa = reg.get("certidao_negativa")
+    certidao_tipo     = reg.get("certidao_tipo") or reg.get("situacao") or ""
+    numero            = reg.get("certidao_codigo") or reg.get("numero") or ""
+    validade          = reg.get("validade_data") or reg.get("validade") or ""
 
     return {
-        "situacao": situacao,
+        "certidao_negativa": certidao_negativa,
+        "certidao_tipo": certidao_tipo,
         "numero": numero,
         "validade": validade,
-        "url_fonte": f"https://api.infosimples.com/api/v2/consultas/sefaz/{uf.lower()}/certidao-negativa-debitos",
+        "url_fonte": f"https://api.infosimples.com/api/v2/consultas/sefaz/{uf.lower()}/certidao-debitos",
     }
 
 
@@ -219,7 +213,12 @@ class InfosimplesCNDEstadualPJConnector(SubradarSource):
     request_delay = 1.0  # 1 segundo entre UFs — respeita rate limit Infosimples
 
     def consultar_cnpj(self, cnpj: str, razao_social: str | None = None, **_) -> list[dict]:
-        if not TOKEN:
+        # Desativado: endpoint requer autenticação GOV.BR — ver docstring.
+        # Reativar quando viável coletar login_cpf + login_senha dos clientes.
+        logger.debug("infosimples_cnd: desativado (requer auth GOV.BR) — pulando")
+        return []
+
+        if not TOKEN:  # noqa: unreachable — mantido para referência
             logger.debug("infosimples_cnd: INFOSIMPLES_TOKEN ausente — pulando")
             return []
 
@@ -246,33 +245,46 @@ class InfosimplesCNDEstadualPJConnector(SubradarSource):
 
             resultado = _consultar_uf(uf, cnpj14)
 
-            # _consultar_uf retorna None tanto em falha de rede quanto em 402/429.
-            # Detecta 402 inspecionando o log já emitido — aqui apenas pula graciosamente.
             if resultado is None:
                 continue
 
-            situacao_raw = resultado["situacao"]
-            classificacao = _classificar_situacao(situacao_raw)
+            # Classificação: usa certidao_negativa (bool) como fonte primária
+            # True → certidão negativa = regular; False → débito confirmado
+            certidao_negativa = resultado["certidao_negativa"]
+            certidao_tipo     = resultado["certidao_tipo"]
 
-            if classificacao != "irregular":
+            if certidao_negativa is True:
                 logger.debug(
-                    "infosimples_cnd: SEFAZ-%s situacao=%r (%s) para %s — sem alerta",
-                    uf, situacao_raw, classificacao, cnpj_mask,
+                    "infosimples_cnd: SEFAZ-%s certidao_negativa=True para %s — regular",
+                    uf, cnpj_mask,
+                )
+                continue
+            elif certidao_negativa is False:
+                irregular = True
+            else:
+                # Booleano ausente: fallback para string certidao_tipo
+                classificacao = _classificar_situacao(certidao_tipo)
+                irregular = (classificacao == "irregular")
+
+            if not irregular:
+                logger.debug(
+                    "infosimples_cnd: SEFAZ-%s tipo=%r para %s — sem alerta",
+                    uf, certidao_tipo, cnpj_mask,
                 )
                 continue
 
             logger.info(
-                "infosimples_cnd: DÉBITO ESTADUAL confirmado em SEFAZ-%s para %s (situacao=%r)",
-                uf, cnpj_mask, situacao_raw,
+                "infosimples_cnd: DÉBITO ESTADUAL em SEFAZ-%s para %s (tipo=%r)",
+                uf, cnpj_mask, certidao_tipo,
             )
 
-            numero = resultado["numero"]
+            numero   = resultado["numero"]
             validade = resultado["validade"]
 
             descricao_parts = [
                 f"O CNPJ {cnpj_mask} ({nome}) possui pendência(s) fiscal(is) "
                 f"junto à Secretaria de Fazenda de {nome_uf} (SEFAZ-{uf}).",
-                f"Situação retornada: {situacao_raw!r}.",
+                f"Tipo da certidão: {certidao_tipo!r}.",
             ]
             if numero:
                 descricao_parts.append(f"Número da certidão: {numero}.")
@@ -294,7 +306,7 @@ class InfosimplesCNDEstadualPJConnector(SubradarSource):
                 "metadados": {
                     "uf": uf,
                     "nome_uf": nome_uf,
-                    "situacao": situacao_raw,
+                    "certidao_tipo": certidao_tipo,
                     "numero_certidao": numero,
                     "validade": validade,
                 },

@@ -10,8 +10,8 @@ Uso integrado (chamado pelo runner após processar um CNPJ):
 """
 from __future__ import annotations
 
+import argparse
 import logging
-import math
 import os
 import re
 from datetime import date
@@ -28,23 +28,140 @@ SUPABASE_KEY = (
     or ""
 )
 
-# ── Cores ──────────────────────────────────────────────────────────────────────
 try:
     from reportlab.lib import colors as rl_colors
-    NAVY  = rl_colors.HexColor("#1a2e4a")
-    RUST  = rl_colors.HexColor("#c0392b")
-    GREEN = rl_colors.HexColor("#1a6b3c")
-    AMBER = rl_colors.HexColor("#c07000")
-    STEEL = rl_colors.HexColor("#4a6fa5")
-    CREAM = rl_colors.HexColor("#f8f4ef")
-    LGRAY = rl_colors.HexColor("#e0e0e0")
-    MGRAY = rl_colors.HexColor("#888888")
-    WHITE = rl_colors.white
-    BLACK = rl_colors.black
-    RUST_L = rl_colors.HexColor("#fdf0ee")
+    # ── Paleta fiel ao site ──────────────────────────────────────────────────
+    SLATE900 = rl_colors.HexColor("#0f172a")   # navy principal
+    RED600   = rl_colors.HexColor("#dc2626")   # accent vermelho
+    CREAM    = rl_colors.HexColor("#f8f7f4")   # fundo off-white
+    SLATE400 = rl_colors.HexColor("#94a3b8")   # texto secundário
+    SLATE500 = rl_colors.HexColor("#64748b")   # texto médio
+    SLATE600 = rl_colors.HexColor("#475569")
+    SLATE200 = rl_colors.HexColor("#e2e8f0")   # bordas
+    GREEN700 = rl_colors.HexColor("#15803d")   # OK
+    AMBER600 = rl_colors.HexColor("#d97706")   # atenção
+    RED50    = rl_colors.HexColor("#fef2f2")
+    GREEN50  = rl_colors.HexColor("#f0fdf4")
+    AMBER50  = rl_colors.HexColor("#fffbeb")
+    WHITE    = rl_colors.white
+    BLACK    = rl_colors.black
     _HAS_REPORTLAB = True
 except ImportError:
     _HAS_REPORTLAB = False
+
+
+# ── Catálogo completo de fontes ──────────────────────────────────────────────
+
+FONTES_PJ: list[tuple[str, str]] = [
+    # Fiscal
+    ("pgfn",                   "PGFN — Dívida Ativa Federal"),
+    ("cnd_federal",            "CND Federal — Certidão Negativa"),
+    ("sefaz_estadual",         "SEFAZ Estadual — Certidão Negativa"),
+    ("iss_municipal",          "ISS Municipal — Certidão Negativa"),
+    ("infosimples_cnd_estadual", "CND Estadual (Infosimples)"),
+    # Cadastral
+    ("situacao_cadastral",     "Situação Cadastral RFB"),
+    ("simples_nacional",       "Simples Nacional / MEI"),
+    ("rfb_societario",         "Quadro Societário RFB"),
+    ("jucesp",                 "Junta Comercial (JUCESP/MG/RJ)"),
+    # Sanções CGU
+    ("ceis",                   "CEIS — Empresas Inidôneas (CGU)"),
+    ("cnep",                   "CNEP — Lei Anticorrupção (CGU)"),
+    ("cepim",                  "CEPIM — Convênios Impedidos (CGU)"),
+    ("leniencia",              "Acordos de Leniência CGU"),
+    ("lista_suja_mte",         "Lista Suja — Trabalho Escravo (MTE)"),
+    ("sicaf",                  "SICAF — Cadastro Federal de Fornecedores"),
+    # Trabalhista
+    ("cndt_tst_pj",            "CNDT/TST — Débitos Trabalhistas"),
+    ("crf_fgts",               "CRF — Regularidade FGTS"),
+    ("mte_autos",              "MTE — Autos de Infração"),
+    # Contratos / Convênios
+    ("contratos_transparencia", "Contratos Públicos (PNCP)"),
+    ("pncp",                   "PNCP — Portal Nacional de Contratos"),
+    ("siconv",                 "SICONV — Convênios Federais"),
+    ("bndes_devedores",        "BNDES — Devedores"),
+    # Judicial / Regulatório
+    ("datajud",                "DataJud/CNJ — Processos e Falências"),
+    ("tcu",                    "TCU — Certidão"),
+    ("cade",                   "CADE — Processos Antitruste"),
+    ("cvm_pas",                "CVM — Processos Sancionadores"),
+    ("bacen",                  "BACEN — Entidades Supervisionadas"),
+    ("escavador",              "Escavador — Processos Judiciais"),
+    # Ambiental / Setorial
+    ("ibama",                  "IBAMA — Autos de Infração Ambiental"),
+    ("aneel",                  "ANEEL — Autos Elétricos"),
+    ("ans",                    "ANS — Operadoras de Saúde"),
+    ("anvisa",                 "ANVISA — Licenças e Registros"),
+    ("antt",                   "ANTT — Transportes Terrestres"),
+    ("anatel",                 "ANATEL — Telecomunicações"),
+    ("anac",                   "ANAC — Aviação Civil"),
+    ("anp",                    "ANP — Petróleo e Gás"),
+    ("antaq",                  "ANTAQ — Aquaviário"),
+    ("ana",                    "ANA — Recursos Hídricos"),
+    ("susep",                  "SUSEP — Seguros e Previdência Privada"),
+    ("previc",                 "PREVIC — Fundos de Pensão"),
+    # Protestos / Crédito
+    ("protestos_sp",           "Protestos Cartoriais SP"),
+    ("protestos_nacional",     "Protestos Cartoriais Nacional (BDC)"),
+    ("bigdatacorp",            "BigDataCorp — Negativações / Processos de Sócios"),
+    ("socios_compliance",      "Compliance dos Sócios"),
+    ("grafo_socios",           "Grafo de Relacionamentos Societários"),
+    ("inpi_marcas",            "INPI — Marcas e Patentes"),
+    # Diários Oficiais
+    ("dou",                    "DOU — Diário Oficial da União"),
+    ("doe_estaduais_pj",       "DOE — Diários Oficiais Estaduais"),
+    # Consumidor
+    ("procon",                 "PROCON — Reclamações Fundamentadas"),
+    # Listas internacionais
+    ("ofac_sdn",               "OFAC SDN — Lista Negra EUA"),
+    ("uk_sanctions",           "UK Sanctions (FCDO)"),
+    ("eu_sanctions",           "EU Sanctions — Lista Europeia"),
+    ("un_sanctions",           "ONU — Conselho de Segurança"),
+    ("worldbank_debarment",    "Banco Mundial — Debarment"),
+    ("opensanctions",          "OpenSanctions — PEPs e Sanções"),
+    ("opensanctions_pro",      "OpenSanctions Pro — INTERPOL / 400+ listas"),
+    # Tribunais estaduais
+    ("tce_estaduais_pj",       "TCE Estaduais — Irregularidades"),
+]
+
+FONTES_PF: list[tuple[str, str]] = [
+    # Cadastral
+    ("cpf_situacao_rfb",       "Situação Cadastral CPF (RFB)"),
+    ("qsa_reverso_rfb",        "Empresas Vinculadas ao CPF (RFB)"),
+    # Judicial / Penal
+    ("bnmp_cnj",               "BNMP/CNJ — Mandados de Prisão Ativos"),
+    ("cndt_tst",               "CNDT/TST — Débitos Trabalhistas PF"),
+    ("escavador_pf",           "Escavador — Processos Judiciais PF"),
+    # Eleitoral
+    ("tse_situacao_eleitoral", "TSE — Quitação Eleitoral"),
+    # Conselhos Profissionais
+    ("crea_confea",            "CREA/CONFEA — Engenheiros e Agrônomos"),
+    ("cau_br",                 "CAU-BR — Arquitetos e Urbanistas"),
+    ("conselhos_profissionais", "Implanta API — CREA, CRM, OAB…"),
+    ("cfc_contadores",         "CFC — Contadores (Ativo / Inativo)"),
+    ("infosimples_conselhos",  "Infosimples — CRO, CRF, CFM, CFMV, CFP"),
+    # Sanções CGU / Federal
+    ("cepim_pf",               "CEPIM — Sócio de Entidade Impedida"),
+    ("ceis",                   "CEIS — Inidôneos CGU"),
+    ("cnep",                   "CNEP — Punidos CGU"),
+    ("lista_suja_mte",         "Lista Suja — Trabalho Escravo (MTE)"),
+    ("pgfn",                   "PGFN — Dívida Ativa Federal PF"),
+    # Diários Oficiais
+    ("dou_pf",                 "DOU — Menções nos Últimos 30 dias"),
+    ("doe_estaduais",          "DOE — SP, MG e RJ (90 dias)"),
+    # Controle e Tribunais
+    ("tce_estaduais",          "TCE Estaduais — Irregularidades PF"),
+    ("cvm_pas_pf",             "CVM — Processos Sancionadores PF"),
+    # Listas internacionais
+    ("ofac_sdn",               "OFAC SDN — Lista Negra EUA"),
+    ("uk_sanctions",           "UK Sanctions (FCDO)"),
+    ("eu_sanctions",           "EU Sanctions — Lista Europeia"),
+    ("un_sanctions",           "ONU — Conselho de Segurança"),
+    ("worldbank_debarment",    "Banco Mundial — Debarment"),
+    ("opensanctions_pro_pf",   "OpenSanctions Pro — PEPs / INTERPOL / 400+ listas"),
+    # Mídia
+    ("midia_adversa",          "Mídia Adversa — Monitoramento de Imprensa"),
+]
 
 
 def _hdrs() -> dict:
@@ -74,355 +191,631 @@ def _buscar_alertas(dossie_id: str) -> list[dict]:
     return r.json() if r.ok else []
 
 
-def _sev_to_status(sev: str) -> str:
-    return {"critico": "CRÍTICO", "atencao": "ATENÇÃO", "info": "INFO", "ok": "OK"}.get(sev, "N/A")
+def _sev_color(sev: str):
+    return {"critico": RED600, "atencao": AMBER600, "info": SLATE400, "ok": GREEN700}.get(sev, SLATE400)
 
 
-def _sev_to_color(sev: str):
-    return {"critico": RUST, "atencao": AMBER, "info": STEEL, "ok": GREEN}.get(sev, STEEL)
+def _sev_bg(sev: str):
+    return {"critico": RED50, "atencao": AMBER50, "info": CREAM, "ok": GREEN50}.get(sev, CREAM)
 
 
-def _status_color(status: str):
-    return {"CRÍTICO": RUST, "ATENÇÃO": AMBER, "INFO": STEEL, "OK": GREEN, "N/A": STEEL}.get(status, STEEL)
+def _sev_label(sev: str) -> str:
+    return {"critico": "CRÍTICO", "atencao": "ATENÇÃO", "info": "INFO", "ok": "OK"}.get(sev, "OK")
 
 
-def _ps(name, size=9, bold=False, color=None, align=None, leading=None, space_after=3):
+def _pior(alertas: list[dict]) -> str:
+    order = {"critico": 0, "atencao": 1, "info": 2, "ok": 3}
+    return min(alertas, key=lambda a: order.get(a.get("severidade", "ok"), 3)).get("severidade", "ok")
+
+
+def _ps(name, size=9, bold=False, color=None, align="LEFT", leading=None, space_after=2):
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-    if color is None:
-        color = BLACK
-    if align is None:
-        align = TA_LEFT
+    _align = {"LEFT": TA_LEFT, "CENTER": TA_CENTER, "RIGHT": TA_RIGHT}.get(align, TA_LEFT)
     return ParagraphStyle(
         name,
         fontName="Helvetica-Bold" if bold else "Helvetica",
         fontSize=size,
-        leading=leading or size * 1.4,
-        textColor=color,
-        alignment=align,
+        leading=leading or round(size * 1.4, 1),
+        textColor=color or BLACK,
+        alignment=_align,
         spaceAfter=space_after,
     )
 
 
-def _make_logo(size=72):
-    from reportlab.graphics.shapes import Drawing, Circle, ArcPath, Line
-    from reportlab.graphics import renderPDF
-    from reportlab.platypus import Flowable
+def _make_logo_drawing(width=160, height=36):
+    """
+    Replica o logo SVG do site:
+      - Retângulo com cantos arredondados (stroke #0f172a)
+      - Linha EKG: polyline 7,20 13,20 15,10 19,30 23,20 33,20
+      - Círculo vermelho no pico (15, 10)
+      - Wordmark "SUBRADAR" + "INTELIGÊNCIA CORPORATIVA"
 
-    cx = cy = size / 2
-    d = Drawing(size, size)
-    bg = Circle(cx, cy, size / 2 - 1)
-    bg.fillColor = NAVY; bg.strokeColor = None
-    d.add(bg)
-    for r, sw in [(size * 0.40, 1.2), (size * 0.27, 1.0), (size * 0.14, 0.8)]:
-        a = ArcPath()
-        a.addArc(cx, cy, r, 45, 315, moveTo=True)
-        a.strokeColor = rl_colors.HexColor("#8aafd0"); a.strokeWidth = sw; a.fillColor = None
-        d.add(a)
-    angle_rad = math.radians(65)
-    rx = cx + math.cos(angle_rad) * size * 0.41
-    ry = cy + math.sin(angle_rad) * size * 0.41
-    sweep = Line(cx, cy, rx, ry)
-    sweep.strokeColor = RUST; sweep.strokeWidth = 1.8
-    d.add(sweep)
-    blip = Circle(rx, ry, size * 0.045)
-    blip.fillColor = RUST; blip.strokeColor = None
-    d.add(blip)
-    dot = Circle(cx, cy, size * 0.04)
-    dot.fillColor = WHITE; dot.strokeColor = None
+    SVG viewBox 0 0 220 40 → escala para (width, height).
+    ReportLab: origem bottom-left, Y invertido em relação ao SVG.
+    """
+    from reportlab.graphics.shapes import (
+        Drawing, Rect, PolyLine, Circle, String, Group,
+    )
+    from reportlab.lib.colors import HexColor
+
+    SVG_W, SVG_H = 220.0, 40.0
+    sx = width / SVG_W
+    sy = height / SVG_H
+
+    def tx(x):  return x * sx
+    def ty(y):  return height - y * sy  # inverte Y
+
+    d = Drawing(width, height)
+
+    # Retângulo ícone (SVG: x=2 y=2 w=36 h=36 rx=6)
+    icon_w = 36 * sx
+    icon_h = 36 * sy
+    rect = Rect(tx(2), ty(2 + 36), icon_w, icon_h, rx=6 * sx, ry=6 * sy)
+    rect.fillColor = None
+    rect.strokeColor = HexColor("#0f172a")
+    rect.strokeWidth = 1.5 * sx
+    d.add(rect)
+
+    # Linha EKG: SVG pts (x,y) → RL (tx, ty)
+    svg_pts = [7, 20, 13, 20, 15, 10, 19, 30, 23, 20, 33, 20]
+    rl_pts = []
+    for i in range(0, len(svg_pts), 2):
+        rl_pts += [tx(svg_pts[i]), ty(svg_pts[i + 1])]
+    ekg = PolyLine(rl_pts)
+    ekg.strokeColor = HexColor("#0f172a")
+    ekg.strokeWidth = 1.8 * sx
+    ekg.strokeLineCap = 1  # round
+    ekg.strokeLineJoin = 1
+    d.add(ekg)
+
+    # Círculo vermelho no pico (SVG: cx=15 cy=10 r=2.5)
+    dot = Circle(tx(15), ty(10), 2.5 * sx)
+    dot.fillColor = HexColor("#dc2626")
+    dot.strokeColor = None
     d.add(dot)
 
+    # Wordmark (SVG: x=48)
+    wm_x = tx(48)
+    s1 = String(wm_x, ty(17) - 9, "SUBRADAR")
+    s1.fontName = "Helvetica-Bold"
+    s1.fontSize = 13 * sy
+    s1.fillColor = HexColor("#0f172a")
+    d.add(s1)
+
+    s2 = String(wm_x, ty(30) - 7.5 * sy, "INTELIGÊNCIA CORPORATIVA")
+    s2.fontName = "Helvetica"
+    s2.fontSize = 7.5 * sy
+    s2.fillColor = HexColor("#94a3b8")
+    d.add(s2)
+
+    return d
+
+
+def _logo_flowable(width=160, height=36):
+    from reportlab.platypus import Flowable
+    from reportlab.graphics import renderPDF
+
+    drw = _make_logo_drawing(width, height)
+
     class _F(Flowable):
-        def __init__(self, drw):
+        def __init__(self):
             super().__init__()
-            self.drawing = drw
-            self.width = drw.width; self.height = drw.height
+            self.width = drw.width
+            self.height = drw.height
+
         def draw(self):
-            renderPDF.draw(self.drawing, self.canv, 0, 0)
-    return _F(d)
+            renderPDF.draw(drw, self.canv, 0, 0)
+
+    return _F()
+
+
+def _draw_header_hero(canvas, doc, dossie, n_fontes, n_ok, n_alertas,
+                      sc_label, sc_color, doc_tipo, fontes_lista):
+    """Desenha cabeçalho e hero na primeira página via canvas (pixel-perfect)."""
+    from reportlab.lib.units import cm
+    from reportlab.lib.colors import HexColor
+    from reportlab.graphics.shapes import Drawing, Rect, PolyLine, Circle
+    from reportlab.graphics import renderPDF
+
+    W, H = doc.pagesize
+    MARGIN = 1.8 * cm
+    PINK = HexColor("#fca5a5")
+
+    # ── Cabeçalho escuro ──────────────────────────────────────────────────
+    HDR_H = 1.6 * cm
+    canvas.saveState()
+    canvas.setFillColor(SLATE900)
+    canvas.rect(0, H - HDR_H, W, HDR_H, fill=1, stroke=0)
+
+    # Ícone EKG — 1.0 cm, centralizado verticalmente no header
+    ICON_SZ = 1.0 * cm
+    icon_x = MARGIN
+    icon_y = H - HDR_H + (HDR_H - ICON_SZ) / 2
+
+    # Retângulo com cantos arredondados (borda branca)
+    canvas.setStrokeColor(WHITE)
+    canvas.setLineWidth(1.4)
+    canvas.roundRect(icon_x, icon_y, ICON_SZ, ICON_SZ, radius=4, fill=0, stroke=1)
+
+    # Linha EKG: SVG pts relativos ao rect 36×36 dentro de viewBox 40×40
+    # offset SVG = (2,2); escala = ICON_SZ / 36
+    s = ICON_SZ / 36.0
+    svg_pts = [(7,20),(13,20),(15,10),(19,30),(23,20),(33,20)]
+    p = canvas.beginPath()
+    def _pt(xsvg, ysvg):
+        return (icon_x + (xsvg - 2) * s,
+                icon_y + ICON_SZ - (ysvg - 2) * s)
+    x0, y0 = _pt(*svg_pts[0])
+    p.moveTo(x0, y0)
+    for xp, yp in svg_pts[1:]:
+        p.lineTo(*_pt(xp, yp))
+    canvas.setStrokeColor(WHITE)
+    canvas.setLineWidth(1.4)
+    canvas.drawPath(p, stroke=1, fill=0)
+
+    # Ponto vermelho no pico (SVG cx=15, cy=10)
+    px, py = _pt(15, 10)
+    canvas.setFillColor(RED600)
+    canvas.circle(px, py, 2.5, fill=1, stroke=0)
+
+    # Wordmark
+    text_x = icon_x + ICON_SZ + 7
+    mid_y   = H - HDR_H + HDR_H / 2
+    canvas.setFillColor(WHITE)
+    canvas.setFont("Helvetica-Bold", 12)
+    canvas.drawString(text_x, mid_y + 1, "SUBRADAR")
+    canvas.setFillColor(SLATE400)
+    canvas.setFont("Helvetica", 6.5)
+    canvas.drawString(text_x, mid_y - 8, "INTELIGÊNCIA CORPORATIVA")
+
+    # Data + tipo à direita
+    canvas.setFillColor(SLATE400)
+    canvas.setFont("Helvetica-Bold", 7)
+    label = f"DOSSIÊ DE COMPLIANCE  ·  {__import__('datetime').date.today().strftime('%d/%m/%Y')}"
+    canvas.drawRightString(W - MARGIN, H - HDR_H + HDR_H * 0.38, label)
+    canvas.restoreState()
+
+    # ── Faixa hero vermelha ───────────────────────────────────────────────
+    razao   = dossie.get("razao_social") or "Monitorado"
+    cnpj    = dossie.get("cnpj", "")
+    ciclo   = dossie.get("ciclo", "")
+    score   = str(dossie.get("score_num", 0))
+    HERO_H  = 3.0 * cm
+    hero_y  = H - HDR_H - HERO_H
+
+    canvas.saveState()
+    canvas.setFillColor(RED600)
+    canvas.rect(0, hero_y, W, HERO_H, fill=1, stroke=0)
+
+    # Razão social
+    canvas.setFillColor(WHITE)
+    canvas.setFont("Helvetica-Bold", 14)
+    canvas.drawString(MARGIN, hero_y + HERO_H * 0.60, razao[:55])
+
+    # CNPJ / ciclo
+    canvas.setFillColor(PINK)
+    canvas.setFont("Helvetica", 8)
+    canvas.drawString(MARGIN, hero_y + HERO_H * 0.28,
+                      f"{doc_tipo}  {cnpj}   ·   Ciclo {ciclo}")
+
+    # Score (número grande, centro-direita)
+    score_x = W * 0.70
+    canvas.setFillColor(WHITE)
+    canvas.setFont("Helvetica-Bold", 32)
+    canvas.drawCentredString(score_x, hero_y + HERO_H * 0.38, score)
+    canvas.setFont("Helvetica-Bold", 8)
+    canvas.setFillColor(PINK)
+    canvas.drawCentredString(score_x, hero_y + HERO_H * 0.18, sc_label)
+
+    # Contadores (FONTES / OK / ALERTAS)
+    ctrs_start = score_x + MARGIN * 0.6
+    ctrs_end   = W - MARGIN
+    col_w = (ctrs_end - ctrs_start) / 3
+    for i, (val, lbl) in enumerate([
+        (str(n_fontes), "FONTES"),
+        (str(n_ok), "OK"),
+        (str(n_alertas), "ALERTAS"),
+    ]):
+        cx = ctrs_start + col_w * i + col_w / 2
+        canvas.setFillColor(WHITE)
+        canvas.setFont("Helvetica-Bold", 16)
+        canvas.drawCentredString(cx, hero_y + HERO_H * 0.52, val)
+        canvas.setFillColor(PINK)
+        canvas.setFont("Helvetica", 6.5)
+        canvas.drawCentredString(cx, hero_y + HERO_H * 0.24, lbl)
+
+    canvas.restoreState()
 
 
 def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import cm
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        BaseDocTemplate, Frame, PageTemplate,
+        Paragraph, Spacer, Table, TableStyle,
         HRFlowable, KeepTogether, PageBreak,
     )
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    from functools import partial
 
     W, H = A4
-    MARGIN = 2.0 * cm
+    MARGIN = 1.8 * cm
     INNER = W - 2 * MARGIN
-    COL_L = INNER * 0.16
-    COL_R = INNER * 0.84
 
-    def HR(color=LGRAY, thick=0.5):
-        return HRFlowable(width="100%", thickness=thick, color=color, spaceAfter=6, spaceBefore=2)
+    def HR(color=SLATE200, thick=0.5, before=2, after=6):
+        return HRFlowable(width="100%", thickness=thick, color=color,
+                          spaceBefore=before, spaceAfter=after)
 
-    def cell(text, style):
-        return Paragraph(str(text or ""), style)
+    def P(text, **kw):
+        return Paragraph(str(text or ""), _ps("_", **kw))
 
-    P_TITLE = _ps("title", 18, True, NAVY, TA_CENTER, 24, 4)
-    P_SUBT  = _ps("subt",  10, False, STEEL, TA_CENTER, 14, 4)
-    P_DATE  = _ps("pdate", 8,  False, MGRAY, TA_CENTER, 11, 16)
-    P_H1    = _ps("h1",    14, True, NAVY, TA_LEFT, 18, 6)
-    P_H2    = _ps("h2",    10, True, STEEL, TA_LEFT, 14, 4)
-    P_BODY  = _ps("body",  9,  False, BLACK, TA_LEFT, 13, 4)
-    P_SMALL = _ps("small", 8,  False, MGRAY, TA_LEFT, 11, 2)
-    P_LABEL = _ps("label", 8,  True,  MGRAY, TA_LEFT, 11, 2)
-    P_FOOT  = _ps("foot",  7,  False, MGRAY, TA_CENTER, 10, 0)
+    # ── Metadados ─────────────────────────────────────────────────────────────
+    cnpj       = dossie.get("cnpj", "")
+    razao      = dossie.get("razao_social") or "Monitorado"
+    ciclo      = dossie.get("ciclo", "")
+    score_num  = dossie.get("score_num", 0)
+    score_txt  = (dossie.get("score_texto") or "baixo").lower()
+
+    digits = re.sub(r"\D", "", cnpj)
+    is_pf  = len(digits) == 11
+    doc_tipo = "CPF" if is_pf else "CNPJ"
+    fontes_lista = FONTES_PF if is_pf else FONTES_PJ
+
+    score_faixa = {
+        "baixo":   ("BAIXO",    GREEN700, GREEN50),
+        "medio":   ("MÉDIO",    AMBER600, AMBER50),
+        "alto":    ("ALTO",     RED600,   RED50),
+        "critico": ("CRÍTICO",  RED600,   RED50),
+    }.get(score_txt, ("BAIXO", GREEN700, GREEN50))
+    sc_label, sc_color, sc_bg = score_faixa
 
     # Agrupa alertas por fonte
     por_fonte: dict[str, list[dict]] = {}
     for a in alertas:
         por_fonte.setdefault(a.get("fonte", "?"), []).append(a)
 
-    # Scores e status
-    score_num   = dossie.get("score_num", 0)
-    score_texto = (dossie.get("score_texto") or "baixo").upper()
-    razao       = dossie.get("razao_social") or "Empresa Monitorada"
-    cnpj        = dossie.get("cnpj", "")
-    ciclo       = dossie.get("ciclo", "")
-    score_color = {"CRITICO": RUST, "ALTO": AMBER, "MEDIO": STEEL, "BAIXO": GREEN}.get(score_texto, STEEL)
-    score_label = {"CRITICO": "CRÍTICO", "ALTO": "ALTO", "MEDIO": "MÉDIO", "BAIXO": "BAIXO"}.get(score_texto, score_texto)
+    story: list = []
 
-    story = []
+    # ════════════════════════════════════════════════════════════════════════
+    # CABEÇALHO — texto puro (Drawing em Table cell falha no ReportLab)
+    # ════════════════════════════════════════════════════════════════════════
 
-    # ── CAPA ─────────────────────────────────────────────────────────────────
-    icon = _make_logo(56)
-    wm = Table(
-        [[Paragraph("SUBRADAR", _ps("wb", 28, True, NAVY, TA_LEFT, 34))],
-         [Paragraph("Inteligência Corporativa", _ps("ws", 9, False, STEEL, TA_LEFT, 12))]],
-        colWidths=[INNER - 56 - 0.4 * cm],
-    )
-    wm.setStyle(TableStyle([
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 0), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    logo_t = Table([[icon, wm]], colWidths=[56 + 0.4 * cm, INNER - 56 - 0.4 * cm], rowHeights=[56])
-    logo_t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    n_fontes  = len(fontes_lista)
+    n_alertas = len(alertas)
+    n_ok      = n_fontes - len([k for k, _ in fontes_lista if k in por_fonte])
 
-    story.append(Spacer(1, 2.0 * cm))
-    story.append(logo_t)
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(HR(NAVY, 2))
-    story.append(Spacer(1, 0.5 * cm))
-    story.append(Paragraph("Dossiê de Inteligência Corporativa", P_TITLE))
-    story.append(Paragraph("Monitoramento contínuo de risco regulatório, fiscal e reputacional", P_SUBT))
-    story.append(Paragraph(f"Ciclo {ciclo} · {date.today().strftime('%d/%m/%Y')}", P_DATE))
-    story.append(Spacer(1, 0.8 * cm))
+    # O cabeçalho e hero são desenhados via canvas (on_page callback).
+    # O Frame começa LOGO abaixo do hero — sem Spacer na story.
+    # Equação: Frame top = H - MARGIN - TOP_RESERVED = H - HDR_H - HERO_H
+    # → TOP_RESERVED = HDR_H + HERO_H - MARGIN
+    HDR_H  = 1.6 * cm
+    HERO_H = 3.0 * cm
+    TOP_RESERVED = HDR_H + HERO_H - MARGIN + 0.25 * cm  # +0.25 = margem mínima abaixo do hero
 
-    # Bloco empresa
-    emp_t = Table(
-        [[cell("EMPRESA MONITORADA", P_LABEL), ""],
-         [cell(razao, _ps("en", 18, True, NAVY)), ""],
-         [cell(f"CNPJ {cnpj}", P_SMALL), cell(f"Ciclo: {ciclo}", _ps("ec", 8, False, MGRAY, TA_RIGHT))]],
-        colWidths=[INNER * 0.65, INNER * 0.35],
-    )
-    emp_t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), CREAM), ("BOX", (0, 0), (-1, -1), 1, NAVY),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12), ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-        ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    story.append(emp_t)
-    story.append(Spacer(1, 0.7 * cm))
+    # ════════════════════════════════════════════════════════════════════════
+    # TABELA RESUMO — todas as fontes
+    # ════════════════════════════════════════════════════════════════════════
 
-    # Score
-    score_t = Table(
-        [[cell("SCORE DE RISCO", P_LABEL),
-          cell(str(score_num), _ps("sn", 36, True, score_color, TA_CENTER, 40)),
-          cell(score_label, _ps("sl", 16, True, score_color, TA_RIGHT, 20))]],
-        colWidths=[INNER * 0.38, INNER * 0.24, INNER * 0.38],
-        rowHeights=[1.5 * cm],
-    )
-    score_bg = rl_colors.HexColor("#fff5f5") if score_color == RUST else rl_colors.HexColor("#fafafa")
-    score_t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), score_bg),
-        ("BOX", (0, 0), (-1, -1), 1.5, score_color),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 12), ("RIGHTPADDING", (0, 0), (-1, -1), 12),
-    ]))
-    story.append(score_t)
-    story.append(Spacer(1, 0.7 * cm))
-
-    # Tabela resumo por fonte
-    FONTES_ORDEM = [
-        "pgfn", "ceis", "cnep", "cepim", "leniencia", "rfb_societario",
-        "pncp", "opensanctions", "dou", "ibama", "cvm_pas", "siconv",
-        "anvisa", "lista_suja_mte", "situacao_cadastral", "bacen",
-        "mte_autos", "aneel", "ans", "datajud", "tcu",
-    ]
-    FONTE_NOME = {
-        "pgfn": "PGFN — Dívida Ativa",
-        "ceis": "CEIS — Empresas Inidôneas",
-        "cnep": "CNEP — Lei Anticorrupção",
-        "cepim": "CEPIM — Convênios Impedidos",
-        "leniencia": "Acordos de Leniência",
-        "rfb_societario": "Societário RFB",
-        "pncp": "Contratos / Emendas (PNCP)",
-        "opensanctions": "OpenSanctions",
-        "dou": "DOU — Últimos 30 dias",
-        "ibama": "IBAMA — Autos Ambientais",
-        "cvm_pas": "CVM — Processos PAS",
-        "siconv": "SICONV — Convênios Federais",
-        "anvisa": "ANVISA — Licenças",
-        "lista_suja_mte": "Lista Suja MTE",
-        "situacao_cadastral": "Situação Cadastral RFB",
-        "bacen": "BACEN — Entid. Supervisionadas",
-        "mte_autos": "MTE — Autos de Infração",
-        "aneel": "ANEEL — Autos Elétricos",
-        "ans": "ANS — Operadoras de Saúde",
-        "datajud": "DataJud/CNJ — Falências",
-        "tcu": "TCU — Certidão",
-    }
+    story.append(P(f"Resumo das {n_fontes} fontes consultadas",
+                   size=9, bold=True, color=SLATE600, space_after=4))
 
     r_data = [["FONTE", "STATUS", "RESULTADO"]]
-    resumo_rows = []
-    for fonte_key in FONTES_ORDEM:
-        if fonte_key not in por_fonte:
-            continue
-        alertas_fonte = por_fonte[fonte_key]
-        # Pega o alerta mais grave
-        pior = min(alertas_fonte, key=lambda a: {"critico": 0, "atencao": 1, "info": 2, "ok": 3}.get(a.get("severidade", "ok"), 3))
-        sev = pior.get("severidade", "ok")
-        status = _sev_to_status(sev)
-        resultado = pior.get("titulo", "")
-        resultado = re.sub(r"^[^—]+—\s*", "", resultado)[:80]
-        r_data.append([FONTE_NOME.get(fonte_key, fonte_key), status, resultado])
-        resumo_rows.append((fonte_key, sev))
+    r_sevs = []
 
-    r_t = Table(r_data, colWidths=[INNER * 0.38, INNER * 0.15, INNER * 0.47])
+    for fonte_key, fonte_nome in fontes_lista:
+        if fonte_key in por_fonte:
+            sev = _pior(por_fonte[fonte_key])
+            titulo = next(
+                (a.get("titulo", "") for a in sorted(
+                    por_fonte[fonte_key],
+                    key=lambda a: {"critico": 0, "atencao": 1, "info": 2}.get(a.get("severidade", ""), 3)
+                )),
+                "",
+            )
+            resultado = re.sub(r"^[^—]+—\s*", "", titulo)[:72]
+        else:
+            sev = "ok"
+            resultado = "Sem ocorrências"
+        r_data.append([fonte_nome, _sev_label(sev), resultado])
+        r_sevs.append(sev)
+
+    r_t = Table(r_data, colWidths=[INNER * 0.42, INNER * 0.12, INNER * 0.46])
     r_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY), ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("FONTSIZE", (0, 1), (-1, -1), 8), ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
+        ("BACKGROUND", (0, 0), (-1, 0), SLATE900),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+        ("FONTSIZE", (0, 1), (-1, -1), 7.5),
+        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, CREAM]),
-        ("GRID", (0, 0), (-1, -1), 0.3, LGRAY),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, -1), "CENTER"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("GRID", (0, 0), (-1, -1), 0.3, SLATE200),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 0), (1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]
-    for i, (_, sev) in enumerate(resumo_rows, 1):
-        sc = _sev_to_color(sev)
-        r_style += [("BACKGROUND", (1, i), (1, i), sc), ("TEXTCOLOR", (1, i), (1, i), WHITE),
-                    ("FONTNAME", (1, i), (1, i), "Helvetica-Bold")]
+    for i, sev in enumerate(r_sevs, 1):
+        c = _sev_color(sev)
+        r_style += [
+            ("BACKGROUND", (1, i), (1, i), c),
+            ("TEXTCOLOR", (1, i), (1, i), WHITE),
+            ("FONTNAME", (1, i), (1, i), "Helvetica-Bold"),
+        ]
     r_t.setStyle(TableStyle(r_style))
     story.append(r_t)
-    story.append(Spacer(1, 0.6 * cm))
-    story.append(HR(NAVY))
-    story.append(Paragraph(
-        "Documento gerado automaticamente pelo Subradar a partir de fontes públicas. "
-        "Não substitui parecer jurídico.",
-        P_FOOT,
-    ))
 
-    # ── DETALHAMENTO ──────────────────────────────────────────────────────────
-    story.append(Spacer(1, 0.5 * cm))
-    story.append(Paragraph("Detalhamento por Fonte", P_H1))
-    story.append(HR(NAVY, 1.5))
-    story.append(Spacer(1, 0.2 * cm))
-
-    for fonte_key in FONTES_ORDEM:
-        if fonte_key not in por_fonte:
-            continue
-        alertas_fonte = por_fonte[fonte_key]
-        pior = min(alertas_fonte, key=lambda a: {"critico": 0, "atencao": 1, "info": 2, "ok": 3}.get(a.get("severidade", "ok"), 3))
-        sev = pior.get("severidade", "ok")
-        sc = _sev_to_color(sev)
-        status = _sev_to_status(sev)
-        nome = FONTE_NOME.get(fonte_key, fonte_key)
-
-        # Consolida resultado
-        titulos = [a.get("titulo", "") for a in alertas_fonte]
-        result_str = titulos[0] if len(titulos) == 1 else f"{len(titulos)} ocorrências — " + titulos[0]
-        descs = "\n".join(a.get("descricao", "") for a in alertas_fonte[:3])
-
-        hdr = Table(
-            [[nome, status]],
-            colWidths=[INNER * 0.78, INNER * 0.22], rowHeights=[0.65 * cm],
-        )
-        hdr.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), sc), ("TEXTCOLOR", (0, 0), (-1, -1), WHITE),
-            ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, -1), 8.5),
-            ("ALIGN", (1, 0), (1, 0), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 9), ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-        ]))
-        body = Table(
-            [
-                [cell("Resultado", P_LABEL), cell(result_str[:150], _ps("rb", 9, True, BLACK))],
-                [cell("", P_LABEL), cell(descs[:600], P_BODY)],
-            ],
-            colWidths=[COL_L, COL_R],
-        )
-        body.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor("#fafafa")),
-            ("BOX", (0, 0), (-1, -1), 0.3, LGRAY),
-            ("LINEBELOW", (0, 0), (-1, -2), 0.2, LGRAY),
-            ("TOPPADDING", (0, 0), (-1, -1), 4), ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("LEFTPADDING", (0, 0), (-1, -1), 9), ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
-        story.append(KeepTogether([hdr, body, Spacer(1, 0.35 * cm)]))
-
-    # ── METODOLOGIA ──────────────────────────────────────────────────────────
-    story.append(PageBreak())
-    story.append(Paragraph("Metodologia e Score de Risco", P_H1))
-    story.append(HR(NAVY, 1.5))
-    story.append(Spacer(1, 0.2 * cm))
-    story.append(Paragraph(
-        "O score é calculado somando os pontos de cada alerta (máx. 100). "
-        "Todas as fontes ativas são consultadas a cada ciclo mensal.",
-        P_BODY,
-    ))
     story.append(Spacer(1, 0.4 * cm))
+    story.append(HR(SLATE200))
+    story.append(P(
+        "Documento gerado automaticamente pelo Subradar a partir de fontes públicas oficiais. "
+        "Não substitui parecer jurídico.",
+        size=7, color=SLATE400, align="CENTER",
+    ))
 
-    pt_data = [["CLASSIFICAÇÃO", "PONTOS / ALERTA", "EXEMPLOS"]] + [
-        ("CRÍTICO",     "40 pts", "Dívida ajuizada, CEIS, CNEP, leniência, IBAMA ativo, Lista Suja"),
-        ("ATENÇÃO",     "15 pts", "CEIS expirado, situação SUSPENSA/INAPTA, notificação DOU"),
-        ("INFORMATIVO", "2 pts",  "Contrato público, convênio, publicação rotineira DOU"),
-        ("OK",          "0 pts",  "Sem registros nesta fonte"),
+    # ════════════════════════════════════════════════════════════════════════
+    # DETALHAMENTO — todas as fontes
+    # ════════════════════════════════════════════════════════════════════════
+
+    story.append(PageBreak())
+
+    # Header da pág de detalhamento (replica estilo do site)
+    det_hdr = Table(
+        [[P("DETALHAMENTO POR FONTE", size=8, bold=True, color=WHITE),
+          P(razao, size=8, color=SLATE400, align="RIGHT")]],
+        colWidths=[INNER * 0.5, INNER * 0.5],
+    )
+    det_hdr.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), SLATE900),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(det_hdr)
+    story.append(Spacer(1, 0.3 * cm))
+
+    for fonte_key, fonte_nome in fontes_lista:
+        tem = fonte_key in por_fonte
+
+        if tem:
+            als = por_fonte[fonte_key]
+            sev = _pior(als)
+            sc  = _sev_color(sev)
+            bg  = _sev_bg(sev)
+            titulos = [a.get("titulo", "") for a in als]
+            result_str = titulos[0] if len(titulos) == 1 else f"{len(titulos)} ocorrências — {titulos[0]}"
+            desc_txt = "\n\n".join(
+                a.get("descricao", "") for a in als[:3] if a.get("descricao")
+            )
+        else:
+            sev = "ok"
+            sc  = GREEN700
+            bg  = GREEN50
+            result_str = "Sem ocorrências nesta fonte"
+            desc_txt = ""
+
+        # Faixa de cabeçalho da fonte
+        src_hdr = Table(
+            [[P(fonte_nome, size=8, bold=True, color=WHITE),
+              P(_sev_label(sev), size=8, bold=True, color=WHITE, align="RIGHT")]],
+            colWidths=[INNER * 0.78, INNER * 0.22],
+            rowHeights=[0.55 * cm],
+        )
+        src_hdr.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), sc),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 9),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+
+        if tem:
+            body_rows = [[P("Resultado", size=7, bold=True, color=SLATE500),
+                          P(result_str[:200], size=8, bold=True, color=BLACK)]]
+            if desc_txt:
+                body_rows.append([P("", size=7),
+                                  P(desc_txt[:700], size=8, color=SLATE600)])
+            src_body = Table(body_rows, colWidths=[INNER * 0.16, INNER * 0.84])
+            src_body.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), bg),
+                ("BOX", (0, 0), (-1, -1), 0.3, SLATE200),
+                ("LINEBELOW", (0, 0), (-1, -2), 0.2, SLATE200),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]))
+            story.append(KeepTogether([src_hdr, src_body, Spacer(1, 0.22 * cm)]))
+        else:
+            # OK: bloco compacto de uma linha
+            ok_body = Table(
+                [[P("Nenhuma ocorrência encontrada nesta fonte no ciclo consultado.",
+                    size=7.5, color=GREEN700)]],
+                colWidths=[INNER],
+            )
+            ok_body.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, -1), GREEN50),
+                ("BOX", (0, 0), (-1, -1), 0.3, SLATE200),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ]))
+            story.append(KeepTogether([src_hdr, ok_body, Spacer(1, 0.15 * cm)]))
+
+    # ════════════════════════════════════════════════════════════════════════
+    # METODOLOGIA
+    # ════════════════════════════════════════════════════════════════════════
+
+    story.append(PageBreak())
+
+    met_hdr = Table(
+        [[P("METODOLOGIA E SCORE DE RISCO", size=8, bold=True, color=WHITE)]],
+        colWidths=[INNER],
+    )
+    met_hdr.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), SLATE900),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    story.append(met_hdr)
+    story.append(Spacer(1, 0.3 * cm))
+    story.append(P(
+        "O score de risco é calculado somando os pontos de cada alerta encontrado (máximo 100). "
+        "Todas as fontes são consultadas a cada ciclo mensal.",
+        size=8.5, color=SLATE600, space_after=10,
+    ))
+
+    pt_data = [["CLASSIFICAÇÃO", "PONTOS / ALERTA", "EXEMPLOS"]]
+    pt_rows = [
+        ("CRÍTICO",     RED600,   "30 pts", "Dívida ajuizada, CEIS, CNEP, leniência, IBAMA ativo, Lista Suja MTE"),
+        ("ATENÇÃO",     AMBER600, "10 pts", "Situação suspensa/inapta, notificação DOU, conselho inativo"),
+        ("INFORMATIVO", SLATE400, "2 pts",  "Contrato público, convênio, publicação rotineira DOU"),
+        ("OK",          GREEN700, "0 pts",  "Sem registros nesta fonte"),
     ]
-    pt_t = Table(pt_data, colWidths=[INNER * 0.16, INNER * 0.16, INNER * 0.68])
+    for label, _, pts, ex in pt_rows:
+        pt_data.append([label, pts, ex])
+
+    pt_t = Table(pt_data, colWidths=[INNER * 0.15, INNER * 0.15, INNER * 0.70])
     pt_style = [
-        ("BACKGROUND", (0, 0), (-1, 0), NAVY), ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"), ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("GRID", (0, 0), (-1, -1), 0.3, LGRAY), ("FONTSIZE", (0, 1), (-1, -1), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 7), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND", (0, 0), (-1, 0), SLATE900),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+        ("GRID", (0, 0), (-1, -1), 0.3, SLATE200),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]
-    for i, cor in enumerate([RUST, AMBER, STEEL, GREEN], 1):
-        pt_style += [("BACKGROUND", (0, i), (0, i), cor), ("TEXTCOLOR", (0, i), (0, i), WHITE),
-                     ("FONTNAME", (0, i), (0, i), "Helvetica-Bold")]
+    for i, (_, cor, _, _ex) in enumerate(pt_rows, 1):
+        pt_style += [
+            ("BACKGROUND", (0, i), (0, i), cor),
+            ("TEXTCOLOR", (0, i), (0, i), WHITE),
+            ("FONTNAME", (0, i), (0, i), "Helvetica-Bold"),
+        ]
     pt_t.setStyle(TableStyle(pt_style))
     story.append(pt_t)
     story.append(Spacer(1, 0.5 * cm))
 
-    story.append(HR(NAVY))
-    story.append(Paragraph(
-        f"Subradar · Lessa Labs Tecnologia Ltda · CNPJ 65.659.055/0001-53 · "
-        f"Gerado em {date.today().strftime('%d/%m/%Y')} · {len(alertas)} alertas · Ciclo {ciclo}",
-        P_FOOT,
-    ))
+    # Faixas de risco
+    story.append(P("FAIXAS DE RISCO", size=7, bold=True, color=SLATE500, space_after=4))
+    faixa_data = [["FAIXA", "SCORE", "DESCRIÇÃO"]]
+    faixas = [
+        ("BAIXO",    GREEN700, "0 – 20",   "Sem ocorrências significativas"),
+        ("MÉDIO",    AMBER600, "21 – 50",  "Atenção — verificar contexto antes de contratar"),
+        ("ALTO",     RED600,   "51 – 80",  "Risco elevado — documentar justificativa"),
+        ("CRÍTICO",  RED600,   "81 – 100", "Contraindicado sem apuração aprofundada"),
+    ]
+    for label, _, pts, desc in faixas:
+        faixa_data.append([label, pts, desc])
+    faixa_t = Table(faixa_data, colWidths=[INNER * 0.15, INNER * 0.12, INNER * 0.73])
+    faixa_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), SLATE900),
+        ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 7.5),
+        ("GRID", (0, 0), (-1, -1), 0.3, SLATE200),
+        ("FONTSIZE", (0, 1), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [WHITE, CREAM]),
+    ]
+    for i, (_, cor, _, _) in enumerate(faixas, 1):
+        faixa_style += [
+            ("BACKGROUND", (0, i), (0, i), cor),
+            ("TEXTCOLOR", (0, i), (0, i), WHITE),
+            ("FONTNAME", (0, i), (0, i), "Helvetica-Bold"),
+        ]
+    faixa_t.setStyle(TableStyle(faixa_style))
+    story.append(faixa_t)
+    story.append(Spacer(1, 0.6 * cm))
 
-    doc = SimpleDocTemplate(
+    # ── Rodapé metodologia ────────────────────────────────────────────────────
+    footer = Table(
+        [[P("Subradar  ·  Lessa Labs Tecnologia Ltda  ·  CNPJ 65.659.055/0001-53",
+            size=7, color=SLATE400),
+          P(f"Gerado em {date.today().strftime('%d/%m/%Y')}  ·  Ciclo {ciclo}  ·  {n_alertas} alerta(s)",
+            size=7, color=SLATE400, align="RIGHT")]],
+        colWidths=[INNER * 0.6, INNER * 0.4],
+    )
+    footer.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), SLATE900),
+        ("LEFTPADDING", (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(footer)
+
+    # Callback de página: desenha cabeçalho+hero via canvas na pág 1,
+    # e apenas o cabeçalho nas demais.
+    _on_first = partial(
+        _draw_header_hero,
+        dossie=dossie,
+        n_fontes=n_fontes, n_ok=n_ok, n_alertas=n_alertas,
+        sc_label=sc_label, sc_color=sc_color,
+        doc_tipo=doc_tipo, fontes_lista=fontes_lista,
+    )
+
+    def _on_later(canvas, doc):
+        from reportlab.lib.units import cm
+        _HDR = 1.4 * cm
+        W, H = doc.pagesize
+        canvas.saveState()
+        canvas.setFillColor(SLATE900)
+        canvas.rect(0, H - _HDR, W, _HDR, fill=1, stroke=0)
+        canvas.setFillColor(WHITE)
+        canvas.setFont("Helvetica-Bold", 9)
+        canvas.drawString(MARGIN, H - _HDR + _HDR * 0.38, "SUBRADAR")
+        canvas.setFillColor(SLATE400)
+        canvas.setFont("Helvetica", 7)
+        canvas.drawRightString(W - MARGIN, H - _HDR + _HDR * 0.38,
+                               f"Dossiê de Compliance  ·  {razao[:40]}  ·  Ciclo {ciclo}")
+        canvas.restoreState()
+
+    # Frame da primeira página começa abaixo do hero
+    first_frame = Frame(
+        MARGIN, MARGIN,
+        INNER, H - MARGIN * 2 - TOP_RESERVED,
+        id="first",
+    )
+    # Frames das demais páginas começam abaixo do cabeçalho
+    later_frame = Frame(
+        MARGIN, MARGIN,
+        INNER, H - MARGIN * 2 - HDR_H - 0.3 * cm,
+        id="later",
+    )
+
+    doc = BaseDocTemplate(
         output_path, pagesize=A4,
-        leftMargin=MARGIN, rightMargin=MARGIN,
-        topMargin=MARGIN, bottomMargin=MARGIN,
         title=f"Subradar — {razao} — {ciclo}",
         author="Lessa Labs Tecnologia Ltda",
     )
+    doc.addPageTemplates([
+        PageTemplate(id="First", frames=[first_frame], onPage=_on_first),
+        PageTemplate(id="Later", frames=[later_frame], onPage=_on_later),
+    ])
+
+    from reportlab.platypus import NextPageTemplate
+    story.insert(0, NextPageTemplate("Later"))
+
     doc.build(story)
 
 
 def gerar_dossie(dossie_id: str, output_dir: str = "/tmp") -> str | None:
-    """
-    Busca dossiê e alertas do Supabase e gera PDF.
-    Retorna o caminho do arquivo gerado, ou None em caso de erro.
-    """
     if not _HAS_REPORTLAB:
         logger.error("reportlab não instalado — pip install reportlab")
         return None
@@ -443,21 +836,21 @@ def gerar_dossie(dossie_id: str, output_dir: str = "/tmp") -> str | None:
     try:
         _build_pdf(dossie, alertas, output_path)
         logger.info("PDF gerado: %s", output_path)
+        print(f"PDF gerado: {output_path}")
         return output_path
     except Exception as e:
         logger.error("Erro ao gerar PDF: %s", e)
+        import traceback; traceback.print_exc()
         return None
 
 
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Subradar PDF — gerador de dossiê")
+    parser.add_argument("--dossie-id", required=True)
+    parser.add_argument("--output", default="/tmp", help="Diretório de saída")
+    args = parser.parse_args()
+    gerar_dossie(args.dossie_id, output_dir=args.output)
+
+
 if __name__ == "__main__":
-    import argparse, sys
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    p = argparse.ArgumentParser()
-    p.add_argument("--dossie-id", required=True)
-    p.add_argument("--output", default="/tmp")
-    args = p.parse_args()
-    path = gerar_dossie(args.dossie_id, args.output)
-    if path:
-        print(f"PDF gerado: {path}")
-    else:
-        sys.exit(1)
+    main()
