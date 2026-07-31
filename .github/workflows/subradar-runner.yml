@@ -33,6 +33,10 @@ jobs:
       INLABS_EMAIL: ${{ secrets.INLABS_EMAIL }}
       INLABS_PASSWORD: ${{ secrets.INLABS_PASSWORD }}
       DATAJUD_API_KEY: ${{ secrets.DATAJUD_API_KEY }}
+      BDC_TOKEN_ID: ${{ secrets.BDC_TOKEN_ID }}
+      BDC_ACCESS_TOKEN: ${{ secrets.BDC_ACCESS_TOKEN }}
+      BDC_WEBHOOK_URL: ${{ secrets.BDC_WEBHOOK_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
     steps:
       - uses: actions/checkout@v4
