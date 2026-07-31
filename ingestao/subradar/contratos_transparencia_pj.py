@@ -96,11 +96,17 @@ class ContratosTransparenciaPJConnector(SubradarSource):
             items = data.get("data", []) if isinstance(data, dict) else (data if isinstance(data, list) else [])
             if not items:
                 break
-            todos.extend(items)
+            # Filtra client-side: niFornecedor deve bater com cnpj14
+            filtered = [c for c in items if re.sub(r"\D", "", str(c.get("niFornecedor", ""))) == cnpj14]
+            todos.extend(filtered)
             total_pages = data.get("totalPaginas") if isinstance(data, dict) else None
             if total_pages and pagina >= total_pages:
                 break
             if len(items) < 10:
+                break
+            # Para de paginar se não encontrou nada na página (evita varredura infinita)
+            if not filtered and pagina > 3:
+                logger.info("PNCP: sem contratos para %s após p.%d — parando", cnpj14, pagina)
                 break
             pagina += 1
 
