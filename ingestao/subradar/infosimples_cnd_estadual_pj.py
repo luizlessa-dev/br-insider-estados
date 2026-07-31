@@ -1,11 +1,11 @@
 """
 Conector: Infosimples — Certidão Negativa de Débitos Estaduais (CND) para PJ
 
-LIMITAÇÃO CONFIRMADA (2026-07-31): o endpoint sefaz/{uf}/certidao-debitos exige
-autenticação no GOV.BR (login_cpf + login_senha) ou certificado digital A1
-(pkcs12_cert + pkcs12_pass). Sem essas credenciais, retorna code=606.
-→ Conector desativado graciosamente até que seja viável coletar credenciais dos clientes.
-→ Covertura estadual mantida pelo sefaz_estadual_pj.py (scraping SP/MG/RJ).
+Integração via conta GOV.BR vinculada ao Infosimples (2026-07-31): o endpoint
+sefaz/{uf}/certidao-debitos funciona com o token Infosimples quando a conta GOV.BR
+do operador está conectada no painel Infosimples. Sem vínculo, retorna code=606.
+→ Conector ativo com INFOSIMPLES_TOKEN — cobre as 27 UFs disponíveis.
+→ Complementa o sefaz_estadual_pj.py (scraping SP/MG/RJ) com cobertura nacional.
 
 Padrão de endpoint (para referência futura):
   POST https://api.infosimples.com/api/v2/consultas/sefaz/{uf}/certidao-debitos
@@ -213,11 +213,6 @@ class InfosimplesCNDEstadualPJConnector(SubradarSource):
     request_delay = 1.0  # 1 segundo entre UFs — respeita rate limit Infosimples
 
     def consultar_cnpj(self, cnpj: str, razao_social: str | None = None, **_) -> list[dict]:
-        # Desativado: endpoint requer autenticação GOV.BR — ver docstring.
-        # Reativar quando viável coletar login_cpf + login_senha dos clientes.
-        logger.debug("infosimples_cnd: desativado (requer auth GOV.BR) — pulando")
-        return []
-
         if not TOKEN:  # noqa: unreachable — mantido para referência
             logger.debug("infosimples_cnd: INFOSIMPLES_TOKEN ausente — pulando")
             return []

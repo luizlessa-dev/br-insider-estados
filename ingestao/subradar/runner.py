@@ -146,7 +146,7 @@ FONTES = [
     INPIMarcasConnector(),                 # INPI — marcas registradas, oposições e nulidades
     MidiaAdversaGDELTPJConnector(),        # Mídia adversa PJ — GDELT Doc API (gratuito, sem chave)
     DOEEstaduaisPJConnector(),             # DOE estaduais — SP/MG/RJ (interdição, embargo, autuação)
-    InfosimplesCNDEstadualPJConnector(),   # Infosimples — CND estadual (desativado: requer auth GOV.BR)
+    InfosimplesCNDEstadualPJConnector(),   # Infosimples — CND estadual (27 UFs, ativo via GOV.BR vinculado)
     InfosimplesPGFNPJConnector(),          # Infosimples — PGFN/RFB certidão conjunta (INFOSIMPLES_TOKEN)
     BNDESDevedoresPJConnector(),           # BNDES — lista de inadimplentes (portal público)
 ]
