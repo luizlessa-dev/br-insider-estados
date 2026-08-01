@@ -237,3 +237,18 @@ class CEPIMConnector(SubradarSource):
 
         logger.info("CEPIM: %d alertas para %s", len(alertas), cnpj_fmt)
         return alertas
+
+    # resumo_pf para CEISConnector
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        # CEIS/CNEP são primariamente PJ, mas CPF pode aparecer como sancionado
+        cpf_d = _strip_cnpj(cpf)
+        rows = _query_local("sub_ceis", cpf_d)
+        ativos = [r for r in rows if _sancao_ativa(r.get("data_fim_sancao"))]
+        n = len(ativos)
+        return {
+            "fonte": self.fonte, "categoria": "sancao",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "CEIS — Inidôneos CGU",
+            "resumo": f"{n} sanção(ões) ativa(s)" if n else "Nenhuma sanção encontrada",
+            "detalhes": {"total_ativo": n, "registros": ativos[:5]},
+        }

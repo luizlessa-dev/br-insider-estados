@@ -103,3 +103,33 @@ class DividaAtivaConnector(SubradarSource):
 
         logger.info("PGFN: %d alertas para %s", len(alertas), cnpj_fmt)
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        from .base import _strip_cnpj as _s
+        cpf_d = re.sub(r"\D", "", str(cpf))
+        if len(cpf_d) != 11:
+            return None
+        registros = _query_pgfn(cpf_d)
+        total_valor = sum(float(r.get("valor_consolidado") or 0) for r in registros)
+        ajuizados = [r for r in registros if r.get("indicador_ajuizado") == "S"]
+        if not registros:
+            return {
+                "fonte": self.fonte, "categoria": "financeiro",
+                "status": "limpo", "titulo_secao": "Dívida Ativa Federal (PGFN)",
+                "resumo": "Nenhuma dívida ativa encontrada",
+                "detalhes": {"total_registros": 0, "valor_total": 0},
+            }
+        resumo_txt = f"R$ {total_valor:,.2f} em {len(registros)} registro(s)".replace(",", "X").replace(".", ",").replace("X", ".")
+        if ajuizados:
+            resumo_txt += f" — {len(ajuizados)} ajuizado(s)"
+        return {
+            "fonte": self.fonte, "categoria": "financeiro",
+            "status": "alerta", "titulo_secao": "Dívida Ativa Federal (PGFN)",
+            "resumo": resumo_txt,
+            "detalhes": {
+                "total_registros": len(registros),
+                "valor_total": total_valor,
+                "ajuizados": len(ajuizados),
+                "itens": registros[:10],
+            },
+        }

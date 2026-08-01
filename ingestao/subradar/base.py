@@ -80,6 +80,9 @@ def upsert(table: str, rows: list[dict]) -> None:
                 if table == "sub_snapshots":
                     req_url  = url + "?on_conflict=cnpj,ciclo,fonte"
                     req_hdrs["Prefer"] = "resolution=ignore-duplicates,return=minimal"
+                elif table == "sub_pf_dados":
+                    req_url  = url + "?on_conflict=cpf,ciclo,fonte"
+                    req_hdrs["Prefer"] = "resolution=merge-duplicates,return=minimal"
                 resp = requests.post(req_url, json=batch, headers=req_hdrs, timeout=60)
                 if resp.ok:
                     break
@@ -148,3 +151,22 @@ class SubradarSource:
     def consultar_cnpj(self, cnpj: str) -> list[dict]:
         """Retorna lista de alertas para o CNPJ. Implementar no subclasse."""
         raise NotImplementedError
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        """
+        Retorna dados estruturados para o laudo PF ou None se não aplicável.
+
+        Formato esperado:
+        {
+            "fonte":        str,   # ex: "cpf_situacao_rfb"
+            "categoria":    str,   # cadastral | societario | judicial | sancao | financeiro | internacional
+            "status":       str,   # limpo | alerta | pendente | erro | nao_aplicavel
+            "titulo_secao": str,   # label no laudo, ex: "Situação CPF"
+            "resumo":       str,   # 1 linha, ex: "REGULAR" / "2 processos encontrados"
+            "detalhes":     dict,  # payload completo
+        }
+
+        Retornar None significa que este conector não produz dados para o laudo PF.
+        Por padrão retorna None — subclasses que queiram aparecer no laudo implementam.
+        """
+        return None

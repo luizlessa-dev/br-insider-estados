@@ -159,3 +159,43 @@ class EscavadorPFConnector(SubradarSource):
 
         logger.info("escavador_pf: %d processo(s) para CPF %s***", len(alertas), cpf[:3])
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not ESCAVADOR_KEY:
+            return {
+                "fonte": self.fonte, "categoria": "judicial",
+                "status": "pendente", "titulo_secao": "Processos Judiciais",
+                "resumo": "Chave Escavador não configurada",
+                "detalhes": {},
+            }
+        cpf_d = re.sub(r"\D", "", str(cpf))
+        if len(cpf_d) != 11:
+            return None
+        processos = _buscar_processos_cpf(cpf_d)
+        n = len(processos)
+        if n == 0:
+            return {
+                "fonte": self.fonte, "categoria": "judicial",
+                "status": "limpo", "titulo_secao": "Processos Judiciais",
+                "resumo": "Nenhum processo judicial encontrado",
+                "detalhes": {"total": 0},
+            }
+        criticos = sum(1 for p in processos if _sev_pf(p.get("titulo") or p.get("classe") or "") == "critico")
+        resumo = f"{n} processo(s) encontrado(s)"
+        if criticos:
+            resumo += f" — {criticos} de alta gravidade"
+        itens = []
+        for p in processos[:10]:
+            itens.append({
+                "numero": p.get("numero_cnj") or p.get("numero", ""),
+                "titulo": p.get("titulo") or p.get("classe", ""),
+                "tribunal": _tribunal_sigla(p),
+                "data": (p.get("data_ultima_movimentacao") or "")[:10],
+                "severidade": _sev_pf(p.get("titulo") or p.get("classe") or ""),
+            })
+        return {
+            "fonte": self.fonte, "categoria": "judicial",
+            "status": "alerta", "titulo_secao": "Processos Judiciais",
+            "resumo": resumo,
+            "detalhes": {"total": n, "criticos": criticos, "processos": itens},
+        }

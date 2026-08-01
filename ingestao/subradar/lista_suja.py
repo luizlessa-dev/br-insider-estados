@@ -110,6 +110,20 @@ class ListaSujaConnector(SubradarSource):
         logger.info("Lista Suja: %d alertas para %s", len(alertas), cnpj_fmt)
         return alertas
 
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf_d = _strip(cpf)
+        if len(cpf_d) != 11:
+            return None
+        registros = _query_local(cpf_d)
+        n = len(registros)
+        return {
+            "fonte": self.fonte, "categoria": "sancao",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "Lista Suja MTE — Trabalho Escravo",
+            "resumo": f"{n} registro(s) encontrado(s)" if n else "Nenhuma ocorrência encontrada",
+            "detalhes": {"total": n, "registros": registros[:5]},
+        }
+
 
 def _parse_date(s: str) -> str | None:
     if not s:

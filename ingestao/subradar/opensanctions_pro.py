@@ -257,3 +257,50 @@ class OpenSanctionsProPFConnector(SubradarSource):
         if alertas:
             logger.info("opensanctions_pro_pf: %d alerta(s) para '%s'", len(alertas), nome)
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not nome:
+            return None
+        if not OS_PRO_KEY:
+            return {
+                "fonte": self.fonte, "categoria": "internacional",
+                "status": "pendente", "titulo_secao": "Sanções Internacionais (OpenSanctions)",
+                "resumo": "Chave OpenSanctions Pro não configurada",
+                "detalhes": {},
+            }
+        try:
+            r = self._session.get(
+                f"{OS_BASE}/search/default",
+                params={"q": nome, "schema": "Person", "limit": 10},
+                headers=self._headers(),
+                timeout=self.timeout,
+            )
+            r.raise_for_status()
+            resultados = r.json().get("results", [])
+        except Exception as e:
+            logger.warning("opensanctions_pro_pf resumo: %s", e)
+            return {
+                "fonte": self.fonte, "categoria": "internacional",
+                "status": "erro", "titulo_secao": "Sanções Internacionais (OpenSanctions)",
+                "resumo": f"Erro na consulta: {e}",
+                "detalhes": {},
+            }
+        hits = []
+        for ent in resultados:
+            datasets = ent.get("datasets", [])
+            matched = [d for d in datasets if d in DATASETS_PRO]
+            if matched:
+                props = ent.get("properties", {})
+                hits.append({
+                    "nome": (props.get("name") or [ent.get("caption", nome)])[0],
+                    "listas": [DATASET_LABELS.get(d, d) for d in matched],
+                    "id": ent.get("id"),
+                })
+        n = len(hits)
+        return {
+            "fonte": self.fonte, "categoria": "internacional",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "Sanções Internacionais (OpenSanctions)",
+            "resumo": f"{n} correspondência(s) em listas internacionais" if n else "Nenhuma ocorrência em 400+ listas internacionais",
+            "detalhes": {"total": n, "hits": hits},
+        }

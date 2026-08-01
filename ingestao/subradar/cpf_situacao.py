@@ -114,3 +114,25 @@ class CPFSituacaoConnector(SubradarSource):
             "url_fonte": "https://servicos.receita.fazenda.gov.br/Servicos/CPF/ConsultaSituacao/ConsultaPublica.asp",
             "is_novo": True,
         }]
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf_d = _strip(cpf)
+        if len(cpf_d) != 11:
+            return None
+        situacao = _via_bigdatacorp(cpf_d) or _via_receitaws(cpf_d)
+        if situacao is None:
+            return {
+                "fonte": self.fonte, "categoria": "cadastral",
+                "status": "pendente", "titulo_secao": "Situação CPF",
+                "resumo": "Não foi possível consultar — fonte indisponível",
+                "detalhes": {},
+            }
+        norm = situacao.upper().strip()
+        label = _STATUS_LABELS.get(norm, situacao)
+        return {
+            "fonte": self.fonte, "categoria": "cadastral",
+            "status": "limpo" if norm == "REGULAR" else "alerta",
+            "titulo_secao": "Situação CPF",
+            "resumo": label,
+            "detalhes": {"situacao_raw": situacao, "situacao_norm": norm},
+        }

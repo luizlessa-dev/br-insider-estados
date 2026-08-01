@@ -132,3 +132,37 @@ class QSAReversoConnector(SubradarSource):
                     })
 
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf_d = _strip(cpf)
+        if len(cpf_d) != 11:
+            return None
+        socios_rows = _sb_get("cnpj_socios", {
+            "cpf_cnpj_socio": f"eq.{cpf_d}",
+            "select": "cnpj_basico,qualificacao_socio,nome_socio",
+            "limit": 50,
+        })
+        n = len(socios_rows)
+        empresas = []
+        for row in socios_rows[:10]:
+            cnpj_b = _strip(str(row.get("cnpj_basico", "")))
+            emp = _sb_get("cnpj_dados", {
+                "cnpj_basico": f"eq.{cnpj_b}",
+                "select": "razao_social,descricao_situacao_cadastral",
+                "limit": 1,
+            })
+            e = emp[0] if emp else {}
+            empresas.append({
+                "cnpj_basico": cnpj_b,
+                "razao_social": e.get("razao_social", f"CNPJ {cnpj_b}"),
+                "situacao": e.get("descricao_situacao_cadastral", ""),
+                "qualificacao": row.get("qualificacao_socio", "Sócio"),
+            })
+        status = "limpo" if n == 0 else "alerta"
+        resumo = "Nenhuma participação societária encontrada" if n == 0 else f"{n} empresa(s) como sócio/administrador"
+        return {
+            "fonte": self.fonte, "categoria": "societario",
+            "status": status, "titulo_secao": "Participações Societárias",
+            "resumo": resumo,
+            "detalhes": {"total": n, "empresas": empresas},
+        }

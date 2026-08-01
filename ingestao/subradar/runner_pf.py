@@ -283,8 +283,10 @@ def processar_cpf(
                 cpf_fmt, len(fontes), dry_run, avulsa)
 
     todos_alertas: list[dict] = []
+    todos_dados: list[dict] = []
 
     for fonte in fontes:
+        nome_fonte = getattr(fonte, "fonte", "?")
         try:
             import inspect
             if hasattr(fonte, "consultar_cpf"):
@@ -299,13 +301,22 @@ def processar_cpf(
                 alertas = []
 
             if alertas:
-                logger.info("  ✓ %s — %d alerta(s)", fonte.fonte, len(alertas))
+                logger.info("  ✓ %s — %d alerta(s)", nome_fonte, len(alertas))
                 todos_alertas.extend(alertas)
             else:
-                logger.debug("  - %s — sem alertas", fonte.fonte)
+                logger.debug("  - %s — sem alertas", nome_fonte)
+
+            # Coleta dados estruturados para o laudo (Opção B)
+            if hasattr(fonte, "resumo_pf"):
+                try:
+                    dado = fonte.resumo_pf(cpf_digits, nome=nome)
+                    if dado:
+                        todos_dados.append(dado)
+                except Exception as e_d:
+                    logger.debug("  resumo_pf %s falhou: %s", nome_fonte, e_d)
 
         except Exception as e:
-            logger.error("  ✗ %s — erro: %s", getattr(fonte, "fonte", "?"), e)
+            logger.error("  ✗ %s — erro: %s", nome_fonte, e)
 
     score = calcular_score_risco(todos_alertas)
     logger.info(
@@ -329,6 +340,25 @@ def processar_cpf(
                 alerta["cliente_id"] = cliente_id
             upsert("sub_alertas", todos_alertas)
             logger.info("Gravados %d alertas para %s", len(todos_alertas), cpf_fmt)
+
+        # Grava dados estruturados do laudo (Opção B)
+        if todos_dados:
+            rows_dados = []
+            for d in todos_dados:
+                rows_dados.append({
+                    "cpf": cpf_fmt,
+                    "ciclo": ciclo,
+                    "cliente_id": cliente_id,
+                    "consulta_id": cliente_id,  # reutiliza até termos campo dedicado
+                    "fonte": d.get("fonte", ""),
+                    "categoria": d.get("categoria", ""),
+                    "status": d.get("status", ""),
+                    "titulo_secao": d.get("titulo_secao", ""),
+                    "resumo": d.get("resumo", ""),
+                    "detalhes": d.get("detalhes"),
+                })
+            upsert("sub_pf_dados", rows_dados)
+            logger.info("Gravados %d blocos de dados para %s", len(rows_dados), cpf_fmt)
 
         # Grava score na tabela de resultados PF
         import uuid as _uuid
