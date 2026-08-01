@@ -142,13 +142,17 @@ from .bdc_marketplace_pf import (
     BDCSegurancaPublicaPFConnector,
     BDCScoreQuodPFConnector,
 )
+from .directdata_pf_enriquecimento import DirectDataPFEnriquecimentoConnector
+from .directdata_monitorapp import DirectDataMonitorAppConnector
 
 FONTES_PF_AVULSA = FONTES_PF + [f for f in [_BDC_SCORE_PF] if f] + [
-    BDCRestritivosQuodPFConnector(),      # Dados Restritivos | Quod (marketplace, pago)
-    BDCRestritevosBiroPFConnector(),      # Dados Restritivos | Birô de Crédito / Serasa/SPC (marketplace, pago)
-    BDCFlagsNegativosQuodPFConnector(),   # Flags Negativos | Quod (marketplace, pago)
-    BDCSegurancaPublicaPFConnector(),     # Dados de Segurança Pública (marketplace, pago)
-    BDCScoreQuodPFConnector(),            # Score de Crédito | Quod PF 300-1000 (marketplace, pago)
+    BDCRestritivosQuodPFConnector(),       # Dados Restritivos | Quod (marketplace, pago)
+    BDCRestritevosBiroPFConnector(),       # Dados Restritivos | Birô de Crédito / Serasa/SPC (marketplace, pago)
+    BDCFlagsNegativosQuodPFConnector(),    # Flags Negativos | Quod (marketplace, pago)
+    BDCSegurancaPublicaPFConnector(),      # Dados de Segurança Pública (marketplace, pago)
+    BDCScoreQuodPFConnector(),             # Score de Crédito | Quod PF 300-1000 (marketplace, pago)
+    DirectDataPFEnriquecimentoConnector(), # Direct Data — enriquecimento PF: nome da mãe, prog. sociais
+    DirectDataMonitorAppConnector(),       # Direct Data MonitorApp — eventos push PF cadastradas
 ]
 
 
@@ -282,10 +286,15 @@ def processar_cpf(
 
     for fonte in fontes:
         try:
+            import inspect
             if hasattr(fonte, "consultar_cpf"):
-                alertas = fonte.consultar_cpf(cpf_digits, nome=nome)
+                fn = fonte.consultar_cpf
+                sig = inspect.signature(fn)
+                alertas = fn(cpf_digits, nome=nome) if "nome" in sig.parameters else fn(cpf_digits)
             elif hasattr(fonte, "consultar_cnpj"):
-                alertas = fonte.consultar_cnpj(cpf_digits, nome=nome)
+                fn = fonte.consultar_cnpj
+                sig = inspect.signature(fn)
+                alertas = fn(cpf_digits, nome=nome) if "nome" in sig.parameters else fn(cpf_digits)
             else:
                 alertas = []
 
