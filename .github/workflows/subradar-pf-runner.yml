@@ -90,73 +90,192 @@ jobs:
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          python3 - <<'EOF'
-          import os, smtplib, re
+          python3 - <<'PYEOF'
+          import os, smtplib, requests
           from email.mime.multipart import MIMEMultipart
           from email.mime.text import MIMEText
+          from datetime import date
 
-          cpf_raw = "${{ github.event.inputs.cpf }}"
-          cpf_fmt = f"{cpf_raw[:3]}.{cpf_raw[3:6]}.{cpf_raw[6:9]}-{cpf_raw[9:11]}"
-          nome = "${{ github.event.inputs.nome }}"
-          tipo = "${{ github.event.inputs.tipo }}"
+          cpf_raw  = "${{ github.event.inputs.cpf }}"
+          cpf_fmt  = f"{cpf_raw[:3]}.{cpf_raw[3:6]}.{cpf_raw[6:9]}-{cpf_raw[9:11]}"
+          nome     = "${{ github.event.inputs.nome }}"
+          tipo     = "${{ github.event.inputs.tipo }}"
           email_cliente = "${{ github.event.inputs.email_cliente }}"
+          consulta_id   = "${{ github.event.inputs.consulta_id }}"
+          ciclo = date.today().strftime("%Y-%m")
 
-          with open("/tmp/pf_output.txt") as f:
-              raw = f.read()
+          SB_URL = os.environ["SUPABASE_URL"]
+          SB_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          hdrs   = {"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"}
 
-          # Extrair alertas do log
-          alertas = [l for l in raw.splitlines() if "[CRITICO]" in l or "[ATENCAO]" in l or "[INFO]" in l]
-          n_criticos = sum(1 for l in alertas if "[CRITICO]" in l)
+          def sb_get(table, params):
+              r = requests.get(f"{SB_URL}/rest/v1/{table}", params=params, headers=hdrs, timeout=20)
+              return r.json() if r.ok else []
 
-          if alertas:
-              status_cor = "#dc2626" if n_criticos else "#d97706"
-              status_txt = f"{n_criticos} alerta(s) crítico(s)" if n_criticos else "Alertas de atenção encontrados"
+          # Buscar resultado (score)
+          resultados = sb_get("sub_pf_resultados", {"cpf": f"eq.{cpf_fmt}", "ciclo": f"eq.{ciclo}", "limit": 1})
+          resultado  = resultados[0] if resultados else {}
+          score      = resultado.get("score_risco", 0)
+          faixa      = resultado.get("faixa_risco", "desconhecida")
+
+          # Buscar dados estruturados
+          dados = sb_get("sub_pf_dados", {"cpf": f"eq.{cpf_fmt}", "ciclo": f"eq.{ciclo}", "limit": 100})
+
+          # Buscar alertas
+          alertas = sb_get("sub_pf_alertas", {"cpf": f"eq.{cpf_fmt}", "ciclo": f"eq.{ciclo}", "limit": 200})
+          n_criticos = sum(1 for a in alertas if a.get("severidade") == "critico")
+          n_atencao  = sum(1 for a in alertas if a.get("severidade") == "atencao")
+
+          # Cores por status
+          CORES = {"limpo": "#16a34a", "alerta": "#d97706", "critico": "#dc2626",
+                   "pendente": "#6366f1", "nao_aplicavel": "#94a3b8", "erro": "#94a3b8"}
+          LABELS = {"limpo": "Sem ocorrências", "alerta": "Atenção", "critico": "Crítico",
+                    "pendente": "Pendente", "nao_aplicavel": "N/A", "erro": "Erro"}
+          CATEGORIAS_ORDEM = [
+              ("cadastral",       "Dados Cadastrais"),
+              ("societario",      "Vínculos Societários"),
+              ("judicial",        "Judicial e Penal"),
+              ("trabalhista",     "Trabalhista"),
+              ("sancao",          "Sanções e Restrições"),
+              ("financeiro",      "Crédito e Finanças"),
+              ("dou",             "Diários Oficiais"),
+              ("controle",        "Controle Externo"),
+              ("mercado_capitais","Mercado de Capitais"),
+              ("reputacao",       "Reputação e Mídia"),
+              ("internacional",   "Listas Internacionais"),
+          ]
+
+          # Índice de alertas por categoria
+          alertas_por_cat = {}
+          for a in alertas:
+              cat = a.get("categoria", "outro")
+              alertas_por_cat.setdefault(cat, []).append(a)
+
+          # Índice de dados por categoria
+          dados_por_cat = {}
+          for d in dados:
+              cat = d.get("categoria", "outro")
+              dados_por_cat.setdefault(cat, []).append(d)
+
+          def badge(status):
+              cor  = CORES.get(status, "#94a3b8")
+              txt  = LABELS.get(status, status)
+              return f'<span style="display:inline-block;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;background:{cor}22;color:{cor};border:1px solid {cor}44">{txt}</span>'
+
+          def alerta_pill(sev):
+              cor = CORES.get(sev, "#94a3b8")
+              return f'<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:{cor};margin-right:6px;flex-shrink:0"></span>'
+
+          secoes_html = ""
+          for cat_key, cat_label in CATEGORIAS_ORDEM:
+              cat_dados   = dados_por_cat.get(cat_key, [])
+              cat_alertas = alertas_por_cat.get(cat_key, [])
+              if not cat_dados and not cat_alertas:
+                  continue
+
+              linhas = ""
+              seen_fontes = set()
+              for d in cat_dados:
+                  fonte = d.get("fonte", "")
+                  seen_fontes.add(fonte)
+                  st    = d.get("status", "limpo")
+                  titulo = d.get("titulo_secao", fonte)
+                  resumo = d.get("resumo", "")
+                  linhas += f"""
+                  <tr>
+                    <td style="padding:10px 0;border-bottom:1px solid #f1f5f9;vertical-align:top">
+                      <span style="font-size:13px;font-weight:600;color:#1e293b">{titulo}</span>
+                      <br><span style="font-size:12px;color:#64748b">{resumo}</span>
+                    </td>
+                    <td style="padding:10px 0 10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:top;white-space:nowrap">
+                      {badge(st)}
+                    </td>
+                  </tr>"""
+
+              # Alertas detalhados para categorias com ocorrências
+              detalhes_alertas = ""
+              for a in cat_alertas:
+                  sev   = a.get("severidade", "info")
+                  titulo_a = a.get("titulo", "")
+                  desc_a   = a.get("descricao", "")
+                  detalhes_alertas += f"""
+                  <div style="display:flex;align-items:flex-start;margin-bottom:10px">
+                    {alerta_pill(sev)}
+                    <div>
+                      <p style="margin:0;font-size:13px;font-weight:600;color:#1e293b">{titulo_a}</p>
+                      <p style="margin:2px 0 0;font-size:12px;color:#64748b;line-height:1.5">{desc_a}</p>
+                    </div>
+                  </div>"""
+
+              secoes_html += f"""
+              <div style="margin-bottom:24px">
+                <h3 style="margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8">{cat_label}</h3>
+                <table style="width:100%;border-collapse:collapse">{linhas}</table>
+                {('<div style="margin-top:12px;padding:12px;background:#fef2f2;border-radius:6px">' + detalhes_alertas + '</div>') if detalhes_alertas else ''}
+              </div>"""
+
+          # Score badge
+          if score >= 70:
+              score_cor = "#dc2626"; score_label = "Risco Alto"
+          elif score >= 40:
+              score_cor = "#d97706"; score_label = "Risco Médio"
           else:
-              status_cor = "#16a34a"
-              status_txt = "Nenhuma ocorrência encontrada"
+              score_cor = "#16a34a"; score_label = "Risco Baixo"
 
-          alertas_html = "".join(
-              f'<li style="margin-bottom:6px;color:#374151">{re.sub(r"^.*\[(CRITICO|ATENCAO|INFO)\]", lambda m: f"<strong>[{m.group(1)}]</strong>", l)}</li>'
-              for l in alertas
-          ) or "<li style='color:#6b7280'>Nenhuma ocorrência registrada nas fontes consultadas.</li>"
+          resumo_banner = ""
+          if n_criticos:
+              resumo_banner = f'<div style="padding:16px;border-radius:8px;background:#fef2f2;border-left:4px solid #dc2626;margin-bottom:28px"><p style="margin:0;font-weight:700;color:#dc2626">{n_criticos} alerta(s) crítico(s) encontrado(s)</p><p style="margin:4px 0 0;font-size:13px;color:#991b1b">Recomenda-se revisão detalhada antes de prosseguir com o vínculo.</p></div>'
+          elif n_atencao:
+              resumo_banner = f'<div style="padding:16px;border-radius:8px;background:#fffbeb;border-left:4px solid #d97706;margin-bottom:28px"><p style="margin:0;font-weight:700;color:#d97706">{n_atencao} ponto(s) de atenção identificado(s)</p><p style="margin:4px 0 0;font-size:13px;color:#92400e">Analise os itens destacados antes de finalizar a decisão.</p></div>'
+          else:
+              resumo_banner = '<div style="padding:16px;border-radius:8px;background:#f0fdf4;border-left:4px solid #16a34a;margin-bottom:28px"><p style="margin:0;font-weight:700;color:#16a34a">Nenhuma ocorrência encontrada</p><p style="margin:4px 0 0;font-size:13px;color:#166534">O CPF consultado não apresentou alertas nas fontes verificadas.</p></div>'
 
-          html = f"""
-          <div style="font-family:system-ui,sans-serif;max-width:600px;margin:auto;color:#0f172a">
-            <div style="background:#0f172a;padding:24px 32px;border-radius:8px 8px 0 0">
-              <p style="color:#fff;font-size:11px;letter-spacing:2px;text-transform:uppercase;margin:0 0 4px">SUBRADAR PF</p>
-              <p style="color:#94a3b8;font-size:11px;margin:0">Dossiê de Compliance — Pessoa Física</p>
+          html = f"""<!DOCTYPE html>
+          <html><body style="margin:0;padding:20px;background:#f8fafc;font-family:system-ui,-apple-system,sans-serif">
+          <div style="max-width:600px;margin:auto">
+            <div style="background:#0f172a;padding:28px 32px;border-radius:10px 10px 0 0">
+              <p style="color:#94a3b8;font-size:10px;letter-spacing:2.5px;text-transform:uppercase;margin:0 0 6px">SUBRADAR · COMPLIANCE PESSOAL</p>
+              <h1 style="color:#fff;font-size:22px;margin:0 0 4px">{nome}</h1>
+              <p style="color:#64748b;font-size:13px;margin:0">CPF {cpf_fmt} · Consulta {tipo.title()} · {date.today().strftime("%d/%m/%Y")}</p>
             </div>
-            <div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:none">
-              <h2 style="margin:0 0 4px;font-size:20px">{nome}</h2>
-              <p style="color:#64748b;margin:0 0 24px;font-size:14px">CPF: {cpf_fmt} · Consulta {tipo.title()}</p>
-              <div style="padding:16px;border-radius:8px;background:#f8fafc;border-left:4px solid {status_cor};margin-bottom:24px">
-                <p style="margin:0;font-weight:700;color:{status_cor}">{status_txt}</p>
+            <div style="background:#fff;padding:32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 10px 10px">
+              <div style="display:flex;align-items:center;gap:16px;margin-bottom:28px;padding:16px;background:#f8fafc;border-radius:8px">
+                <div style="text-align:center;min-width:64px">
+                  <p style="margin:0;font-size:32px;font-weight:900;color:{score_cor}">{score}</p>
+                  <p style="margin:0;font-size:10px;font-weight:700;color:{score_cor};letter-spacing:1px">{score_label.upper()}</p>
+                </div>
+                <div>
+                  <p style="margin:0 0 2px;font-size:13px;font-weight:700;color:#1e293b">Score de Risco Subradar</p>
+                  <p style="margin:0;font-size:12px;color:#64748b">Faixa: {faixa} · {len(dados)} fontes com dados estruturados · {len(alertas)} alerta(s) total</p>
+                </div>
               </div>
-              <h3 style="font-size:14px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:0 0 12px">Fontes consultadas</h3>
-              <ul style="padding-left:20px;margin:0 0 24px">
-                {alertas_html}
-              </ul>
-              <p style="font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:16px;margin:0">
-                Lessa Labs Tecnologia Ltda · CNPJ 65.659.055/0001-53<br>
-                Dúvidas: <a href="mailto:luiz@lessalabs.com">luiz@lessalabs.com</a>
+              {resumo_banner}
+              {secoes_html}
+              <p style="font-size:11px;color:#94a3b8;border-top:1px solid #f1f5f9;padding-top:20px;margin:0;line-height:1.6">
+                Dossiê gerado automaticamente pelo Subradar em {date.today().strftime("%d/%m/%Y")}.<br>
+                As informações são obtidas de fontes públicas e bases de dados autorizadas. O Subradar não substitui análise jurídica.<br>
+                Lessa Labs Tecnologia Ltda · CNPJ 65.659.055/0001-53 · <a href="mailto:luiz@lessalabs.com" style="color:#64748b">luiz@lessalabs.com</a>
               </p>
             </div>
           </div>
-          """
+          </body></html>"""
 
+          assunto_alertas = f"{n_criticos} crítico(s)" if n_criticos else (f"{n_atencao} atenção" if n_atencao else "sem ocorrências")
           msg = MIMEMultipart("alternative")
-          msg["Subject"] = f"Subradar PF — Dossiê {nome} ({status_txt})"
-          msg["From"] = os.environ["GMAIL_USER"]
-          msg["To"] = email_cliente
-          msg["Bcc"] = "luiz@lessalabs.com"
+          msg["Subject"] = f"Subradar PF — {nome} · {assunto_alertas} · Score {score}"
+          msg["From"]    = os.environ["GMAIL_USER"]
+          msg["To"]      = email_cliente
+          msg["Bcc"]     = "luiz@lessalabs.com"
           msg.attach(MIMEText(html, "html"))
 
           with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
               s.login(os.environ["GMAIL_USER"], os.environ["GMAIL_APP_PASSWORD"])
               s.send_message(msg)
-          print(f"Dossiê enviado para {email_cliente}")
-          EOF
+          print(f"Dossiê estruturado enviado para {email_cliente} (score={score}, criticos={n_criticos})")
+          PYEOF
 
       - name: Notificar erro ao operador
         if: env.EXIT_CODE != '0'
