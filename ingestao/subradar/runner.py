@@ -78,6 +78,7 @@ from .infosimples_cnd_estadual_pj import InfosimplesCNDEstadualPJConnector
 from .infosimples_pgfn_pj import InfosimplesPGFNPJConnector
 from .bndes_devedores_pj import BNDESDevedoresPJConnector
 from .directdata import DirectDataConnector
+from .directdata_monitorapp import DirectDataMonitorAppConnector
 from .bigdatacorp import BigDataCorpConnector, BigDataCorpScoreConnector
 from .bigdatacorp_negativacoes import BDCNegativacoesPJConnector, BDCFinanceiroPJConnector
 from .socios_compliance import SociosComplianceConnector
@@ -144,6 +145,7 @@ FONTES = [
     BigDataCorpConnector(),       # BigDataCorp — protestos cartoriais + processos sócios (BIGDATA_CORP_TOKEN)
     BDCNegativacoesPJConnector(), # BigDataCorp — negativações/restrições bureaus PJ (negative_data)
     BDCFinanceiroPJConnector(),   # BigDataCorp — dados financeiros estimados PJ (financial_data)
+    DirectDataMonitorAppConnector(), # Direct Data MonitorApp — eventos push de entidades cadastradas
     SociosComplianceConnector(),  # Sócios PF — CEIS/CNEP/MTE/PGFN/sanções internacionais por CPF
     GrafoSociosPJConnector(),              # Grafo de sócios — vínculos cruzados, paraíso fiscal, concentração
     INPIMarcasConnector(),                 # INPI — marcas registradas, oposições e nulidades
@@ -157,8 +159,9 @@ FONTES = [
 # Fontes exclusivas para consulta avulsa (dossiê pontual R$ 197).
 # Não incluídas no ciclo de monitoramento — cobram por consulta.
 FONTES_AVULSA = FONTES + [
-    DirectDataConnector(),        # Direct Data — dossiê PJ completo 22 APIs (~R$ 15,70/consulta)
     BigDataCorpScoreConnector(),  # BigDataCorp Score Quod/Boa Vista PJ (~R$ 2,41/consulta)
+    # DirectDataConnector removido: ~90% duplicava cobertura gratuita BDC+Infosimples; custo R$15,70/consulta.
+    # Manter créditos Direct Data para ProtestosNacionalConnector + MonitorApp.
 ]
 
 

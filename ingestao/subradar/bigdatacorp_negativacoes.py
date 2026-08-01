@@ -325,7 +325,11 @@ class BDCFinanceiroPJConnector(SubradarSource):
         if result is None:
             return []
 
-        dados = _parse_financeiro(result, "FinancialData") or _parse_financeiro(result, "financial_data")
+        dados = (
+            _parse_financeiro(result, "FinancialData")
+            or _parse_financeiro(result, "FinantialData")  # typo real na API BDC para PF
+            or _parse_financeiro(result, "financial_data")
+        )
         if not dados:
             return []
 
@@ -457,7 +461,11 @@ class BDCFinanceiroPFConnector(SubradarSource):
         if result is None:
             return []
 
-        dados = _parse_financeiro(result, "FinancialData") or _parse_financeiro(result, "financial_data")
+        dados = (
+            _parse_financeiro(result, "FinancialData")
+            or _parse_financeiro(result, "FinantialData")  # typo real na API BDC para PF
+            or _parse_financeiro(result, "financial_data")
+        )
         if not dados:
             return []
 
