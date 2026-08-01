@@ -139,3 +139,16 @@ class CVMInsiderPFConnector(SubradarSource):
 
         logger.info("cvm_insider_pf: %d alerta(s) PAS para CPF %s***", len(alertas), cpf[:3])
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        criticos = sum(1 for a in alertas if a.get("severidade") == "critico")
+        return {
+            "fonte": self.fonte,
+            "categoria": "mercado_capitais",
+            "status": "critico" if criticos else ("alerta" if n else "limpo"),
+            "titulo_secao": "CVM — Processos Sancionadores",
+            "resumo": f"{n} processo(s) sancionador(es) na CVM" if n else "Nenhum processo sancionador na CVM",
+            "detalhes": {"total": n, "criticos": criticos, "processos": [a.get("referencia_id", "") for a in alertas[:5]]},
+        }

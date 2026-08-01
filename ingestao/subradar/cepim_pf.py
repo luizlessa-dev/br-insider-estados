@@ -143,3 +143,15 @@ class CEPIMRepresentantePFConnector(SubradarSource):
             logger.debug("cepim_pf: CPF %s*** sem vínculo com entidades CEPIM", cpf[:3])
 
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "sancao",
+            "status": "critico" if n else "limpo",
+            "titulo_secao": "CEPIM — Entidades Impedidas",
+            "resumo": f"Sócio de {n} entidade(s) impedida(s) de receber convênios" if n else "Sem vínculo com entidades CEPIM",
+            "detalhes": {"total": n, "entidades": [a.get("titulo", "") for a in alertas[:5]]},
+        }

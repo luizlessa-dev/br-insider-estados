@@ -170,3 +170,15 @@ class CNDTTrabalhiPFConnector(SubradarSource):
             "referencia_id": str(num_certidao),
             "is_novo": True,
         }]
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "trabalhista",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "CNDT/TST — Débitos Trabalhistas",
+            "resumo": f"Certidão POSITIVA — {n} processo(s)" if n else "CNDT negativa — sem débitos trabalhistas",
+            "detalhes": {"total": n, "alertas": [a.get("descricao", "") for a in alertas[:3]]},
+        }

@@ -281,3 +281,17 @@ class DOEEstaduaisPFConnector(SubradarSource):
 
         logger.info("doe_estaduais_pf: %d alerta(s) para '%s'", len(alertas), nome)
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not nome or len(nome.split()) < 2:
+            return None
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "dou",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "Diários Oficiais Estaduais (SP/MG/RJ)",
+            "resumo": f"{n} publicação(ões) adversa(s) nos DOEs" if n else "Nenhuma publicação adversa encontrada",
+            "detalhes": {"total": n, "titulos": [a.get("titulo", "") for a in alertas[:5]]},
+        }

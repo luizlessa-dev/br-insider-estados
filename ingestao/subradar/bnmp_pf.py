@@ -118,3 +118,25 @@ class BNMPMandadosPrisaoPFConnector(SubradarSource):
         if alertas:
             logger.info("bnmp_pf: %d mandado(s) ativo(s) para CPF %s***", len(alertas), cpf[:3])
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not _DD_TOKEN:
+            return None
+        cpf_digits = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf_digits) != 11:
+            return None
+        mandados = _consultar_bnmp(cpf_digits)
+        ativos = [
+            m for m in mandados
+            if not (m.get("status") or m.get("situacao") or m.get("statusMandado") or "").lower().strip()
+            or any(s in (m.get("status") or m.get("situacao") or m.get("statusMandado") or "").lower() for s in _STATUS_ATIVO)
+        ]
+        n = len(ativos)
+        return {
+            "fonte": self.fonte,
+            "categoria": "judicial",
+            "status": "critico" if n else "limpo",
+            "titulo_secao": "Mandados de Prisão (BNMP/CNJ)",
+            "resumo": f"{n} mandado(s) ativo(s)" if n else "Nenhum mandado de prisão encontrado",
+            "detalhes": {"total_ativos": n, "mandados": ativos[:5]},
+        }

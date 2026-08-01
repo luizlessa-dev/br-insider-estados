@@ -263,3 +263,16 @@ class TCEEstaduaisPFConnector(SubradarSource):
 
         logger.info("tce_estaduais_pf: %d alerta(s) para '%s'", len(alertas), nome)
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        criticos = sum(1 for a in alertas if a.get("severidade") == "critico")
+        return {
+            "fonte": self.fonte,
+            "categoria": "controle",
+            "status": "critico" if criticos else ("alerta" if n else "limpo"),
+            "titulo_secao": "Tribunais de Contas Estaduais (TCE)",
+            "resumo": f"{n} irregularidade(s) nos TCEs estaduais" if n else "Nenhuma irregularidade nos TCEs estaduais",
+            "detalhes": {"total": n, "criticos": criticos, "processos": [a.get("referencia_id", "") for a in alertas[:5]]},
+        }

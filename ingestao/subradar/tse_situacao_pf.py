@@ -145,3 +145,15 @@ class TSESituacaoEleitoralPFConnector(SubradarSource):
             "referencia_id": str(numero_titulo),
             "is_novo": True,
         }]
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "cadastral",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "Situação Eleitoral (TSE)",
+            "resumo": alertas[0].get("titulo", "Título irregular") if n else "Título eleitoral regular (quitado)",
+            "detalhes": {"total_irregulares": n, "alertas": [a.get("descricao", "") for a in alertas[:2]]},
+        }

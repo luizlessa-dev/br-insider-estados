@@ -305,6 +305,24 @@ class CREACONFEAPFConnector(SubradarSource):
 
         return _processar_registros(registros, cpf_fmt, self.fonte)
 
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf_d = _strip(cpf)
+        if len(cpf_d) != 11:
+            return None
+        registros = _consultar_confea(cpf_d)
+        if not registros:
+            return None
+        alertas = _processar_registros(registros, f"{cpf_d[:3]}.{cpf_d[3:6]}.{cpf_d[6:9]}-{cpf_d[9:]}", self.fonte)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "cadastral",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "CREA/CONFEA — Engenheiro ou Agrônomo",
+            "resumo": f"Registro com irregularidade no CREA" if n else f"{len(registros)} registro(s) regular(es) no CREA",
+            "detalhes": {"total_registros": len(registros), "irregulares": n},
+        }
+
 
 class CAUBRPFConnector(SubradarSource):
     """
@@ -328,3 +346,21 @@ class CAUBRPFConnector(SubradarSource):
             return []
 
         return _processar_registros(registros, cpf_fmt, self.fonte)
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf_d = _strip(cpf)
+        if len(cpf_d) != 11:
+            return None
+        registros = _consultar_cau(cpf_d)
+        if not registros:
+            return None
+        alertas = _processar_registros(registros, f"{cpf_d[:3]}.{cpf_d[3:6]}.{cpf_d[6:9]}-{cpf_d[9:]}", self.fonte)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "cadastral",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "CAU-BR — Arquiteto e Urbanista",
+            "resumo": f"Registro com irregularidade no CAU-BR" if n else f"{len(registros)} registro(s) regular(es) no CAU-BR",
+            "detalhes": {"total_registros": len(registros), "irregulares": n},
+        }

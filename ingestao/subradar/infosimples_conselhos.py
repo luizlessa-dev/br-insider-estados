@@ -138,3 +138,19 @@ class InfosimplesConselhosPFConnector(SubradarSource):
                 })
 
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not TOKEN or not nome:
+            return None
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        if not n:
+            return None
+        return {
+            "fonte": self.fonte,
+            "categoria": "cadastral",
+            "status": "alerta",
+            "titulo_secao": "Conselhos Profissionais (CRO/CRF/CFM/CFMV/CFP/COREN)",
+            "resumo": f"{n} conselho(s) com registro em situação irregular",
+            "detalhes": {"total_irregulares": n, "conselhos": [a.get("titulo", "") for a in alertas[:5]]},
+        }

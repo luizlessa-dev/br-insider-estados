@@ -212,3 +212,17 @@ class DOUPFConnector(SubradarSource):
 
         logger.info("dou_pf: %d alerta(s) para '%s'", len(alertas), nome)
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not nome:
+            return None
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "dou",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "Diário Oficial da União (DOU)",
+            "resumo": f"{n} menção(ões) nos últimos 30 dias" if n else "Nenhuma menção nos últimos 30 dias",
+            "detalhes": {"total": n, "titulos": [a.get("titulo", "") for a in alertas[:5]]},
+        }

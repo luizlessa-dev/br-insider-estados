@@ -216,3 +216,17 @@ class MidiaAdversaGDELTPFConnector(SubradarSource):
         logger.info("midia_adversa_gdelt_pf: %d alerta(s) para '%s' (%s)",
                     len(alertas), nome, cpf_fmt)
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not nome:
+            return None
+        alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "reputacao",
+            "status": "alerta" if n else "limpo",
+            "titulo_secao": "Mídia Adversa (GDELT)",
+            "resumo": f"{n} artigo(s) adverso(s) em veículos de imprensa" if n else "Nenhum artigo adverso encontrado",
+            "detalhes": {"total": n, "artigos": [{"titulo": a.get("titulo", "")[:80], "url": a.get("url_fonte", "")} for a in alertas[:5]]},
+        }
