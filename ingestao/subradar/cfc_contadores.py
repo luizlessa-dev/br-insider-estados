@@ -29,9 +29,9 @@ def _strip(doc: str) -> str:
 class CFCContadoresConnector(SubradarSource):
     """
     Consulta situação do profissional no CFC por CPF.
-    Só gera alerta se o CPF estiver registrado e INATIVO.
-    Ausência de registro (Erro) não gera alerta — a pessoa pode simplesmente
-    não ser contadora.
+    Gera alerta se o CPF estiver registrado e ATIVO como contador.
+    Inativo e não-encontrado não geram alerta — ausência de registro ou
+    registro inativo não representam risco de compliance.
     """
     fonte = "cfc_contadores"
     request_delay = 0.5
@@ -58,25 +58,21 @@ class CFCContadoresConnector(SubradarSource):
 
         resultado = resp.text.strip().strip('"')  # retorna string "1", "0" ou "Erro"
 
-        if resultado == "1":
-            logger.debug("cfc_contadores: CPF %s*** ativo no CFC", cpf[:3])
+        if resultado == "Erro" or resultado == "0":
+            logger.debug("cfc_contadores: CPF %s*** não registrado ou inativo no CFC", cpf[:3])
             return []
 
-        if resultado == "Erro":
-            logger.debug("cfc_contadores: CPF %s*** não encontrado no CFC", cpf[:3])
-            return []
-
-        # resultado == "0" — registrado mas inativo
+        # resultado == "1" — registrado e ATIVO (contador praticante)
         cpf_fmt = f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}"
         return [{
             "fonte": self.fonte,
             "categoria": "cadastral",
             "severidade": "atencao",
-            "titulo": f"CFC — contador INATIVO: {cpf_fmt}",
+            "titulo": f"CFC — contador ATIVO: {cpf_fmt}",
             "descricao": (
-                f"O CPF {cpf_fmt} consta no Conselho Federal de Contabilidade (CFC) "
-                "com situação INATIVA. O profissional pode estar impedido de exercer "
-                "atividades contábeis."
+                f"O CPF {cpf_fmt} está registrado e ATIVO no Conselho Federal de "
+                "Contabilidade (CFC). Verifique possível conflito de interesse em "
+                "prestação de serviços contábeis."
             ),
             "url_fonte": "https://www.cfc.org.br/consulta-de-profissional/",
             "is_novo": True,
