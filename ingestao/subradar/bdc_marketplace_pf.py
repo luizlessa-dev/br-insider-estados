@@ -37,14 +37,23 @@ logger = logging.getLogger("subradar.bdc_marketplace_pf")
 BDC_TOKEN_ID     = os.environ.get("BIGDATA_CORP_TOKEN_ID", "") or os.environ.get("BIGDATA_CORP_TOKEN", "")
 BDC_ACCESS_TOKEN = os.environ.get("BIGDATA_CORP_ACCESS_TOKEN", "") or os.environ.get("BIGDATA_CORP_TOKEN", "")
 
-_BASE = "https://plataforma.bigdatacorp.com.br/marketplace"
+_BASE_MARKETPLACE = "https://plataforma.bigdatacorp.com.br/marketplace"
+_BASE_PEOPLEV2    = "https://bigboost.bigdatacorp.com.br/peoplev2"
 
-# Confirmar nomes no portal BDC → Marketplace → Meus Datasets → "Nome da API"
-_DS_RESTRITIVOS_QUOD  = "partner_quod_dados_restritivos_pf"
-_DS_RESTRITIVOS_BIRO  = "partner_biro_credito_dados_restritivos"
-_DS_FLAGS_QUOD        = "partner_quod_flags_negativos"
-_DS_SEGURANCA_PUBLICA = "partner_seguranca_publica"
-_DS_SCORE_QUOD_PF     = "partner_quod_credit_score_pf"
+# Dataset names confirmados (mapeamento BDC 2026-08-01)
+_DS_NEGATIVACOES_QUOD     = "partner_quod_credit_risk_details_person"   # R$ 2.41/query
+_DS_SCORE_QUOD            = "partner_quod_credit_score_person"           # R$ 2.41/query
+_DS_FLAGS_QUOD            = "marketplace_partner_quod_credit_risk_person" # R$ 2.41/query
+_DS_SCORE_POSITIVO        = "partner_scorepositivo_individual_finance"   # R$ 7.01/query
+_DS_PROTESTOS             = "ondemand_pesquisa_protesto_by_state_person" # on-demand
+_DS_SEGURANCA_PUBLICA     = "partner_seguranca_publica"                  # on-demand / contato comercial
+_DS_FINANCEIRO            = "pessoas_financial_data"                     # incluso no plano base
+_DS_FINANCEIRO_FAMILIA    = "pessoas_family_financial_data"              # incluso no plano base
+
+# Aliases legados (mantidos para não quebrar imports externos)
+_DS_RESTRITIVOS_QUOD  = _DS_NEGATIVACOES_QUOD
+_DS_RESTRITIVOS_BIRO  = _DS_SCORE_POSITIVO
+_DS_SCORE_QUOD_PF     = _DS_SCORE_QUOD
 
 # Score: limiar de alerta (escala Quod 300-1000)
 _SCORE_CRITICO = 450
@@ -61,13 +70,15 @@ def _headers() -> dict:
 
 
 def _post(dataset: str, cpf11: str) -> dict | None:
+    # Datasets do plano base (pessoas_*) usam /peoplev2; marketplace usa /marketplace
+    base = _BASE_PEOPLEV2 if dataset.startswith("pessoas_") else _BASE_MARKETPLACE
     payload = {
         "Datasets": dataset,
         "q": f"doc{{{cpf11}}}",
         "Limit": 1,
     }
     try:
-        resp = requests.post(_BASE, json=payload, headers=_headers(), timeout=30)
+        resp = requests.post(base, json=payload, headers=_headers(), timeout=30)
         if resp.status_code == 401:
             logger.error("BDC Marketplace PF: token inválido (HTTP 401)")
             return None
@@ -460,3 +471,160 @@ class BDCScoreQuodPFConnector(SubradarSource):
         upsert("sub_snapshots", [{"cpf": cpf_fmt, "fonte": self.fonte, "ciclo": ciclo,
                                    "hash_dados": hash_novo, "dados": dado}])
         return [_build_alerta(cpf_fmt, ciclo, dado, self.fonte)]
+
+
+class BDCDadosFinanceirosPFConnector(SubradarSource):
+    """Dados Financeiros Estimados PF — incluso no plano base BDC (/peoplev2)."""
+    fonte = "bdc_financeiro_pf"
+    request_delay = 1.0
+
+    def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
+        if not BDC_ACCESS_TOKEN:
+            return []
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return []
+        cpf_fmt = _fmt_cpf(cpf11)
+        ciclo = _ciclo_atual()
+
+        result = _post(_DS_FINANCEIRO, cpf11)
+        if not result or not _check_disponivel(result, _DS_FINANCEIRO):
+            return []
+        return []  # financeiro gera dados, não alertas — ver resumo_pf()
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not BDC_ACCESS_TOKEN:
+            return {
+                "fonte": self.fonte, "categoria": "financeiro",
+                "status": "pendente", "titulo_secao": "Dados Financeiros (BDC)",
+                "resumo": "Token BDC não configurado",
+                "detalhes": {},
+            }
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return None
+        result = _post(_DS_FINANCEIRO, cpf11)
+        if not result or not _check_disponivel(result, _DS_FINANCEIRO):
+            return {
+                "fonte": self.fonte, "categoria": "financeiro",
+                "status": "pendente", "titulo_secao": "Dados Financeiros (BDC)",
+                "resumo": "Dataset não habilitado no plano atual",
+                "detalhes": {},
+            }
+        data = result.get("PessoasFinancialData") or result.get("FinancialData") or {}
+        renda = data.get("EstimatedIncome") or data.get("estimated_income")
+        patrimonio = data.get("AssetValue") or data.get("asset_value")
+        resumo_txt = []
+        if renda:
+            resumo_txt.append(f"Renda estimada: R$ {float(renda):,.0f}".replace(",", "."))
+        if patrimonio:
+            resumo_txt.append(f"Patrimônio: R$ {float(patrimonio):,.0f}".replace(",", "."))
+        return {
+            "fonte": self.fonte, "categoria": "financeiro",
+            "status": "limpo" if resumo_txt else "pendente",
+            "titulo_secao": "Dados Financeiros Estimados (BDC)",
+            "resumo": " · ".join(resumo_txt) if resumo_txt else "Dados não disponíveis",
+            "detalhes": data,
+        }
+
+
+class BDCNegativacoesPFConnectorV2(SubradarSource):
+    """Negativações PF — Quod (partner_quod_credit_risk_details_person)."""
+    fonte = "bdc_negativacoes_quod_pf"
+    request_delay = 1.0
+
+    def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
+        if not BDC_ACCESS_TOKEN:
+            return []
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return []
+        cpf_fmt = _fmt_cpf(cpf11)
+        ciclo = _ciclo_atual()
+        result = _post(_DS_NEGATIVACOES_QUOD, cpf11)
+        if not result or not _check_disponivel(result, _DS_NEGATIVACOES_QUOD):
+            return []
+        dados = _parse_restritivos(result)
+        if not dados:
+            return []
+        mudou, hash_novo = _salvar_snapshot(cpf_fmt, self.fonte, ciclo, dados)
+        if not mudou:
+            return []
+        upsert("sub_snapshots", [{"cpf": cpf_fmt, "fonte": self.fonte, "ciclo": ciclo,
+                                   "hash_dados": hash_novo, "dados": {"registros": dados}}])
+        return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not BDC_ACCESS_TOKEN:
+            return {"fonte": self.fonte, "categoria": "financeiro", "status": "pendente",
+                    "titulo_secao": "Negativações (Serasa/SPC/Quod)", "resumo": "Token BDC não configurado", "detalhes": {}}
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return None
+        result = _post(_DS_NEGATIVACOES_QUOD, cpf11)
+        if not result or not _check_disponivel(result, _DS_NEGATIVACOES_QUOD):
+            return {"fonte": self.fonte, "categoria": "financeiro", "status": "pendente",
+                    "titulo_secao": "Negativações (Serasa/SPC/Quod)", "resumo": "Dataset não habilitado no plano", "detalhes": {}}
+        dados = _parse_restritivos(result)
+        n = sum(d.get("total", 0) for d in dados)
+        valor = sum(d.get("valor_total", 0) for d in dados)
+        if n == 0:
+            return {"fonte": self.fonte, "categoria": "financeiro", "status": "limpo",
+                    "titulo_secao": "Negativações (Serasa/SPC/Quod)",
+                    "resumo": "Nenhuma negativação encontrada", "detalhes": {"total": 0}}
+        resumo_txt = f"{n} negativação(ões)"
+        if valor:
+            resumo_txt += f" — R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return {"fonte": self.fonte, "categoria": "financeiro", "status": "alerta",
+                "titulo_secao": "Negativações (Serasa/SPC/Quod)",
+                "resumo": resumo_txt, "detalhes": {"total": n, "valor_total": valor, "registros": dados}}
+
+
+class BDCScoreQuodPFConnectorV2(SubradarSource):
+    """Score de Crédito Quod PF (300-1000) — BigDataCorp Marketplace."""
+    fonte = "bdc_score_quod_pf_v2"
+    request_delay = 1.0
+
+    def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
+        if not BDC_ACCESS_TOKEN:
+            return []
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return []
+        cpf_fmt = _fmt_cpf(cpf11)
+        ciclo = _ciclo_atual()
+        result = _post(_DS_SCORE_QUOD, cpf11)
+        if not result or not _check_disponivel(result, _DS_SCORE_QUOD):
+            return []
+        dado = _parse_score_quod(result)
+        if not dado:
+            return []
+        mudou, hash_novo = _salvar_snapshot(cpf_fmt, self.fonte, ciclo, dado)
+        if not mudou:
+            return []
+        upsert("sub_snapshots", [{"cpf": cpf_fmt, "fonte": self.fonte, "ciclo": ciclo,
+                                   "hash_dados": hash_novo, "dados": dado}])
+        return [_build_alerta(cpf_fmt, ciclo, dado, self.fonte)]
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        if not BDC_ACCESS_TOKEN:
+            return {"fonte": self.fonte, "categoria": "financeiro", "status": "pendente",
+                    "titulo_secao": "Score de Crédito Quod (300–1000)", "resumo": "Token BDC não configurado", "detalhes": {}}
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return None
+        result = _post(_DS_SCORE_QUOD, cpf11)
+        if not result or not _check_disponivel(result, _DS_SCORE_QUOD):
+            return {"fonte": self.fonte, "categoria": "financeiro", "status": "pendente",
+                    "titulo_secao": "Score de Crédito Quod (300–1000)", "resumo": "Dataset não habilitado", "detalhes": {}}
+        dado = _parse_score_quod(result)
+        if not dado:
+            return {"fonte": self.fonte, "categoria": "financeiro", "status": "pendente",
+                    "titulo_secao": "Score de Crédito Quod (300–1000)", "resumo": "Sem dados disponíveis", "detalhes": {}}
+        score = dado["score"]
+        faixa = dado["faixa"].replace("_", " ")
+        return {"fonte": self.fonte, "categoria": "financeiro",
+                "status": "alerta" if score < _SCORE_ATENCAO else "limpo",
+                "titulo_secao": "Score de Crédito Quod (300–1000)",
+                "resumo": f"{score} — {faixa}",
+                "detalhes": dado}

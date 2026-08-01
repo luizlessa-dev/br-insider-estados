@@ -141,16 +141,19 @@ from .bdc_marketplace_pf import (
     BDCFlagsNegativosQuodPFConnector,
     BDCSegurancaPublicaPFConnector,
     BDCScoreQuodPFConnector,
+    BDCDadosFinanceirosPFConnector,   # incluso no plano base
+    BDCNegativacoesPFConnectorV2,     # dataset name confirmado
+    BDCScoreQuodPFConnectorV2,        # dataset name confirmado
 )
 from .directdata_pf_enriquecimento import DirectDataPFEnriquecimentoConnector
 from .directdata_monitorapp import DirectDataMonitorAppConnector
 
 FONTES_PF_AVULSA = FONTES_PF + [f for f in [_BDC_SCORE_PF] if f] + [
-    BDCRestritivosQuodPFConnector(),       # Dados Restritivos | Quod (marketplace, pago)
-    BDCRestritevosBiroPFConnector(),       # Dados Restritivos | Birô de Crédito / Serasa/SPC (marketplace, pago)
-    BDCFlagsNegativosQuodPFConnector(),    # Flags Negativos | Quod (marketplace, pago)
-    BDCSegurancaPublicaPFConnector(),      # Dados de Segurança Pública (marketplace, pago)
-    BDCScoreQuodPFConnector(),             # Score de Crédito | Quod PF 300-1000 (marketplace, pago)
+    BDCNegativacoesPFConnectorV2(),        # Negativações Quod (partner_quod_credit_risk_details_person)
+    BDCScoreQuodPFConnectorV2(),           # Score Quod PF 300-1000 (partner_quod_credit_score_person)
+    BDCFlagsNegativosQuodPFConnector(),    # Flags Negativos (marketplace_partner_quod_credit_risk_person)
+    BDCSegurancaPublicaPFConnector(),      # Segurança Pública (on-demand, contato comercial)
+    BDCDadosFinanceirosPFConnector(),      # Dados Financeiros Estimados (pessoas_financial_data — incluso)
     DirectDataPFEnriquecimentoConnector(), # Direct Data — enriquecimento PF: nome da mãe, prog. sociais
     DirectDataMonitorAppConnector(),       # Direct Data MonitorApp — eventos push PF cadastradas
 ]

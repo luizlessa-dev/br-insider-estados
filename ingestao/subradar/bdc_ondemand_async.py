@@ -88,6 +88,7 @@ DATASETS_PF = [
     "ondemand_policia_federal_antecedentes_criminais",
     "ondemand_bacen_sancoes_administrativas",
     "ondemand_tse_quitacao_eleitoral",
+    "ondemand_pesquisa_protesto_by_state_person",  # Protestos em cartório por CPF
 ]
 
 
