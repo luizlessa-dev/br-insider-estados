@@ -135,7 +135,21 @@ try:
 except ImportError:
     _ESCAVADOR_PF = None
 
-FONTES_PF_AVULSA = FONTES_PF + [f for f in [_BDC_SCORE_PF] if f]
+from .bdc_marketplace_pf import (
+    BDCRestritivosQuodPFConnector,
+    BDCRestritevosBiroPFConnector,
+    BDCFlagsNegativosQuodPFConnector,
+    BDCSegurancaPublicaPFConnector,
+    BDCScoreQuodPFConnector,
+)
+
+FONTES_PF_AVULSA = FONTES_PF + [f for f in [_BDC_SCORE_PF] if f] + [
+    BDCRestritivosQuodPFConnector(),      # Dados Restritivos | Quod (marketplace, pago)
+    BDCRestritevosBiroPFConnector(),      # Dados Restritivos | Birô de Crédito / Serasa/SPC (marketplace, pago)
+    BDCFlagsNegativosQuodPFConnector(),   # Flags Negativos | Quod (marketplace, pago)
+    BDCSegurancaPublicaPFConnector(),     # Dados de Segurança Pública (marketplace, pago)
+    BDCScoreQuodPFConnector(),            # Score de Crédito | Quod PF 300-1000 (marketplace, pago)
+]
 
 
 def _strip(cpf: str) -> str:
