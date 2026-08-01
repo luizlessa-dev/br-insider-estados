@@ -57,8 +57,9 @@ def _fetch_csv_urls() -> list[str]:
                     urls.append(resource["url"])
     except Exception as e:
         logger.warning(
-            "ANTAQ: DNS failure em dadosabertos.antaq.gov.br (jul/2026 — domínio offline ou migrado). "
-            "Erro: %s", e
+            "ANTAQ: dadosabertos.antaq.gov.br offline desde jul/2026 (DNS failure). "
+            "Porta alternativa — www.gov.br/antaq — não expõe CSV estruturado. "
+            "Retornando vazio até que o portal seja migrado. Erro: %s", e
         )
     return urls
 
