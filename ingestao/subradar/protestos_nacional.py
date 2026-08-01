@@ -189,3 +189,100 @@ class ProtestosNacionalConnector(SubradarSource):
 
         logger.info("Protestos Nacional: %d alertas para %s (%d protesto(s))", len(alertas), cnpj_fmt, total)
         return alertas
+
+
+class ProtestosNacionalPFConnector(SubradarSource):
+    """
+    Consulta protestos em cartório para CPF via Direct Data (endpoint /Protestos).
+    Gracioso quando sem crédito — retorna vazio sem quebrar o pipeline.
+    Assim que houver crédito na conta directd.com.br, passa a funcionar.
+    """
+    fonte = "protestos_nacional_pf"
+    request_delay = 1.0
+
+    def consultar_cnpj(self, cnpj_or_cpf: str, **_) -> list[dict]:
+        cpf = _strip(cnpj_or_cpf)
+        if len(cpf) != 11:
+            return []
+        if not DIRECT_DATA_TOKEN:
+            logger.debug("protestos_pf: DIRECT_DATA_TOKEN ausente — pulando")
+            return []
+
+        cpf_fmt = f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
+
+        try:
+            resp = self._session.get(
+                f"{DIRECT_DATA_BASE}/Protestos",
+                params={"cpf": cpf, "token": DIRECT_DATA_TOKEN},
+                timeout=self.timeout,
+            )
+        except Exception as e:
+            logger.warning("protestos_pf: erro de rede — %s", e)
+            return []
+
+        if resp.status_code == 403:
+            body = resp.json() if resp.text else {}
+            msg = (body.get("metaDados") or {}).get("resultado", "")
+            if "Saldo" in msg:
+                logger.info("protestos_pf: sem crédito na conta Direct Data — pulando")
+            else:
+                logger.warning("protestos_pf: HTTP 403 — %s", msg)
+            return []
+
+        if not resp.ok:
+            logger.warning("protestos_pf: HTTP %s para CPF %s***", resp.status_code, cpf[:3])
+            return []
+
+        try:
+            data = resp.json()
+        except Exception:
+            return []
+
+        consta = data.get("constamProtestos", False)
+        if not consta:
+            logger.debug("protestos_pf: nenhum protesto para CPF %s***", cpf[:3])
+            return []
+
+        total = data.get("numeroTotalProtestos", 0) or 0
+        valor = data.get("valorTotalProtestos", 0) or 0
+        severidade = "critico" if total >= 3 else "atencao"
+
+        try:
+            valor_fmt = f"R$ {float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        except Exception:
+            valor_fmt = f"R$ {valor}"
+
+        estados = sorted({p.get("estado", "") for p in data.get("protestos", []) if p.get("estado")})
+        desc = (
+            f"{total} protesto(s) encontrado(s) em cartório para o CPF {cpf_fmt}. "
+            + (f"Valor total: {valor_fmt}. " if valor else "")
+            + (f"Estado(s): {', '.join(estados)}. " if estados else "")
+            + "Fonte: IEPTB/CENPROT via Direct Data."
+        )
+
+        logger.info("protestos_pf: %d protesto(s) para CPF %s***", total, cpf[:3])
+        return [{
+            "fonte": self.fonte,
+            "categoria": "financeiro",
+            "severidade": severidade,
+            "titulo": f"Protestos em cartório — {total} registro(s): {cpf_fmt}",
+            "descricao": desc,
+            "url_fonte": "https://www.directd.com.br/protestos-ieptb",
+            "is_novo": True,
+        }]
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        alertas = self.consultar_cnpj(cpf)
+        if not alertas:
+            # Sem crédito ou sem protesto — distinguir pelo log não é possível aqui,
+            # então retornamos None para não inflar o laudo com "sem protestos" não verificados
+            return None
+        n = len(alertas)
+        return {
+            "fonte": self.fonte,
+            "categoria": "financeiro",
+            "status": "critico" if any(a.get("severidade") == "critico" for a in alertas) else "alerta",
+            "titulo_secao": "Protestos em Cartório (IEPTB Nacional)",
+            "resumo": alertas[0].get("titulo", f"{n} protesto(s) encontrado(s)"),
+            "detalhes": {"total": n, "descricao": alertas[0].get("descricao", "")},
+        }

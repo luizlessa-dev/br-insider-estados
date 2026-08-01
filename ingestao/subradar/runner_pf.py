@@ -58,6 +58,7 @@ from .tce_estaduais_pf import TCEEstaduaisPFConnector
 from .escavador_pf import EscavadorPFConnector
 from .bdc_ondemand_async import submit_ondemand_pf
 from .bigdatacorp_negativacoes import BDCNegativacoesPFConnector, BDCProcessosPFConnector, BDCFinanceiroPFConnector
+from .protestos_nacional import ProtestosNacionalPFConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,10 +106,11 @@ FONTES_PF = [
     TCEEstaduaisPFConnector(),          # TCE-SP, TCE-MG, TCE-RJ — irregularidades
     CVMInsiderPFConnector(),            # CVM — processos sancionadores (insider, fraude)
 
-    # ── Crédito / Negativações ──────────────────────────────────────────────
+    # ── Crédito / Negativações / Protestos ─────────────────────────────────
     BDCNegativacoesPFConnector(),        # BigDataCorp — negativações/restrições bureaus PF (negative_data)
     BDCProcessosPFConnector(),           # BigDataCorp — processos judiciais PF (process_data; já no plano)
     BDCFinanceiroPFConnector(),          # BigDataCorp — dados financeiros estimados PF (financial_data)
+    ProtestosNacionalPFConnector(),      # Direct Data — protestos IEPTB/CENPROT por CPF (pay-per-use)
 
     # ── Reputação / Mídia ────────────────────────────────────────────────────
     MidiaAdversaGDELTPFConnector(),      # Mídia adversa PF — GDELT Doc API (gratuito, sem chave)
