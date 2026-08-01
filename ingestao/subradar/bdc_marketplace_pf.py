@@ -113,39 +113,41 @@ def _check_disponivel(result: dict, dataset_name: str) -> bool:
 # ─────────────────────────────────────────────────────────────
 
 def _parse_restritivos(result: dict) -> list[dict]:
-    """Extrai dados restritivos (negativações) — Quod ou Birô de Crédito."""
-    for key in (
-        "PartnerQuodDadosRestritivosPf", "PartnerBiroCreditoDadosRestritivos",
-        "DadosRestritivos", "Restricoes", "Negativacoes",
-    ):
-        data = result.get(key)
-        if data:
-            break
-    else:
+    """Extrai dados restritivos (negativações) — chave real: QUODCreditRiskPerson."""
+    data = (
+        result.get("QUODCreditRiskPerson")
+        or result.get("PartnerQuodCreditRiskDetailsPerson")
+        or result.get("DadosRestritivos")
+    )
+    if not data:
         return []
 
-    ocorrencias = (
-        data.get("Ocorrencias") or data.get("Restricoes") or
-        data.get("Negativacoes") or data.get("Items") or []
-    )
-    total = (
-        data.get("TotalOcorrencias") or data.get("TotalRestricoes") or
-        data.get("Total") or len(ocorrencias)
-    )
-    valor_total = data.get("ValorTotal") or sum(
-        float(re.sub(r"[^\d\.]", "", str(o.get("Valor") or 0)) or 0)
-        for o in ocorrencias
-    )
+    ativas  = int(data.get("TotalActiveNegativeAppointments") or 0)
+    inativas = int(data.get("TotalInactiveNegativeAppointments") or 0)
+    protestos = int(data.get("TotalRegisteredProtests") or 0)
+    processos = int(data.get("TotalLawsuitsAppointments") or 0)
+    divida   = float(data.get("TotalIndebtednessValue") or 0)
+    has_neg  = data.get("HasNegativeIndicator", False)
+    consultas_30  = int(data.get("TotalInquiriesLast30Days") or 0)
+    consultas_60  = int(data.get("TotalInquiriesLast60Days") or 0)
+    consultas_90  = int(data.get("TotalInquiriesLast90Days") or 0)
+    consultas_90p = int(data.get("TotalInquiriesMore90Days") or 0)
+    ultima_neg   = data.get("LastNegativeAppointmentDate", "")
 
-    if not total:
-        return []
+    total_restritivos = ativas + protestos + processos
 
     return [{
         "tipo": "restritivo",
-        "total": total,
-        "valor_total": valor_total,
-        "amostra": ocorrencias[:5],
-        "_severidade": "critico" if total > 5 or valor_total > 10_000 else "atencao",
+        "total": total_restritivos,
+        "total_ativas": ativas,
+        "total_inativas": inativas,
+        "total_protestos": protestos,
+        "total_processos": processos,
+        "valor_total": divida,
+        "has_negative_indicator": has_neg,
+        "consultas": {"30d": consultas_30, "60d": consultas_60, "90d": consultas_90, "90d+": consultas_90p},
+        "ultima_negativacao": ultima_neg,
+        "_severidade": "critico" if ativas > 3 or divida > 10_000 else ("atencao" if ativas > 0 or protestos > 0 else "ok"),
     }]
 
 
@@ -204,21 +206,16 @@ def _parse_seguranca_publica(result: dict) -> list[dict]:
 
 
 def _parse_score_quod(result: dict) -> dict | None:
-    """Extrai score de crédito Quod PF (escala 300-1000)."""
-    for key in (
-        "PartnerQuodCreditScorePf", "PartnerQuodCreditScore",
-        "ScoreCreditoQuod", "Score",
-    ):
-        data = result.get(key)
-        if data:
-            break
-    else:
+    """Extrai score de crédito Quod PF — chave real: QUODCreditScorePerson."""
+    data = (
+        result.get("QUODCreditScorePerson")
+        or result.get("PartnerQuodCreditScorePerson")
+        or result.get("PartnerQuodCreditScore")
+    )
+    if not data:
         return None
 
-    score_raw = (
-        data.get("Score") or data.get("Pontuacao") or
-        data.get("ScoreValue") or data.get("Valor")
-    )
+    score_raw = data.get("Score")
     if score_raw is None:
         return None
 
@@ -226,6 +223,10 @@ def _parse_score_quod(result: dict) -> dict | None:
         score = int(score_raw)
     except (ValueError, TypeError):
         return None
+
+    commitment = int(data.get("PaymentCommitmentScore") or 0)
+    capacity   = int(data.get("PaymentCapacityScore") or 0)
+    ref_date   = (data.get("ReferenceDate") or "")[:10]
 
     if score < _SCORE_CRITICO:
         sev, faixa = "critico", "alto_risco"
@@ -237,6 +238,9 @@ def _parse_score_quod(result: dict) -> dict | None:
     return {
         "tipo": "score_credito",
         "score": score,
+        "payment_commitment": commitment,
+        "payment_capacity": capacity,
+        "reference_date": ref_date,
         "bureau": "Quod",
         "faixa": faixa,
         "_severidade": sev,
@@ -557,27 +561,47 @@ class BDCNegativacoesPFConnectorV2(SubradarSource):
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
         if not BDC_ACCESS_TOKEN:
             return {"fonte": self.fonte, "categoria": "financeiro", "status": "pendente",
-                    "titulo_secao": "Negativações (Serasa/SPC/Quod)", "resumo": "Token BDC não configurado", "detalhes": {}}
+                    "titulo_secao": "Negativações / Restrições (Quod)", "resumo": "Token BDC não configurado", "detalhes": {}}
         cpf11 = re.sub(r"\D", "", str(cpf or ""))
         if len(cpf11) != 11:
             return None
         result = _post(_DS_NEGATIVACOES_QUOD, cpf11)
         if not result or not _check_disponivel(result, _DS_NEGATIVACOES_QUOD):
             return {"fonte": self.fonte, "categoria": "financeiro", "status": "pendente",
-                    "titulo_secao": "Negativações (Serasa/SPC/Quod)", "resumo": "Dataset não habilitado no plano", "detalhes": {}}
+                    "titulo_secao": "Negativações / Restrições (Quod)", "resumo": "Dataset não habilitado", "detalhes": {}}
         dados = _parse_restritivos(result)
-        n = sum(d.get("total", 0) for d in dados)
-        valor = sum(d.get("valor_total", 0) for d in dados)
-        if n == 0:
+        if not dados:
             return {"fonte": self.fonte, "categoria": "financeiro", "status": "limpo",
-                    "titulo_secao": "Negativações (Serasa/SPC/Quod)",
-                    "resumo": "Nenhuma negativação encontrada", "detalhes": {"total": 0}}
-        resumo_txt = f"{n} negativação(ões)"
-        if valor:
-            resumo_txt += f" — R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        return {"fonte": self.fonte, "categoria": "financeiro", "status": "alerta",
-                "titulo_secao": "Negativações (Serasa/SPC/Quod)",
-                "resumo": resumo_txt, "detalhes": {"total": n, "valor_total": valor, "registros": dados}}
+                    "titulo_secao": "Negativações / Restrições (Quod)", "resumo": "Sem dados retornados", "detalhes": {}}
+        d = dados[0]
+        ativas   = d.get("total_ativas", 0)
+        protestos = d.get("total_protestos", 0)
+        processos = d.get("total_processos", 0)
+        divida   = d.get("valor_total", 0)
+        consultas = d.get("consultas", {})
+        has_neg  = d.get("has_negative_indicator", False)
+
+        partes = []
+        if ativas:    partes.append(f"{ativas} negativação(ões) ativa(s)")
+        if protestos: partes.append(f"{protestos} protesto(s)")
+        if processos: partes.append(f"{processos} processo(s) judicial(is)")
+        if divida:    partes.append(f"R$ {divida:,.0f} em dívida")
+        if not partes and has_neg:
+            partes.append("Histórico negativo (apontamentos inativos)")
+        if not partes:
+            partes.append("Sem apontamentos ativos")
+
+        # consultas recentes são um indicador relevante
+        total_consultas = sum(consultas.values())
+        if total_consultas:
+            partes.append(f"{total_consultas} consulta(s) ao CPF nos últimos 90+ dias")
+
+        status = "alerta" if (ativas or protestos or processos) else ("info" if has_neg else "limpo")
+        return {"fonte": self.fonte, "categoria": "financeiro",
+                "status": status,
+                "titulo_secao": "Negativações / Restrições (Quod)",
+                "resumo": " · ".join(partes),
+                "detalhes": d}
 
 
 class BDCScoreQuodPFConnectorV2(SubradarSource):
