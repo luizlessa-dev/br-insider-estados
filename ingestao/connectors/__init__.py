@@ -18,8 +18,9 @@ from .alesc import ALESCConnector
 from .alal import ALALConnector
 from .alern import ALERNConnector
 from .alepi import ALEPIConnector
+from .alepa import ALEPAConnector
 from ._stubs import (
-    ALEPAConnector, ALEMAConnector,
+    ALEMAConnector,
     ALEMSConnector,
     ALPBConnector, ALESEConnector,
     ALEROConnector, ALEAMConnector,
