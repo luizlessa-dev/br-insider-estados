@@ -13,12 +13,13 @@ from .ales import ALESConnector
 from .almt import ALMTConnector
 from .alerj import ALERJConnector
 from .alergs import ALERGSConnector
+from .alba import ALBAConnector
+from .alesc import ALESCConnector
 from ._stubs import (
-    ALBAConnector,
     ALEPAConnector, ALEMAConnector,
     ALEMSConnector,
     ALERNConnector, ALPBConnector, ALESEConnector, ALALConnector,
-    ALEPIConnector, ALEROConnector, ALEAMConnector, ALESCConnector,
+    ALEPIConnector, ALEROConnector, ALEAMConnector,
     ALETOConnector, ALERRConnector, ALEACConnector, ALAPConnector,
 )
 
