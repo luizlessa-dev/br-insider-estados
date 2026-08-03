@@ -42,6 +42,11 @@ def _fmt(cnpj: str) -> str:
     return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:14]}" if len(c) == 14 else cnpj
 
 
+def _fmt_cpf(cpf: str) -> str:
+    c = _strip(cpf)
+    return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:11]}" if len(c) == 11 else cpf
+
+
 def _normalize(s: str) -> str:
     return re.sub(r"[\s\.\-/]", "", s.upper())
 
@@ -158,6 +163,63 @@ class UNSanctionsConnector(SubradarSource):
     fonte = "un_sanctions"
     request_delay = 0.0
 
+    def consultar_cpf(self, cpf: str, nome: str | None = None) -> list[dict]:
+        """Consulta PF na UN Sanctions List."""
+        cpf_digits = _strip(cpf)
+        cpf_fmt = _fmt_cpf(cpf_digits)
+        ciclo = _ciclo_atual()
+
+        index = _load_un()
+        hits: list[dict] = []
+
+        for key in (_normalize(cpf_digits), _normalize(cpf_fmt)):
+            for h in index.get(key, []):
+                if h not in hits:
+                    hits.append(h)
+
+        if nome and not hits:
+            nome_key = f"NAME:{_normalize(nome)}"
+            hits.extend(index.get(nome_key, []))
+
+        if not hits:
+            return []
+
+        mudou, hash_novo = snapshot_changed(cpf_fmt, self.fonte, ciclo, hits)
+        if not mudou:
+            return []
+
+        upsert("sub_snapshots", [{
+            "cpf": cpf_fmt,
+            "fonte": self.fonte,
+            "ciclo": ciclo,
+            "hash_dados": hash_novo,
+            "dados": {"total": len(hits), "entidades": hits},
+        }])
+
+        alertas = []
+        for h in hits:
+            lista = h.get("lista", "N/I")
+            alertas.append({
+                "cpf": cpf_fmt,
+                "ciclo": ciclo,
+                "fonte": self.fonte,
+                "categoria": "internacional",
+                "severidade": "critico",
+                "titulo": f"Sanção ONU — {lista}: {h.get('nome', 'N/I')}",
+                "descricao": (
+                    f"Pessoa física encontrada na UN Security Council Consolidated Sanctions List. "
+                    f"Lista: {lista}. Tipo: {h.get('tipo', 'N/I')}. "
+                    f"Referência: {h.get('referencia', 'N/I')}. "
+                    f"Qualquer operação com esta pessoa física pode violar resoluções do CSNU."
+                ),
+                "referencia_id": h.get("referencia"),
+                "url_fonte": "https://www.un.org/securitycouncil/content/un-sc-consolidated-list",
+                "is_novo": True,
+            })
+
+        logger.info("UN Sanctions (PF): %d alertas para %s", len(alertas), cpf_fmt)
+        return alertas
+
     def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
@@ -213,3 +275,26 @@ class UNSanctionsConnector(SubradarSource):
 
         logger.info("UN Sanctions: %d alertas para %s", len(alertas), cnpj_fmt)
         return alertas
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        """Retorna resumo de sanções ONU para PF."""
+        alertas = self.consultar_cpf(cpf, nome=nome)
+        if not alertas:
+            return None
+
+        n = len(alertas)
+        listas = set(a.get("titulo", "").split("—")[1].split(":")[0].strip() for a in alertas if "—" in a.get("titulo", ""))
+
+        return {
+            "fonte": self.fonte,
+            "categoria": "internacional",
+            "status": "alerta",
+            "severidade": "critico",
+            "titulo_secao": "Sanções ONU (CSNU)",
+            "resumo": f"CRÍTICO: Encontrada em {n} sanção(ões) ONU — {', '.join(sorted(listas))}",
+            "detalhes": {
+                "total_sancoes": n,
+                "listas": list(listas),
+                "entidades": alertas[:5],
+            },
+        }

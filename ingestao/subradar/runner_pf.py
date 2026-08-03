@@ -44,6 +44,9 @@ from .qsa_reverso import QSAReversoConnector
 from .conselhos_profissionais import ConselhosProfissionaisConnector
 from .cfc_contadores import CFCContadoresConnector
 from .infosimples_conselhos import InfosimplesConselhosPFConnector
+from .antecedentes_criminais_pf import AntecedentesHCrimosPFConnector
+from .detran_restricoes_pf import DetranRestricoesConnector
+from .processos_infosimples_pf import ProcessosInfosimplesPFConnector
 from .dou_pf import DOUPFConnector
 from .cepim_pf import CEPIMRepresentantePFConnector
 from .opensanctions_pro import OpenSanctionsProPFConnector
@@ -78,8 +81,10 @@ FONTES_PF = [
 
     # ── Judicial / Penal ─────────────────────────────────────────────────────
     BNMPMandadosPrisaoPFConnector(),    # BNMP/CNJ — mandados de prisão ativos
+    AntecedentesHCrimosPFConnector(),   # Infosimples — antecedentes criminais (Polícia Federal)
     CNDTTrabalhiPFConnector(),          # CNDT/TST — débitos trabalhistas como empregador
     EscavadorPFConnector(),             # Escavador — processos judiciais nacionais por CPF
+    ProcessosInfosimplesPFConnector(),  # Infosimples — processos TRF/TRT (fallback Escavador)
 
     # ── Eleitoral / Idoneidade ───────────────────────────────────────────────
     TSESituacaoEleitoralPFConnector(),  # TSE — quitação eleitoral
@@ -111,6 +116,9 @@ FONTES_PF = [
     BDCProcessosPFConnector(),           # BigDataCorp — processos judiciais PF (process_data; já no plano)
     BDCFinanceiroPFConnector(),          # BigDataCorp — dados financeiros estimados PF (financial_data)
     ProtestosNacionalPFConnector(),      # Direct Data — protestos IEPTB/CENPROT por CPF (pay-per-use)
+
+    # ── Trânsito ─────────────────────────────────────────────────────────
+    DetranRestricoesConnector(),         # Infosimples — restrições DETRAN (requer placa/RENAVAM)
 
     # ── Reputação / Mídia ────────────────────────────────────────────────────
     MidiaAdversaGDELTPFConnector(),      # Mídia adversa PF — GDELT Doc API (gratuito, sem chave)

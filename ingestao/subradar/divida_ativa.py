@@ -105,7 +105,6 @@ class DividaAtivaConnector(SubradarSource):
         return alertas
 
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
-        from .base import _strip_cnpj as _s
         cpf_d = re.sub(r"\D", "", str(cpf))
         if len(cpf_d) != 11:
             return None
