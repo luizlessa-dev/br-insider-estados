@@ -1,0 +1,293 @@
+{
+  "concluidos": [
+    "2023-01",
+    "2023-02",
+    "2023-03",
+    "2023-04",
+    "2023-05",
+    "2023-06",
+    "2023-07",
+    "2023-08",
+    "2023-09",
+    "2023-10",
+    "2023-11",
+    "2023-12",
+    "2024-01",
+    "2024-02",
+    "2024-03",
+    "2024-04",
+    "2024-05",
+    "2024-06",
+    "2024-07",
+    "2024-08",
+    "2024-09",
+    "2024-10",
+    "2024-12",
+    "2025-01",
+    "2025-02",
+    "2025-03",
+    "2025-04",
+    "2025-05",
+    "2025-06",
+    "2025-07",
+    "2025-08",
+    "2025-09",
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06"
+  ],
+  "stats": {
+    "2024-01": {
+      "n_publicidade": 27,
+      "n_varridos": 0,
+      "valor_total": 9838201.959999999,
+      "concluido_em": "2026-06-20T21:40:17"
+    },
+    "2023-01": {
+      "n_publicidade": 9,
+      "n_varridos": 0,
+      "valor_total": 881194.75,
+      "concluido_em": "2026-06-20T21:44:11"
+    },
+    "2023-02": {
+      "n_publicidade": 15,
+      "n_varridos": 0,
+      "valor_total": 190382.78,
+      "concluido_em": "2026-06-20T21:44:29"
+    },
+    "2023-03": {
+      "n_publicidade": 50,
+      "n_varridos": 0,
+      "valor_total": 3010081.94,
+      "concluido_em": "2026-06-20T21:45:13"
+    },
+    "2023-04": {
+      "n_publicidade": 40,
+      "n_varridos": 0,
+      "valor_total": 1217055.99,
+      "concluido_em": "2026-06-20T21:46:38"
+    },
+    "2023-05": {
+      "n_publicidade": 61,
+      "n_varridos": 0,
+      "valor_total": 1516094.94,
+      "concluido_em": "2026-06-20T21:53:50"
+    },
+    "2023-06": {
+      "n_publicidade": 75,
+      "n_varridos": 0,
+      "valor_total": 76907560.93,
+      "concluido_em": "2026-06-20T21:59:10"
+    },
+    "2023-07": {
+      "n_publicidade": 105,
+      "n_varridos": 0,
+      "valor_total": 9004072.41,
+      "concluido_em": "2026-06-20T22:03:28"
+    },
+    "2023-08": {
+      "n_publicidade": 104,
+      "n_varridos": 0,
+      "valor_total": 8785097.85,
+      "concluido_em": "2026-06-20T22:11:21"
+    },
+    "2023-09": {
+      "n_publicidade": 50,
+      "n_varridos": 0,
+      "valor_total": 55939706.33,
+      "concluido_em": "2026-06-20T22:17:05"
+    },
+    "2023-10": {
+      "n_publicidade": 63,
+      "n_varridos": 0,
+      "valor_total": 12662178.59,
+      "concluido_em": "2026-06-20T22:20:45"
+    },
+    "2023-11": {
+      "n_publicidade": 73,
+      "n_varridos": 0,
+      "valor_total": 310286824.47999996,
+      "concluido_em": "2026-06-20T22:28:26"
+    },
+    "2023-12": {
+      "n_publicidade": 91,
+      "n_varridos": 0,
+      "valor_total": 153506456.1,
+      "concluido_em": "2026-06-20T22:32:07"
+    },
+    "2024-02": {
+      "n_publicidade": 61,
+      "n_varridos": 0,
+      "valor_total": 4686258.35,
+      "concluido_em": "2026-06-20T22:44:08"
+    },
+    "2024-03": {
+      "n_publicidade": 56,
+      "n_varridos": 0,
+      "valor_total": 9304280.84,
+      "concluido_em": "2026-06-20T22:55:30"
+    },
+    "2024-04": {
+      "n_publicidade": 75,
+      "n_varridos": 0,
+      "valor_total": 13117774.17,
+      "concluido_em": "2026-06-20T23:08:34"
+    },
+    "2024-05": {
+      "n_publicidade": 73,
+      "n_varridos": 0,
+      "valor_total": 81129761.72,
+      "concluido_em": "2026-06-20T23:17:51"
+    },
+    "2024-06": {
+      "n_publicidade": 79,
+      "n_varridos": 0,
+      "valor_total": 14921799.41,
+      "concluido_em": "2026-06-20T23:31:46"
+    },
+    "2024-07": {
+      "n_publicidade": 77,
+      "n_varridos": 0,
+      "valor_total": 18776949.62,
+      "concluido_em": "2026-06-20T23:45:31"
+    },
+    "2024-08": {
+      "n_publicidade": 94,
+      "n_varridos": 0,
+      "valor_total": 42839476.39,
+      "concluido_em": "2026-06-20T23:57:22"
+    },
+    "2024-09": {
+      "n_publicidade": 114,
+      "n_varridos": 0,
+      "valor_total": 48906374.35,
+      "concluido_em": "2026-06-21T00:13:26"
+    },
+    "2024-10": {
+      "n_publicidade": 86,
+      "n_varridos": 0,
+      "valor_total": 16232886.99,
+      "concluido_em": "2026-06-21T00:25:39"
+    },
+    "2024-12": {
+      "n_publicidade": 82,
+      "n_varridos": 0,
+      "valor_total": 120214924.82,
+      "concluido_em": "2026-06-21T00:46:30"
+    },
+    "2025-01": {
+      "n_publicidade": 142,
+      "n_varridos": 0,
+      "valor_total": 296082708.5,
+      "concluido_em": "2026-06-21T00:57:57"
+    },
+    "2025-02": {
+      "n_publicidade": 105,
+      "n_varridos": 0,
+      "valor_total": 18296431.87,
+      "concluido_em": "2026-06-21T01:15:17"
+    },
+    "2025-03": {
+      "n_publicidade": 77,
+      "n_varridos": 0,
+      "valor_total": 26402694.03,
+      "concluido_em": "2026-06-21T01:31:25"
+    },
+    "2025-04": {
+      "n_publicidade": 78,
+      "n_varridos": 0,
+      "valor_total": 60022800.19,
+      "concluido_em": "2026-06-21T01:50:22"
+    },
+    "2025-05": {
+      "n_publicidade": 83,
+      "n_varridos": 0,
+      "valor_total": 186134519.92000002,
+      "concluido_em": "2026-06-21T02:08:55"
+    },
+    "2025-06": {
+      "n_publicidade": 88,
+      "n_varridos": 0,
+      "valor_total": 46481466.56,
+      "concluido_em": "2026-06-21T02:26:16"
+    },
+    "2025-07": {
+      "n_publicidade": 87,
+      "n_varridos": 0,
+      "valor_total": 11864718.66,
+      "concluido_em": "2026-06-21T02:46:35"
+    },
+    "2025-08": {
+      "n_publicidade": 122,
+      "n_varridos": 0,
+      "valor_total": 87084019.22,
+      "concluido_em": "2026-06-21T03:09:42"
+    },
+    "2025-09": {
+      "n_publicidade": 107,
+      "n_varridos": 0,
+      "valor_total": 48912922.78,
+      "concluido_em": "2026-06-21T03:35:51"
+    },
+    "2025-10": {
+      "n_publicidade": 108,
+      "n_varridos": 0,
+      "valor_total": 101550146.77,
+      "concluido_em": "2026-06-21T03:58:29"
+    },
+    "2025-11": {
+      "n_publicidade": 129,
+      "n_varridos": 0,
+      "valor_total": 420171916.83000004,
+      "concluido_em": "2026-06-21T04:19:14"
+    },
+    "2025-12": {
+      "n_publicidade": 146,
+      "n_varridos": 0,
+      "valor_total": 44110496.37,
+      "concluido_em": "2026-06-21T04:42:23"
+    },
+    "2026-01": {
+      "n_publicidade": 88,
+      "n_varridos": 0,
+      "valor_total": 7064039.28,
+      "concluido_em": "2026-06-21T04:58:48"
+    },
+    "2026-02": {
+      "n_publicidade": 82,
+      "n_varridos": 0,
+      "valor_total": 466022135.67,
+      "concluido_em": "2026-06-21T05:23:41"
+    },
+    "2026-03": {
+      "n_publicidade": 105,
+      "n_varridos": 0,
+      "valor_total": 21700620.060000002,
+      "concluido_em": "2026-06-21T05:53:29"
+    },
+    "2026-04": {
+      "n_publicidade": 83,
+      "n_varridos": 0,
+      "valor_total": 110242494.13,
+      "concluido_em": "2026-06-21T06:17:01"
+    },
+    "2026-05": {
+      "n_publicidade": 120,
+      "n_varridos": 0,
+      "valor_total": 172438407.43,
+      "concluido_em": "2026-06-21T06:36:54"
+    },
+    "2026-06": {
+      "n_publicidade": 56,
+      "n_varridos": 0,
+      "valor_total": 6155691.31,
+      "concluido_em": "2026-06-21T06:50:48"
+    }
+  }
+}

@@ -24,11 +24,79 @@ A ingestão da lista de empresas listadas na B3 (3.436 CNPJs) abriu um cruzament
 - **CNH Industrial Brasil** (Case/New Holland): **R$ 23,5M** de 10 autores
 - **Total maquinário estrangeiro via emendas: ~R$ 449M**
 
-### O dado — camada estadual MG (novo, 2026-06-04)
-Cruzamento `mg_empenhos` × `emendas_favorecidos` revelou camada estadual da XCMG:
-- **Secretaria de Agricultura MG:** R$ 19,5M — processo `1231021 000057/2025`
-- **IDENE (Instituto de Desenvolvimento do Norte e Nordeste de MG):** R$ 5,5M — processo `2421020 000004/2022`
-- **Total empenhos estaduais MG: R$ 25M** (3 empenhos, todos "Tratores, Similares e Implementos")
+### O dado — camada estadual MG (novo, 2026-06-04 | LAI respondida 2026-07-02)
+
+#### SEAPA/MG — processo `1231021 000057/2025` ✅ DOCUMENTADO
+**Resposta LAI 01230.000104/2026-11** recebida em 02/07/2026 com 15 PDFs. Quadro completo:
+
+**Origem dos recursos (achado central):** NÃO são emendas parlamentares. O empenho 314/2025 revela:
+> *"DESTINADOS À DOAÇÃO AOS 38 MUNICÍPIOS ATINGIDOS PELO ROMPIMENTO DA BARRAGEM DE FUNDÃO, EM CUMPRIMENTO AO ACORDO JUDICIAL PARA REPARAÇÃO INTEGRAL E DEFINITIVA"*
+Contrato de entrada de recurso: **9474703** (Tipo 11 — acordo judicial Samarco/BHP/Vale). Fonte orçamentária: **0.80.1** (recursos externos ao tesouro estadual).
+
+**Licitação:** Pregão Eletrônico 45/2024 (homologado 09/09/2024), modalidade menor preço. XCMG disputou com concorrentes nos lotes de maquinário pesado — ata de lances ainda não obtida (ver próximos passos).
+
+**Contrato 009478789/2025** (SEI 1230.01.0006371/2025-23):
+| Lote | Produto | Modelo | Qtd original | Qtd após aditivo | Valor unit. | Total |
+|------|---------|--------|-------------|-----------------|-------------|-------|
+| 10 | Pá carregadeira | XCMG LW300KV | 26 | **29** | R$ 361.000 | R$ 10,47M |
+| 11 | Retroescavadeira | XCMG XC870BR-I | 24 | **30** | R$ 310.000 | R$ 9,30M |
+| **TOTAL XCMG** | | | | | | **R$ 19,77M** |
+
+**1º Termo Aditivo** (18/11/2025): +R$ 2.943.000 (17,49%), dentro do limite de 25% da Lei 14.133/2021.
+
+**Destino (Anexo 15):** 29 pás + 29 retroescavadeiras distribuídas a **57 municípios do Rio Doce** — Ouro Preto, Mariana, Barra Longa, Rio Doce, Governador Valadares, Aimorés e outros atingidos pelo Fundão.
+
+**Entrega:** Retroescavadeiras atestadas em 20/10/2025 (24 NFs) por Gustavo de Lima Tavares Coimbra (Superintendente SEAPA) e Saulo Tiago Santos Rodrigues Motta (Diretor). Pás carregadeiras — ateste não foi lido (Anexo 11, PDF escaneado).
+
+**Principais atores:**
+- Secretário SEAPA: **Thales Almeida Pereira Fernandes** (CPF 527.748.306-30)
+- Rep. legal XCMG: **Tian Dong** (assinou contrato e aditivo)
+- Ordenador da despesa: **Julian Silva Carvalho** (MASP M1498384)
+- Superintendente SEAPA: **Gustavo de Lima Tavares Coimbra** (respondeu a LAI e assinou ateste)
+
+**LiuGong no mesmo pregão:** Lote 12 — ARP prevê 35 motoniveladoras CLG4160D × R$ 587k. Documentação obtida via **LAI 01230.000111/2026-12** (respondida 17/07/2026, 16 PDFs). Contratado **29 unidades = R$ 17.023.000** (Fonte 0.80.1 — Fundão). Rep. legal: Linjun Wang (CNPJ 11.260.925/0003-50, Cariacica/ES). Contratos: 9478829 (1 un, R$587k) + 9478791 (23 un, R$13,5M) + Termo Aditivo 18/11/2025 (+5 un, R$2,935M). Entrega: Av. Bueno do Prado 920, Jardim Laguna, Contagem-MG. Empenhos 312, 313 e 408/2025 — **Histórico**: "destinados à doação aos 38 municípios atingidos pelo rompimento da barragem de Fundão, em cumprimento ao acordo judicial para reparação integral e definitiva".
+
+#### IDENE — processo `2421020 000004/2022` ✅ DOCUMENTADO
+**Resposta LAI 02420.000088/2026-91** recebida 14/07/2026 (PDF 74 págs + ZIP).
+
+**Licitação:** Pregão Eletrônico 200/2021 (processo SEI 2420.01.0000227/2021-47), ARP 150/2021.  
+**Objeto:** Registro de preços para aquisição de tratores e implementos agrícolas — **Lote 1: 11 escavadeiras hidráulicas XCMG XE150BR**.  
+**Pregoeira:** Priscila Karen Santos (M1372870).  
+**Responsável pela solicitação:** Camilla Aparecida Drumond (Gerente de Parcerias, IDENE).  
+**Autorização AF 000021** emitida 25/03/2022. Empenho 125/2022.
+
+**Origem dos recursos:** Fonte **71** (emendas parlamentares estaduais e federais — TR item 3.1 declara explicitamente).  
+UPG: 7 — Gerência de Promoção e Parcerias de Negócios. Ordenador: **André de Andrade Ranieri**.
+
+**Valor:** R$ 499.000,00/un × 11 = **R$ 5.489.000,00**  
+Liquidações: Seq. 1 (26/04/2022) R$ 2.495.000,00 + Seq. 2 (26/05/2022) R$ 2.994.000,00.
+
+**Anomalia na competição (achado central):** Apenas **2 licitantes credenciados**, ambos oferecendo o **mesmo produto** (XCMG XE150BR):
+| Empresa | CNPJ | Rep. | Proposta unit. | Total |
+|---|---|---|---|---|
+| **XCMG Brasil Indústria Ltda** | 14.707.364/0001-10 | Wang Yansong | **R$ 499.000** | R$ 5.489.000 |
+| Triama Norte Tratores, Impl. Agrícolas e Máquinas | 01.563.351/0001-73 | Gilberto Gualter dos Santos | R$ 690.000 (+38%) | R$ 7.590.000 |
+
+Sem fase de lances (reinício de disputa aberta em 14/07/2021 às 10:28 — "Não houve lances ofertados"). XCMG aceita a proposta inicial. Triama Norte é distribuidora oficial XCMG no mercado nordeste de MG.
+
+**Entrega e destinatários — 11 municípios Norte/Nordeste MG:**
+| # | Município | Patrimônio | NF |
+|---|---|---|---|
+| 1 | Miravânia | 98132024 | 43406 |
+| 2 | Pai Pedro | 98132032 | 43407 |
+| 3 | Varzelândia | 98132040 | 43408 |
+| 4 | Cristália | 98132059 | 43409 |
+| 5 | Ibracatu | 98132067 | 43410 |
+| 6 | Várzea da Palma | 98132075 | 43411 |
+| 7 | CIOSMIJE (consórcio Médio Jequitinhonha) | 98131109 | 43401 |
+| 8 | Divisópolis | 98131117 | 43402 |
+| 9 | Ouro Verde de Minas | 98131125 | 43403 |
+| 10 | Governador Valadares | 98131133 | 43404 |
+| 11 | Japonvar | 98131141 | 43405 |
+
+Entrega em 2 pontos: Montes Claros (Corpo de Bombeiros, Av. Viriato Ribeiro de Aquino 193) e Governador Valadares (Pátio DER, Rod. Rio Bahia 230 - Vila Isa).
+
+- **Total empenhos estaduais MG: ~R$ 25M** (SEAPA R$ 19,77M + IDENE R$ 5,49M)
 - **Exposição combinada em MG: ~R$ 336M** (federal + estadual)
 
 ### Mapa de autores federais XCMG — destaques
@@ -55,32 +123,87 @@ Cruzamento `mg_empenhos` × `emendas_favorecidos` revelou camada estadual da XCM
 ### O que torna anômalo
 XCMG é a #1 receptora privada de emendas parlamentares de toda a base. R$ 311M de 66 autores diferentes — praticamente todas as bancadas estaduais + dezenas de individuais. É maior que qualquer hospital universitário, qualquer OSC, qualquer empresa de TI encontrada. É uma empresa de maquinário pesado chinês que capturou simultaneamente o canal federal de emendas e os contratos diretos do estado de MG.
 
-### Perguntas para apuração
-- Qual o objeto declarado de cada emenda destinada à XCMG? (Portal da Transparência)
-- O processo `1231021 000057/2025` da Secretaria de Agricultura MG foi licitação competitiva ou contratação direta? As especificações técnicas excluíam concorrentes?
-- Os equipamentos foram entregues e incorporados ao patrimônio público?
-- Qual a relação entre a XCMG e os parlamentares com maior volume — cruzar com doações eleitorais TSE?
-- Por que a Bancada do RS direcionou R$ 102M para uma empresa sediada em MG?
-- Há restrição regulatória de compras de equipamentos chineses via emenda?
+### Perguntas para apuração — atualizadas pós-LAI
+- Qual o objeto declarado de cada emenda destinada à XCMG a nível federal? (Portal da Transparência — os R$ 311M federais têm origem diferente do contrato SEAPA)
+- ~~Quem mais concorreu nos lotes 10, 11 (XCMG) e 12 (LiuGong) do Pregão 45/2024?~~ **RESPONDIDO** — Anexo 3+4 da LAI 01230.000111/2026-12 (ver seção "Competição entre elas" acima).
+- Os equipamentos XCMG são os mais adequados para os municípios afetados pela barragem de Fundão? Há avaliação técnica dos beneficiários?
+- O acordo judicial Fundão (contrato 9474703) previa especificamente maquinário pesado chinês, ou a escolha da XCMG foi da SEAPA?
+- Qual a relação entre a XCMG e os parlamentares com maior volume federal — cruzar com doações eleitorais TSE?
+- Por que a Bancada do RS direcionou R$ 102M para uma empresa sediada em MG? (emendas federais, não este contrato)
+- A IDENE também usou recursos do acordo Fundão? (LAI pendente)
 
-### LAI prioritária — ✅ PROTOCOLADAS em 2026-06-05
+### LAIs — status
 
-| Órgão | Processo | Protocolo LAI | Prazo |
+| Órgão | Processo | Protocolo LAI | Status |
 |---|---|---|---|
-| SEAPA/MG | `1231021 000057/2025` | **01230.000104/2026-11** | ~03/07/2026 |
-| IDENE | `2421020 000004/2022` | **02420.000088/2026-91** | ~03/07/2026 |
+| SEAPA/MG | `1231021 000057/2025` | **01230.000104/2026-11** | ✅ **RESPONDIDA 02/07/2026** — 15 docs |
+| SEAPA/MG (complementar LiuGong) | Pregão 45/2024 + ARP + contratos LiuGong | **01230.000111/2026-12** | ✅ **RESPONDIDA 17/07/2026** — 16 docs (Anexos 1–16) |
+| SEAPA/MG (XCMG municípios) | Contratos Lotes 10+11 + lista destinatários XCMG | **01230.000115/2026-09** | ⏳ Protocolada 17/07/2026 — prazo ~17/08/2026 |
+| IDENE | `2421020 000004/2022` | **02420.000088/2026-91** | ✅ **RESPONDIDA 14/07/2026** — PDF 74 págs |
 
-**Solicitar em ambas:**
-1. Edital completo da licitação/contratação
-2. Ata de julgamento e relação de empresas que participaram/foram habilitadas
-3. Termo de referência / especificações técnicas do objeto
-4. Contrato assinado com a XCMG e eventuais aditivos
-5. Notas de empenho e liquidação vinculadas ao processo
-6. Relação de municípios destinatários dos equipamentos
+### Perguntas abertas — IDENE
+- A pergunta da LAI era sobre o processo 2421020/000004/2022 mas o IDENE enviou o edital/TR/modelos do pregão 200/2021 (processo SEI 2420.01.0000227/2021-47) — os documentos de **resultado** (ata de lances preenchida, ARP 150/2021 assinada) vieram no ZIP (não lido). Verificar ZIP.
+- Fonte 71 confirma emendas parlamentares — quais parlamentares destinaram recursos para o IDENE nesse ciclo?
+- Triama Norte (CNPJ 01.563.351/0001-73): confirmar vínculo societário com XCMG (distribuidora exclusiva?). Pesquisar outros pregões em MG onde Triama e XCMG concorreram pelo mesmo produto.
+- O IDENE tem outros contratos com XCMG além deste lote 1?
 
-### Duopólio chinês confirmado — LiuGong (atualizado 2026-06-04)
+### Próximos passos — SEAPA
+- [x] ~~LAI 01230.000111/2026-12~~ — RESPONDIDA 17/07/2026. Obtidos: edital, chat/ata de lances, termo de conclusão, ARP, contratos LiuGong, empenhos, autorizações de fornecimento, Termo Aditivo.
+- **RESPONDIDAS:** competidores lotes 10/11/12 (Anexo 3+4), contrato LiuGong completo (Anexos 8–16), Fonte 0.80.1 LiuGong confirmada, 38 municípios Fundão confirmados.
+- [x] ~~Lista de Municípios LiuGong~~ — **OBTIDA** (17/07/2026). 29 municípios confirmados, todos no vale do Rio Doce (ver tabela abaixo).
+- [ ] Verificar contrato 9474703 (acordo judicial Fundão/Renova) — valor total do acordo e outros contratos vinculados.
+- [ ] **Nova LAI SEAPA** para contratos XCMG Lotes 10+11 (pá carregadeira LW300KV + retroescavadeira XC870BR-I) — processo SIAD separado.
+- ~~Contraditório~~ — dispensado (dados públicos).
 
-LiuGong recebeu **R$ 28,9M** de 16 autores. **11 autores financiaram XCMG e LiuGong simultaneamente** — evidência de captura sistêmica, não diversificação casual:
+#### Municípios LiuGong — 29 motoniveladoras CLG4160D (vale do Rio Doce, 2025)
+
+| # | Município | Processo SEI |
+|---|---|---|
+| 1 | Ipatinga | 1230.01.0006300/2025-97 |
+| 2 | São José do Goiabal | 1230.01.0006302/2025-43 |
+| 3 | **Ouro Preto** | 1230.01.0006306/2025-32 |
+| 4 | **Mariana** | 1230.01.0006307/2025-05 |
+| 5 | **Barra Longa** | 1230.01.0006309/2025-48 |
+| 6 | Ponte Nova | 1230.01.0006310/2025-21 |
+| 7 | **Rio Doce** | 1230.01.0006313/2025-37 |
+| 8 | Santa Cruz do Escalvado | 1230.01.0006315/2025-80 |
+| 9 | Sem Peixe | 1230.01.0006316/2025-53 |
+| 10 | São Pedro dos Ferros | 1230.01.0006317/2025-26 |
+| 11 | Raul Soares | 1230.01.0006318/2025-96 |
+| 12 | São Domingos da Prata | 1230.01.0006321/2025-15 |
+| 13 | Córrego Nova | 1230.01.0006322/2025-85 |
+| 14 | Dionísio | 1230.01.0006323/2025-58 |
+| 15 | Marliéria | 1230.01.0006324/2025-31 |
+| 16 | Bom Jesus do Galho | 1230.01.0006326/2025-74 |
+| 17 | Pingo D'Água | 1230.01.0006327/2025-47 |
+| 18 | Caratinga | 1230.01.0006328/2025-20 |
+| 19 | Coronel Fabriciano | 1230.01.0006329/2025-90 |
+| 20 | Bugre | 1230.01.0006335/2025-25 |
+| 21 | Naque | 1230.01.0006337/2025-68 |
+| 22 | Sobralia | 1230.01.0006340/2025-84 |
+| 23 | Governador Valadares | 1230.01.0006342/2025-30 |
+| 24 | Alpercata | 1230.01.0006343/2025-03 |
+| 25 | Tumiritinga | 1230.01.0006344/2025-73 |
+| 26 | Galileia | 1230.01.0006345/2025-46 |
+| 27 | Periquito | 1230.01.0006339/2025-14 |
+| 28 | Conselheiro Pena | 1230.01.0006346/2025-19 |
+| 29 | Resplendor | 1230.01.0006347/2025-89 |
+
+**Nota editorial:** Mariana é o epicentro do rompimento da barragem de Fundão (nov/2015). A lista percorre o caminho da lama de montante a jusante: Mariana → Barra Longa → Rio Doce → Ponte Nova → Governador Valadares → Resplendor. Os próprios municípios destruídos pela Samarco/BHP/Vale receberam motoniveladoras LiuGong compradas com os recursos do acordo judicial de reparação.
+
+### Próximos passos — IDENE
+- [ ] Ler ZIP `02420000088202691.zip` — provavelmente contém ARP 150/2021 assinada + outros anexos
+- [ ] Pesquisar CNPJ Triama Norte (01.563.351/0001-73) — sócios, razão social, UF, outros pregões
+- [ ] Cruzar fonte 71/IDENE com base de emendas — quais parlamentares emendaram o IDENE em 2021-2022?
+
+### Duopólio chinês confirmado — LiuGong (atualizado 2026-07-17)
+
+LiuGong recebeu **R$ 28,9M** de 16 autores (federal). Na camada estadual MG/Fundão: **R$ 17.023.000** confirmados via LAI 01230.000111/2026-12 (29 motoniveladoras CLG4160D, Fonte 0.80.1). **11 autores financiaram XCMG e LiuGong simultaneamente** — evidência de captura sistêmica, não diversificação casual:
+
+**Competição entre elas no Pregão 45/2024 (achado estrutural):** XCMG e LiuGong recorreram mutuamente — XCMG recorreu do Lote 12 ganho por LiuGong; LiuGong recorreu dos Lotes 10+11 ganhos por XCMG. Isso confirma concorrência real entre as empresas, mas cada uma domina seu produto:
+- Lote 10 (pá carregadeira): XCMG R$ 361k/un × 2º Centro Oeste/Sany R$ 600k × 3º LiuGong R$ 900k
+- Lote 11 (retroescavadeira): XCMG R$ 310k/un × 2º Cummins/Manitou R$ 450k × 3º Bamaq/New Holland R$ 508k
+- Lote 12 (motoniveladora): LiuGong R$ 587k/un × 2º XCMG R$ 818k × 3º Centro Oeste/Sany R$ 820k
 
 | Autor | XCMG | LiuGong | Total |
 |---|---|---|---|
@@ -98,7 +221,7 @@ LiuGong recebeu **R$ 28,9M** de 16 autores. **11 autores financiaram XCMG e LiuG
 
 **Ângulo editorial:** XCMG e LiuGong são concorrentes diretas no mercado brasileiro de maquinário pesado — e o mesmo bloco parlamentar financia as duas. Não é escolha técnica nem diversificação: é captura do fluxo de emendas por um setor.
 
-**Total combinado XCMG + LiuGong:** ~R$ 340M federal + R$ 25M estadual MG = **~R$ 365M**
+**Total combinado XCMG + LiuGong:** ~R$ 340M federal + R$ 36,8M estadual MG (XCMG R$19,77M + LiuGong R$17,02M) = **~R$ 377M**
 
 **Destaque LiuGong:** Delegado Caveira (individual, R$ 3,6M) — não aparece no top XCMG. Vale verificar UF e partido.
 

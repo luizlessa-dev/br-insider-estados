@@ -1,0 +1,148 @@
+{
+  "cnpjs": [
+    "03585183",
+    "07154355"
+  ],
+  "basicos": [
+    "03585183",
+    "07154355"
+  ],
+  "resumo": {
+    "resumo": {
+      "total_cota_brl": 257139.20000000004,
+      "total_emendas_brl": 476872.84,
+      "total_pncp_brl": 27785478.36,
+      "total_tse_doado": 0,
+      "total_geral": 28519490.4,
+      "n_deputados_pagantes": 2,
+      "n_autores_emenda": 1
+    },
+    "cota_por_tipo": {
+      "CONSULTORIAS, PESQUISAS E TRABALHOS TÃ‰CNICOS.": 190570.78000000003,
+      "DIVULGAÃ‡ÃƒO DA ATIVIDADE PARLAMENTAR.": 66568.42
+    },
+    "emenda_por_ano": {
+      "2025": 476872.84
+    },
+    "deputados_cota": [
+      "JOSÃ‰ MENTOR",
+      "Hugo Leal"
+    ],
+    "autores_emenda": [
+      "COM. DE INTEGRACAO NACIONAL E DES. REGIONAL"
+    ],
+    "cadastro": []
+  },
+  "dados": {
+    "cota": [
+      {
+        "uf": "SP",
+        "total": 163216.14,
+        "ultima": "2010-04-12",
+        "n_notas": 16,
+        "partido": "PT",
+        "deputado": "JOSÃ‰ MENTOR",
+        "primeira": "2009-04-14",
+        "cnpj_norm": "07154355000265",
+        "tipo_despesa": "CONSULTORIAS, PESQUISAS E TRABALHOS TÃ‰CNICOS.",
+        "nome_fornecedor": "FSB COMUNICAÃ‡ÃƒO LTDA"
+      },
+      {
+        "uf": "SP",
+        "total": 59200,
+        "ultima": "2010-12-29",
+        "n_notas": 2,
+        "partido": "PT",
+        "deputado": "JOSÃ‰ MENTOR",
+        "primeira": "2010-11-29",
+        "cnpj_norm": "03585183000142",
+        "tipo_despesa": "DIVULGAÃ‡ÃƒO DA ATIVIDADE PARLAMENTAR.",
+        "nome_fornecedor": "FSB COMUNICAÃ‡ÃƒO E PLANEJAMENTO ESTRATÃ‰GICO LTDA"
+      },
+      {
+        "uf": "SP",
+        "total": 22200,
+        "ultima": "2011-01-28",
+        "n_notas": 3,
+        "partido": "PT",
+        "deputado": "JOSÃ‰ MENTOR",
+        "primeira": "2010-12-29",
+        "cnpj_norm": "03585183000142",
+        "tipo_despesa": "CONSULTORIAS, PESQUISAS E TRABALHOS TÃ‰CNICOS.",
+        "nome_fornecedor": "FSB COMUNICAÃ‡ÃƒO E PLANEJAMENTO ESTRATÃ‰GICO LTDA"
+      },
+      {
+        "uf": "SP",
+        "total": 7368.42,
+        "ultima": "2009-12-10",
+        "n_notas": 1,
+        "partido": "PT",
+        "deputado": "JOSÃ‰ MENTOR",
+        "primeira": "2009-12-10",
+        "cnpj_norm": "07154355000265",
+        "tipo_despesa": "DIVULGAÃ‡ÃƒO DA ATIVIDADE PARLAMENTAR.",
+        "nome_fornecedor": "FSB COMUNICAÃ‡Ã•ES LTDA"
+      },
+      {
+        "uf": "RJ",
+        "total": 5154.64,
+        "ultima": "2009-09-22",
+        "n_notas": 1,
+        "partido": "PSD",
+        "deputado": "Hugo Leal",
+        "primeira": "2009-09-22",
+        "cnpj_norm": "03585183000142",
+        "tipo_despesa": "CONSULTORIAS, PESQUISAS E TRABALHOS TÃ‰CNICOS.",
+        "nome_fornecedor": "FSB COMUNICAÃ‡Ã•ES"
+      }
+    ],
+    "emendas": [
+      {
+        "cnpj": "03585183000495",
+        "total": 417007.34,
+        "ano_emenda": 2025,
+        "favorecido": "VERTEX COMUNICACAO E PLANEJAMENTO LTDA",
+        "nome_autor": "COM. DE INTEGRACAO NACIONAL E DES. REGIONAL",
+        "tipo_emenda": "Emenda de Comissão",
+        "codigo_autor": "5048",
+        "n_pagamentos": 3,
+        "uf_favorecido": "DF"
+      },
+      {
+        "cnpj": "03585183000142",
+        "total": 59865.5,
+        "ano_emenda": 2025,
+        "favorecido": "VERTEX COMUNICACAO E PLANEJAMENTO LTDA",
+        "nome_autor": "COM. DE INTEGRACAO NACIONAL E DES. REGIONAL",
+        "tipo_emenda": "Emenda de Comissão",
+        "codigo_autor": "5048",
+        "n_pagamentos": 2,
+        "uf_favorecido": "DF"
+      }
+    ],
+    "pncp": [
+      {
+        "total": 14458539.75,
+        "uf_orgao": "DF",
+        "nome_orgao": "MINISTERIO DAS COMUNICACOES",
+        "n_contratos": 1,
+        "ano_contrato": 2024,
+        "cnpj_fornecedor": "03585183000142",
+        "nome_fornecedor": "FSB COMUNICACAO E PLANEJAMENTO ESTRATEGICO LTDA",
+        "objetos_amostra": "CONSTITUI OBJETO DO PRESENTE CONTRATO A PRESTAÇÃO DE SERVIÇOS DE COMUNICAÇÃO INSTITUCIONAL, REFERENTES À:\r\n\r\nA) A PROSPECÇÃO, O PLANEJAMENTO, O DESENVOLVIMENTO, A IMPLEMENTAÇÃO, A MANUTENÇÃO E O MONITORAMENTO DE SOLUÇÕES DE COMUNICAÇÃO INSTITUCIONAL, NO SEU RELACIONAMENTO COM A IMPRENSA E NA SUA ATUAÇÃO EM RELAÇÕES PÚBLICAS, EM TERRITÓRIO NACIONAL E INTERNACIONAL, NO QUE COUBER;\r\nB) MANUTENÇÃO E MONITORAMENTO DAS AÇÕES E SOLUÇÕES DE COMUNICAÇÃO INSTITUCIONAL; E\r\nC) CRIAÇÃO E EXECUÇÃO TÉCNICA DE "
+      },
+      {
+        "total": 13326938.61,
+        "uf_orgao": "DF",
+        "nome_orgao": "MINISTERIO DE MINAS E ENERGIA",
+        "n_contratos": 1,
+        "ano_contrato": 2024,
+        "cnpj_fornecedor": "03585183000142",
+        "nome_fornecedor": "FSB COMUNICACAO E PLANEJAMENTO ESTRATEGICO LTDA",
+        "objetos_amostra": "O OBJETO DA PRESENTE CONCORRÊNCIA É A CONTRATAÇÃO DE EMPRESA PRESTADORA DE SERVIÇOS DE COMUNICAÇÃO INSTITUCIONAL, REFERENTES À: A) A PROSPECÇÃO, O PLANEJAMENTO, O DESENVOLVIMENTO, A IMPLEMENTAÇÃO, A MANUTENÇÃO E O MONITORAMENTO DE SOLUÇÕES DE COMUNICAÇÃO INSTITUCIONAL, NO SEU RELACIONAMENTO COM A IMPRENSA E NA SUA ATUAÇÃO EM RELAÇÕES PÚBLICAS, EM TERRITÓRIO NACIONAL E INTERNACIONAL, NO QUE COUBER; B) MANUTENÇÃO E MONITORAMENTO DAS AÇÕES E SOLUÇÕES DE COMUNICAÇÃO INSTITUCIONAL; E C) CRIAÇÃO E EXE"
+      }
+    ],
+    "tse": [],
+    "cadastro": []
+  }
+}

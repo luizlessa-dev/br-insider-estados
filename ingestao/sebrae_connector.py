@@ -46,9 +46,12 @@ TABLES: list[tuple[str, int, str, list[str]]] = [
          "valor_contrato","valor_pago"],
     ),
     (
+        # Ordem corrigida em 2026-07-22 (confirmada via GetLayout/qDimensionInfo
+        # posicional): a lista antiga tinha "tipo_julgamento"/"menor_preco"/
+        # "julgamento" fora de ordem, misturando o conteúdo dos 3 campos.
         "f7a53fdc-c669-4914-b7a7-bf11a9eea914", 13, "sebrae_licitacoes",
-        ["uf","numero_licitacao","tipo_julgamento","menor_preco",
-         "situacao","modalidade","julgamento","objeto",
+        ["uf","numero_licitacao","tipo_licitacao","tipo_julgamento",
+         "situacao","modalidade","menor_preco","objeto",
          "data_abertura","data_homologacao","resultado",
          "cnpj_fornecedor","nome_fornecedor"],
     ),
@@ -65,22 +68,32 @@ TABLES: list[tuple[str, int, str, list[str]]] = [
          "valor_contrato","valor_pago"],
     ),
     (
+        # ATENÇÃO: o Qlik de origem tem a medida "Valor do contrato" e o campo
+        # "Observação" com conteúdo trocado (confirmado via GetLayout/qDimensionInfo
+        # em 2026-07-22). O campo rotulado "Observação" é o que traz o valor
+        # numérico real; a medida rotulada "Valor do contrato" traz texto livre
+        # truncado a ~30 caracteres (autor/nº de emenda/nº de convênio).
+        # Por isso a ordem abaixo NÃO segue os rótulos do Qlik — segue o conteúdo real.
         "AHSdRn", 12, "sebrae_emendas_contratos",
         ["uf","ano","numero_contrato","data_contrato","modalidade",
          "cnpj_cpf","razao_social","vigencia","objeto","aditivo",
-         "observacao","valor_contrato"],
+         "valor_contrato","nota_parlamentar_truncada"],
     ),
     (
+        # Mesmo problema do objeto acima — ver comentário na tabela sebrae_emendas_contratos.
         "DumJhJv", 11, "sebrae_emendas_convenios",
         ["uf","ano","numero_convenio","data_convenio","cnpj_cpf",
          "razao_social","vigencia","objeto","aditivo",
-         "observacao","valor_emenda"],
+         "valor_emenda","nota_parlamentar_truncada"],
     ),
 ]
 
 CONFLICT_COLS = {
     "sebrae_contratos":         "uf,numero_contrato",
-    "sebrae_licitacoes":        "uf,numero_licitacao",
+    # Granularidade real é (licitação × participante) — cada concorrente é uma
+    # linha própria. UNIQUE(uf,numero_licitacao) sozinha descartava ~75% das
+    # linhas via ignore-duplicates (achado em 2026-07-22).
+    "sebrae_licitacoes":        "uf,numero_licitacao,cnpj_fornecedor,resultado",
     "sebrae_convenios":         "uf,numero_convenio",
     "sebrae_patrocinios":       "uf,numero_contrato",
     "sebrae_emendas_contratos": "uf,numero_contrato",
@@ -110,14 +123,32 @@ async def extract_table(ws, app_handle, obj_id, n_cols, columns, msg_base, out_p
     total = r2["result"]["qLayout"]["qHyperCube"]["qSize"].get("qcy", 0)
     logger.info("  total=%d linhas", total)
 
+    # Escreve num .partial e só promove pro nome final se bater 100% do total.
+    # Isso evita que uma extração cortada por timeout do WebSocket (já visto
+    # acontecer — GH Actions run 2026-07-03 travou aos 14000/480314 de
+    # sebrae_contratos) deixe pra trás um arquivo "final" incompleto que uma
+    # fase_load posterior carregaria sem perceber a falta de linhas.
+    partial_path = out_path.with_suffix(out_path.suffix + ".partial")
     written = 0
-    with open(out_path, "w", encoding="utf-8") as f:
+    with open(partial_path, "w", encoding="utf-8") as f:
         offset = 0
         fetch_id = msg_base + 10
         while offset < total:
             page = [{"qTop": offset, "qLeft": 0, "qWidth": n_cols, "qHeight": PAGE_SIZE}]
-            r3 = await _rpc(ws, "GetHyperCubeData", ["/qHyperCubeDef", page], handle=tbl, msg_id=fetch_id)
-            fetch_id += 1
+            # Retry: o Qlik já mostrou travar uma requisição isolada por >30s no
+            # meio de uma extração longa (GH Actions run 2026-07-03), sem relação
+            # aparente com volume. GetHyperCubeData é leitura pura — retry é seguro.
+            for attempt in range(1, 4):
+                try:
+                    r3 = await _rpc(ws, "GetHyperCubeData", ["/qHyperCubeDef", page], handle=tbl, msg_id=fetch_id)
+                    fetch_id += 1
+                    break
+                except (asyncio.TimeoutError, TimeoutError, RuntimeError) as e:
+                    fetch_id += 1
+                    if attempt == 3:
+                        raise
+                    logger.warning("    timeout em offset=%d, tentativa %d/3: %s", offset, attempt, e)
+                    await asyncio.sleep(2 * attempt)
             matrix = r3["result"]["qDataPages"][0]["qMatrix"]
             for row in matrix:
                 vals = [cell.get("qText", "") for cell in row]
@@ -127,12 +158,26 @@ async def extract_table(ws, app_handle, obj_id, n_cols, columns, msg_base, out_p
             if offset % 1000 == 0:
                 logger.info("    %d/%d", offset, total)
 
+    if written != total:
+        raise RuntimeError(
+            f"Extração de {out_path.name} incompleta: {written}/{total} linhas. "
+            f"Mantido só o parcial em {partial_path} — NÃO promovido pro nome "
+            f"final, então phase_load vai pulá-lo em vez de carregar dado cortado."
+        )
+
+    partial_path.replace(out_path)
     logger.info("  %s: %d linhas extraídas → %s", obj_id, written, out_path)
     return written
 
 
 async def phase_extract():
     TMP_DIR.mkdir(exist_ok=True)
+    # Remove qualquer .jsonl final de um run anterior antes de começar — assim,
+    # se este run falhar no meio (ex: tabela 3 de 6), as tabelas que nem chegaram
+    # a ser tentadas não deixam um arquivo velho pra phase_load carregar sem querer.
+    for _, _, table_name, _ in TABLES:
+        (TMP_DIR / f"{table_name}.jsonl").unlink(missing_ok=True)
+
     async with websockets.connect(
         WS_URL,
         additional_headers=WS_HEADERS,

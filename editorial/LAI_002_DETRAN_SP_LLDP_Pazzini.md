@@ -4,8 +4,9 @@
 **Órgão destinatário:** DETRAN-SP — Departamento Estadual de Trânsito de São Paulo
 **Portal de protocolo:** https://www.sic.sp.gov.br (SIC-SP — Sistema de Informação ao Cidadão do Estado de SP)
 **Base legal:** Lei nº 12.527/2011 (Lei de Acesso à Informação), art. 10; Lei Estadual SP nº 12.228/2006
-**Data de envio:** 05 de junho de 2026
-**Prazo legal de resposta:** 20 dias úteis
+**Número de protocolo VÁLIDO (LAI):** 2026061012510865 — reapresentado em 10/06/2026 via Fala.SP, tipo "Pedido de acesso à informação", órgão DETRAN-SP. Resposta esperada até ~08/07/2026 (20 dias úteis).
+**Protocolo anterior (esvaziado):** 2026060921474657 — enviado 09/06 e REBAIXADO pela triagem para "Solicitação de Providência" (sem prazo/recurso). Guardado como evidência de tentativa de esvaziamento da LAI. A reapresentação acima inclui contestação formal dessa reclassificação.
+**Prazo legal de resposta:** 20 dias úteis (prorrogável +10)
 
 ---
 
@@ -56,6 +57,10 @@ Resposta em formato digital (PDF ou texto simples), enviada ao e-mail informado 
 
 ## Notas de uso interno (não enviar)
 
+- **QSA confirmado (Receita/BrasilAPI, jun/2026):** sócio-administrador ÚNICO = Gustavo Pazzini Araujo da Silva (CPF ***471538**, entrada 03/03/2020). Capital social R$ 200 mil, microempresa. CNAE principal 4789-0/09 (armas e munições); locação de automóveis (7711-0/00) é só CNAE secundário. Endereço confere: Rua Martinho Vaz de Barros, 230, Loja 1.
+- **Rede do sócio:** Gustavo Pazzini é dono do Grupo G16 (tiro/caça) — Seven Shooting (CNPJ 36.029.202), G16 Representações/despachante bélico (32.029.479), Clube Social P.C.E (34.042.022). Irmão Daniel Pazzini é co-sócio nas empresas do grupo (não na L.D.P.).
+- **Elo Ceagesp + Frias:** G16/Seven Shooting teve clube de tiro dentro da Ceagesp (concessão 20 anos, R$ 28.074,28/mês, gestão Ricardo Mello Araújo/Bolsonaro). Frias visitou em 08/09/2022 e postou vídeo no próprio Twitter; Eduardo Bolsonaro fotografado com os donos. Fontes: Brasil de Fato e CartaCapital (11/02/2023), Metrópoles.
+- **Frente nova sugerida (JUCESP):** pedir ficha cadastral completa da L.D.P. para datar a inclusão do CNAE de locação — comprova se foi "colado depois".
 - **Por que o DETRAN:** uma locadora de veículos precisa ter frota registrada no DETRAN em nome próprio (PJ ou PF). Se a L.D.P. não tiver nenhum veículo registrado, fica comprovado que não presta serviço de locação — o que confirma a hipótese de notas frias.
 - **Alternativa se o DETRAN negar:** o Tribunal de Contas do Estado de SP (TCE-SP) pode ter esse dado via fiscalização de contratos. Também é possível obter via Receita Federal (DIMOB/DCTF de empresa com CNAE de locação reporta receita de locação).
 - **Atenção ao CPF:** a Receita Federal exibe apenas fragmento do CPF do sócio (`***471538**`). Sem o CPF completo, a consulta PF no DETRAN depende do nome. Se houver dificuldade, solicitar via nome completo + data de entrada na sociedade (03/03/2020) para identificação inequívoca.

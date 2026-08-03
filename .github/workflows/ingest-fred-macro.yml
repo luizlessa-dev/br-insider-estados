@@ -1,0 +1,67 @@
+name: Ingestão FRED — Macro BR
+
+# Cadência mensal no dia 5 às 07:00 UTC.
+# FRED atualiza séries mensais/trimestrais com ~1-2 semanas de defasagem;
+# dia 5 garante que os dados do mês anterior já estejam disponíveis.
+#
+# Secrets necessários:
+#   SUPABASE_URL
+#   SUPABASE_SERVICE_ROLE_KEY
+#   FRED_API_KEY  — gratuito em research.stlouisfed.org/useraccount/apikeys
+
+on:
+  schedule:
+    - cron: "0 7 5 * *"
+
+  workflow_dispatch:
+    inputs:
+      series:
+        description: "Séries separadas por vírgula (vazio = todas)"
+        default: ""
+      desde:
+        description: "Incremental desde (AAAA-MM-DD). Vazio = histórico completo."
+        default: ""
+
+concurrency:
+  group: ingest-fred-macro
+  cancel-in-progress: false
+
+jobs:
+  fred-macro:
+    name: Ingestão FRED Macro
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      FRED_API_KEY:              ${{ secrets.FRED_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+      - name: Instalar dependências
+        run: pip install -r ingestao/requirements.txt
+
+      - name: FRED — histórico completo (schedule)
+        if: github.event_name == 'schedule'
+        run: python -m ingestao.fred_macro
+
+      - name: FRED — dispatch customizado
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          ARGS=""
+          if [ -n "${{ github.event.inputs.series }}" ]; then
+            ARGS="$ARGS --series ${{ github.event.inputs.series }}"
+          fi
+          if [ -n "${{ github.event.inputs.desde }}" ]; then
+            ARGS="$ARGS --desde ${{ github.event.inputs.desde }}"
+          fi
+          python -m ingestao.fred_macro $ARGS
