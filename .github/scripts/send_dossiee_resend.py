@@ -125,9 +125,16 @@ story.append(Paragraph(
     ParagraphStyle('Footer', parent=normal_style, fontSize=8, textColor=colors.HexColor('#64748b'))
 ))
 
-doc.build(story)
-pdf_buffer.seek(0)
-pdf_base64 = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
+try:
+    doc.build(story)
+    pdf_buffer.seek(0)
+    pdf_bytes = pdf_buffer.getvalue()
+    pdf_size = len(pdf_bytes)
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    print(f"📄 PDF gerado: {pdf_size} bytes")
+except Exception as e:
+    print(f"❌ Erro ao gerar PDF: {e}")
+    sys.exit(1)
 
 # HTML para email
 html = f"""<!DOCTYPE html>
