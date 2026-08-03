@@ -62,6 +62,8 @@ from .escavador_pf import EscavadorPFConnector
 from .bdc_ondemand_async import submit_ondemand_pf
 from .bigdatacorp_negativacoes import BDCNegativacoesPFConnector, BDCProcessosPFConnector, BDCFinanceiroPFConnector
 from .protestos_nacional import ProtestosNacionalPFConnector
+from .policia_federal_pf import PoliciaFederalPFConnector
+from .policia_civil_pf import PolicíaCivilPFConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -81,6 +83,8 @@ FONTES_PF = [
 
     # ── Judicial / Penal ─────────────────────────────────────────────────────
     BNMPMandadosPrisaoPFConnector(),    # BNMP/CNJ — mandados de prisão ativos
+    PoliciaFederalPFConnector(),        # BDC Ondemand — antecedentes PF (nacional)
+    PolicíaCivilPFConnector(),          # BDC Ondemand — antecedentes PC (12 estados)
     AntecedentesHCrimosPFConnector(),   # Infosimples — antecedentes criminais (Polícia Federal)
     CNDTTrabalhiPFConnector(),          # CNDT/TST — débitos trabalhistas como empregador
     EscavadorPFConnector(),             # Escavador — processos judiciais nacionais por CPF
