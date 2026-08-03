@@ -50,9 +50,10 @@ jobs:
         if: success()
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python3 .github/scripts/send_dossie_imob_resend.py "${{ github.event.inputs.matricula }}" "${{ github.event.inputs.email_cliente }}" "${{ github.event.inputs.consulta_id }}"
+        run: |
+          python3 .github/scripts/send_dossie_imob_resend.py \
+            --consulta-id "${{ github.event.inputs.consulta_id }}" \
+            --email "${{ github.event.inputs.email_cliente }}"
 
       - name: Notificar erro
         if: failure()
