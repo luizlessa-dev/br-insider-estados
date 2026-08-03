@@ -293,18 +293,12 @@ jobs:
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
-          python3 - <<'EOF'
+          python3 << 'ERREOF'
           import os, requests
           with open("/tmp/pf_output.txt") as f:
               log = f.read()[-3000:]
 
-          body_text = f"""Pipeline PF falhou.
-
-ID: ${{ github.event.inputs.consulta_id }}
-CPF: ${{ github.event.inputs.cpf }}
-
-Log:
-{log}"""
+          body_text = "Pipeline PF falhou.\n\nID: ${{ github.event.inputs.consulta_id }}\nCPF: ${{ github.event.inputs.cpf }}\n\nLog:\n" + log
 
           resend_api_key = os.environ.get("RESEND_API_KEY", "")
           if resend_api_key:
@@ -320,4 +314,4 @@ Log:
                   headers={"Authorization": f"Bearer {resend_api_key}"},
                   timeout=30,
               )
-          EOF
+          ERREOF
