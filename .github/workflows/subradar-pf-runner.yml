@@ -63,5 +63,6 @@ jobs:
         if: success()
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        run: |
-          echo "Email enviado com sucesso para ${{ github.event.inputs.email_cliente }}"
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 .github/scripts/send_dossiee_resend.py "${{ github.event.inputs.cpf }}" "${{ github.event.inputs.nome }}" "${{ github.event.inputs.tipo }}" "${{ github.event.inputs.email_cliente }}" "${{ github.event.inputs.consulta_id }}"
