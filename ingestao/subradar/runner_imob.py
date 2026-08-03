@@ -26,6 +26,9 @@ from .base_imob import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
 
 # Conectores Imob
 from .cnpj_cnj_imob import CNPJCNJImobConnector
+from .datajud_imob import DatajudImobConnector
+from .divida_ativa_imob import DividaAtivaImobConnector
+from .bigdatacorp_imob import BigDataCorpImobConnector
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +39,10 @@ logger = logging.getLogger("subradar.runner_imob")
 
 
 FONTES_IMOB = [
-    CNPJCNJImobConnector(),
+    CNPJCNJImobConnector(),           # Titularidade (placeholder)
+    DatajudImobConnector(),            # Ações judiciais sobre imóvel
+    DividaAtivaImobConnector(),        # Dívida ativa (IPTU, municipal)
+    BigDataCorpImobConnector(),        # Negativações de envolvidos
 ]
 
 
