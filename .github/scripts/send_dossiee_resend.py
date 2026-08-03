@@ -144,7 +144,7 @@ html = f"""<!DOCTYPE html>
       <p style="margin:4px 0"><strong>Data:</strong> {date.today().strftime("%d/%m/%Y")}</p>
     </div>
     <div style="padding:12px;background:#f0f9ff;border-radius:6px;margin-bottom:16px;border-left:4px solid #3b82f6">
-      <p style="margin:0;font-size:12px;color:#1e40af">📎 <strong>PDF anexado</strong> com todos os detalhes do dossiê</p>
+      <p style="margin:0;font-size:12px;color:#1e40af">📎 <strong>PDF anexado</strong> com todos os detalhes do dossiê completo</p>
     </div>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
     <p style="font-size:12px;color:#64748b;margin:0">Dossiê gerado automaticamente pelo Subradar em {date.today().strftime("%d/%m/%Y")}. As informações são obtidas de fontes públicas autorizadas.</p>
