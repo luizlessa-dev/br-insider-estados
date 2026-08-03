@@ -1,0 +1,61 @@
+name: Subradar Imob - Entrega de Dossiê
+
+on:
+  workflow_dispatch:
+    inputs:
+      matricula:
+        description: "Matrícula do imóvel (formato: NNNNNN-D.DD.DDDD.D.DDDDD)"
+        required: true
+      cartorio_id:
+        description: "ID CNIB do cartório (ex: 0123)"
+        required: false
+      email_cliente:
+        description: "E-mail do cliente para entrega do dossiê"
+        required: true
+      consulta_id:
+        description: "UUID da consulta"
+        required: true
+
+concurrency:
+  group: subradar-imob-${{ github.event.inputs.consulta_id }}
+  cancel-in-progress: false
+
+jobs:
+  rodar-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          pip install -r ingestao/requirements.txt
+
+      - name: Executar pipeline Imob
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          python3 -m ingestao.subradar.runner_imob \
+            --matricula "${{ github.event.inputs.matricula }}" \
+            --cartorio-id "${{ github.event.inputs.cartorio_id }}" \
+            --cliente-id "${{ github.event.inputs.consulta_id }}"
+
+      - name: Notificar cliente por email
+        if: success()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: python3 .github/scripts/send_dossie_imob_resend.py "${{ github.event.inputs.matricula }}" "${{ github.event.inputs.email_cliente }}" "${{ github.event.inputs.consulta_id }}"
+
+      - name: Notificar erro
+        if: failure()
+        run: |
+          echo "Pipeline falhou para matrícula ${{ github.event.inputs.matricula }}"
+          echo "Consulta ID: ${{ github.event.inputs.consulta_id }}"
