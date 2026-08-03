@@ -47,8 +47,7 @@ jobs:
           ESCAVADOR_TOKEN: ${{ secrets.ESCAVADOR_TOKEN }}
           DIRECT_DATA_TOKEN: ${{ secrets.DIRECT_DATA_TOKEN }}
           OPENSANCTIONS_PRO_KEY: ${{ secrets.OPENSANCTIONS_PRO_KEY }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          INFOSIMPLES_TOKEN: ${{ secrets.INFOSIMPLES_TOKEN }}
         run: |
           AVULSA_FLAG=""
           if [ "${{ github.event.inputs.tipo }}" = "completa" ]; then
@@ -85,18 +84,15 @@ jobs:
           )
           EOF
 
-      - name: Enviar dossiê por e-mail
+      - name: Enviar dossiê por e-mail (Resend)
         if: env.EXIT_CODE == '0'
         env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           python3 - <<'PYEOF'
-          import os, smtplib, requests
-          from email.mime.multipart import MIMEMultipart
-          from email.mime.text import MIMEText
+          import os, requests
           from datetime import date
 
           cpf_raw  = "${{ github.event.inputs.cpf }}"
@@ -264,35 +260,64 @@ jobs:
           </body></html>"""
 
           assunto_alertas = f"{n_criticos} crítico(s)" if n_criticos else (f"{n_atencao} atenção" if n_atencao else "sem ocorrências")
-          msg = MIMEMultipart("alternative")
-          msg["Subject"] = f"Subradar PF — {nome} · {assunto_alertas} · Score {score}"
-          msg["From"]    = os.environ["GMAIL_USER"]
-          msg["To"]      = email_cliente
-          msg["Bcc"]     = "luiz@lessalabs.com"
-          msg.attach(MIMEText(html, "html"))
+          subject = f"Subradar PF — {nome} · {assunto_alertas} · Score {score}"
 
-          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-              s.login(os.environ["GMAIL_USER"], os.environ["GMAIL_APP_PASSWORD"])
-              s.send_message(msg)
-          print(f"Dossiê estruturado enviado para {email_cliente} (score={score}, criticos={n_criticos})")
+          # Enviar via Resend
+          resend_api_key = os.environ.get("RESEND_API_KEY", "")
+          if not resend_api_key:
+              raise ValueError("RESEND_API_KEY não configurada")
+
+          payload = {
+              "from": "retorno@subradar.com.br",
+              "to": email_cliente,
+              "subject": subject,
+              "html": html,
+              "reply_to": "luiz@lessalabs.com",
+          }
+
+          resp = requests.post(
+              "https://api.resend.com/emails",
+              json=payload,
+              headers={"Authorization": f"Bearer {resend_api_key}"},
+              timeout=30,
+          )
+
+          if resp.ok:
+              print(f"Dossiê enviado para {email_cliente} (score={score}, criticos={n_criticos})")
+          else:
+              raise Exception(f"Resend error: {resp.status_code} — {resp.text}")
           PYEOF
 
       - name: Notificar erro ao operador
         if: env.EXIT_CODE != '0'
         env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           python3 - <<'EOF'
-          import os, smtplib
-          from email.mime.text import MIMEText
+          import os, requests
           with open("/tmp/pf_output.txt") as f:
               log = f.read()[-3000:]
-          msg = MIMEText(f"Pipeline PF falhou.\n\nID: ${{ github.event.inputs.consulta_id }}\nCPF: ${{ github.event.inputs.cpf }}\n\nLog:\n{log}")
-          msg["Subject"] = "[Subradar PF] ERRO — pipeline falhou"
-          msg["From"] = os.environ["GMAIL_USER"]
-          msg["To"] = "luiz@lessalabs.com"
-          with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
-              s.login(os.environ["GMAIL_USER"], os.environ["GMAIL_APP_PASSWORD"])
-              s.send_message(msg)
+
+          body_text = f"""Pipeline PF falhou.
+
+ID: ${{ github.event.inputs.consulta_id }}
+CPF: ${{ github.event.inputs.cpf }}
+
+Log:
+{log}"""
+
+          resend_api_key = os.environ.get("RESEND_API_KEY", "")
+          if resend_api_key:
+              payload = {
+                  "from": "retorno@subradar.com.br",
+                  "to": "luiz@lessalabs.com",
+                  "subject": "[Subradar PF] ERRO — pipeline falhou",
+                  "text": body_text,
+              }
+              requests.post(
+                  "https://api.resend.com/emails",
+                  json=payload,
+                  headers={"Authorization": f"Bearer {resend_api_key}"},
+                  timeout=30,
+              )
           EOF
