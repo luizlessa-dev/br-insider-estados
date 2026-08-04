@@ -23,12 +23,19 @@ import sys
 from uuid import UUID
 
 from .base_imob import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
+from supabase import create_client
 
 # Conectores Imob
 from .cnpj_cnj_imob import CNPJCNJImobConnector
 from .datajud_imob import DatajudImobConnector
 from .divida_ativa_imob import DividaAtivaImobConnector
 from .bigdatacorp_imob import BigDataCorpImobConnector
+
+# Supabase client para buscar proprietário
+if SUPABASE_URL and SUPABASE_KEY:
+    sb_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+else:
+    sb_client = None
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +61,28 @@ def _validar_matricula(matricula: str) -> bool:
 def _fmt_matricula(matricula: str) -> str:
     """Formata matrícula removendo espaços."""
     return matricula.strip() if matricula else ""
+
+
+def _buscar_proprietario_cpf_cnpj(consulta_id: str) -> str | None:
+    """Busca CPF/CNPJ do proprietário em sub_imob_consultas."""
+    if not sb_client:
+        logger.warning("Supabase não configurado — não é possível buscar proprietário")
+        return None
+
+    try:
+        response = sb_client.from("sub_imob_consultas").select(
+            "proprietario_cpf_cnpj"
+        ).eq("id", consulta_id).single().execute()
+
+        if response.data:
+            cpf_cnpj = response.data.get("proprietario_cpf_cnpj")
+            if cpf_cnpj:
+                logger.debug("proprietário encontrado: %s", cpf_cnpj)
+                return cpf_cnpj
+    except Exception as e:
+        logger.warning("erro ao buscar proprietário: %s", e)
+
+    return None
 
 
 def calcular_score_risco(alertas: list[dict], criticos: int) -> tuple[int, str]:
@@ -130,6 +159,9 @@ def rodar_imovel(
 
     ciclo = _ciclo_atual()
 
+    # Buscar proprietário CPF/CNPJ
+    proprietario_cpf_cnpj = _buscar_proprietario_cpf_cnpj(cliente_id)
+
     # Recolher dados de cada fonte
     dados_imob: list[dict] = []
     alertas_imob: list[dict] = []
@@ -137,7 +169,14 @@ def rodar_imovel(
     for fonte in FONTES_IMOB:
         logger.info("consultando %s", fonte.fonte)
         try:
-            resultado = fonte.consultar_imovel(matricula, cartorio_id)
+            # Datajud precisa do CPF/CNPJ do proprietário
+            if isinstance(fonte, DatajudImobConnector) and proprietario_cpf_cnpj:
+                resultado = fonte.consultar_imovel(
+                    matricula, cartorio_id,
+                    proprietario_cpf_cnpj=proprietario_cpf_cnpj
+                )
+            else:
+                resultado = fonte.consultar_imovel(matricula, cartorio_id)
             if resultado is None:
                 logger.debug("%s: não aplicável", fonte.fonte)
                 continue
