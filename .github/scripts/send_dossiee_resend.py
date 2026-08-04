@@ -201,9 +201,12 @@ if HAS_REPORTLAB:
 
         doc.build(story)
         pdf_buffer.seek(0)
-        pdf_base64 = base64.b64encode(pdf_buffer.getvalue()).decode('utf-8')
+        pdf_bytes = pdf_buffer.getvalue()
+        pdf_size = len(pdf_bytes)
+        pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+        print(f"DEBUG: PDF gerado: {pdf_size} bytes, base64: {len(pdf_base64)} chars", flush=True)
     except Exception as e:
-        pass
+        print(f"DEBUG: Erro ao gerar PDF: {e}", flush=True)
 
 # HTML
 html = f"""<!DOCTYPE html>
@@ -245,6 +248,9 @@ if pdf_base64:
         "filename": f"subradar_pf_{cpf_fmt.replace('.', '').replace('-', '')}.pdf",
         "content": pdf_base64,
     }]
+    print(f"DEBUG: Anexo adicionado ao payload", flush=True)
+else:
+    print(f"DEBUG: Nenhum PDF para anexar", flush=True)
 
 resp = requests.post(
     "https://api.resend.com/emails",
@@ -257,5 +263,5 @@ if resp.ok:
     print(f"✅ Email enviado para {email_cliente}", flush=True)
     sys.exit(0)
 else:
-    print(f"❌ Erro Resend: {resp.status_code}", flush=True)
+    print(f"❌ Erro Resend: {resp.status_code} - {resp.text}", flush=True)
     sys.exit(1)
