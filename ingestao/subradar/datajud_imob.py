@@ -37,58 +37,37 @@ class DatajudImobConnector(SubradarImobSource):
     request_delay = 1.0
 
     def consultar_imovel(
-        self, matricula: str, cartorio_id: str | None = None
+        self, matricula: str, cartorio_id: str | None = None,
+        proprietario_cpf_cnpj: str | None = None
     ) -> dict | None:
         """
         Busca ações judiciais sobre imóvel.
 
-        Limitação atual:
-          Datajud busca por parte (pessoa/CNPJ), não por matrícula.
-          Para funcionar, precisamos do proprietário do imóvel.
+        Datajud busca por parte (pessoa/CNPJ), não por matrícula.
+        Solução: recebe CPF/CNPJ do proprietário como parâmetro.
 
-        Solução:
-          1. Integrar com ONR (Ofício de Notas de Registro) para extrair proprietário
-          2. Buscar ações em nome do proprietário no Datajud
-          3. Filtrar apenas ações reais imobiliárias
-
-        Por enquanto: retorna None até ter integração ONR.
+        Args:
+          matricula: matrícula do imóvel (para logging)
+          cartorio_id: ID do cartório (não usado)
+          proprietario_cpf_cnpj: CPF/CNPJ do proprietário (REQUERIDO para buscar)
         """
         self.log.info(
             "datajud: buscando ações judiciais para matrícula: %s", matricula
         )
 
-        # TODO: quando ONR estiver integrada
-        # proprietario = self._buscar_proprietario_onr(matricula)
-        # if proprietario:
-        #     return self._buscar_acoes_por_proprietario(proprietario)
+        if not proprietario_cpf_cnpj:
+            self.log.debug(
+                "datajud: proprietário não fornecido. Não é possível consultar Datajud."
+            )
+            return None
 
-        return None
-
-    def _buscar_proprietario_onr(self, matricula: str) -> str | None:
-        """
-        Extrai proprietário via ONR Digital.
-
-        TODO: Implementar integração com ONR.
-        Quando disponível, fará:
-          1. GET https://onr.gov.br/api/matricula/{matricula}
-          2. Extrai nome/CNPJ do proprietário
-          3. Retorna (nome, tipo: PF/PJ)
-        """
-        pass
+        return self._buscar_acoes_por_proprietario(proprietario_cpf_cnpj, matricula)
 
     def _buscar_acoes_por_proprietario(
-        self, proprietario: str, tipo_pf_pj: str = "PESSOA_FISICA"
+        self, proprietario_cpf_cnpj: str, matricula: str
     ) -> dict | None:
-        """
-        Busca ações judiciais em nome do proprietário.
-
-        Args:
-          proprietario: Nome ou CNPJ
-          tipo_pf_pj: PESSOA_FISICA | PESSOA_JURIDICA
-        """
+        """Busca ações judiciais em nome do proprietário."""
         try:
-            # Parâmetros da busca
-            # dataInicio: últimos 5 anos
             data_inicio = (datetime.now() - timedelta(days=5 * 365)).strftime(
                 "%Y-%m-%d"
             )
@@ -96,14 +75,13 @@ class DatajudImobConnector(SubradarImobSource):
 
             acoes_encontradas = []
 
-            # Buscar para cada tipo de ação imobiliária
             for codigo_acao, nome_acao in TIPOS_ACAO_IMOVEL.items():
                 try:
                     endpoint = f"{self.base_url}/consultas"
                     params = {
                         "dataInicio": data_inicio,
                         "dataFim": data_fim,
-                        "parteNome": quote(proprietario),
+                        "parteNome": quote(proprietario_cpf_cnpj),
                         "classeJudicial": codigo_acao,
                     }
 
@@ -114,6 +92,7 @@ class DatajudImobConnector(SubradarImobSource):
                         timeout=15,
                     )
                     if not resp:
+                        self.log.debug("datajud: sem resposta para %s", nome_acao)
                         continue
 
                     dados = resp.get("hits", {}).get("hits", [])
@@ -123,7 +102,6 @@ class DatajudImobConnector(SubradarImobSource):
                         )
                         continue
 
-                    # Processar ações encontradas
                     for item in dados:
                         source = item.get("_source", {})
                         acao = {
@@ -135,6 +113,11 @@ class DatajudImobConnector(SubradarImobSource):
                             "status": source.get("status", ""),
                         }
                         acoes_encontradas.append(acao)
+                        self.log.info(
+                            "datajud: encontrada ação %s (%s)",
+                            nome_acao,
+                            source.get("numeroProcesso", "?")
+                        )
 
                 except Exception as e:
                     self.log.warning(
@@ -143,11 +126,35 @@ class DatajudImobConnector(SubradarImobSource):
                     continue
 
             if not acoes_encontradas:
-                self.log.info("datajud: nenhuma ação judicialmente encontrada")
-                return None
+                self.log.info("datajud: nenhuma ação judicial encontrada para %s", proprietario_cpf_cnpj)
+                return {
+                    "fonte": self.fonte,
+                    "categoria": "judicial",
+                    "status": "limpo",
+                    "titulo_secao": "Ações Judiciais",
+                    "resumo": "Nenhuma ação judicial encontrada relacionada ao imóvel.",
+                    "detalhes": {
+                        "proprietario_consultado": proprietario_cpf_cnpj,
+                        "periodo": f"5 anos até {datetime.now().strftime('%Y-%m-%d')}",
+                    }
+                }
 
             return {
                 "fonte": self.fonte,
+                "categoria": "judicial",
+                "status": "critico" if len(acoes_encontradas) > 0 else "alerta",
+                "titulo_secao": f"Ações Judiciais ({len(acoes_encontradas)})",
+                "resumo": f"{len(acoes_encontradas)} ação(ões) judicial(is) encontrada(s) contra o proprietário.",
+                "detalhes": {
+                    "proprietario": proprietario_cpf_cnpj,
+                    "acoes": acoes_encontradas,
+                    "total": len(acoes_encontradas),
+                }
+            }
+
+        except Exception as e:
+            self.log.exception("datajud: erro geral: %s", e)
+            return None
                 "categoria": "judicial",
                 "status": "alerta" if acoes_encontradas else "limpo",
                 "titulo_secao": "Ações Judiciais sobre o Imóvel",
