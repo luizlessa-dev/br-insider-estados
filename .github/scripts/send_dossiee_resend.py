@@ -55,70 +55,76 @@ color_green = HexColor("#16a34a")
 color_orange = HexColor("#d97706")
 color_light_bg = HexColor("#f8fafc")
 
-y = height - 40
+y = height - 50
 
 # Cabeçalho profissional
-c.setFont("Helvetica-Bold", 16)
+c.setFont("Helvetica-Bold", 18)
 c.setFillColor(color_dark)
 c.drawString(50, y, "SUBRADAR")
-y -= 18
+y -= 22
 
-c.setFont("Helvetica", 9)
+c.setFont("Helvetica", 10)
 c.setFillColor(HexColor("#64748b"))
 c.drawString(50, y, "INTELIGÊNCIA CORPORATIVA")
-y -= 35
+y -= 40
 
 # Banner colorido com dados principais
+banner_top = y
 c.setFillColor(color_red)
-c.rect(0, y - 80, width, 80, fill=True, stroke=False)
+c.rect(0, y - 100, width, 100, fill=True, stroke=False)
 
-# Score grande no banner
-c.setFont("Helvetica-Bold", 48)
+# Score grande no banner (esquerda)
+c.setFont("Helvetica-Bold", 56)
 c.setFillColor(HexColor("#ffffff"))
-c.drawString(50, y - 45, str(score))
+c.drawString(60, y - 60, str(score))
 
-# Faixa de risco
-c.setFont("Helvetica-Bold", 11)
+# Faixa de risco (abaixo do score)
+c.setFont("Helvetica-Bold", 13)
 faixa_upper = faixa.upper()
-c.drawString(50, y - 65, faixa_upper)
+c.setFillColor(HexColor("#ffffff"))
+c.drawString(60, y - 82, faixa_upper)
 
-# Info no banner
-c.setFont("Helvetica", 10)
-c.drawString(280, y - 45, f"{nome}")
-c.drawString(280, y - 60, f"CPF: {cpf_fmt}")
-c.drawString(280, y - 75, f"Data: {date.today().strftime('%d/%m/%Y')}")
+# Info no banner (direita)
+c.setFont("Helvetica-Bold", 12)
+c.setFillColor(HexColor("#ffffff"))
+c.drawString(300, y - 50, f"{nome}")
 
-y -= 90
+c.setFont("Helvetica", 11)
+c.drawString(300, y - 68, f"CPF: {cpf_fmt}")
+c.drawString(300, y - 86, f"Data: {date.today().strftime('%d/%m/%Y')}")
+
+y -= 120
 
 # Resumo KPIs
-c.setFont("Helvetica-Bold", 10)
+c.setFont("Helvetica-Bold", 11)
 c.setFillColor(color_dark)
 c.drawString(50, y, "RESUMO")
-y -= 20
+y -= 25
 
 # Tabela de KPIs
-col_width = 100
+col_width = 120
 kpis = [("FONTES", "34"), ("ALERTAS", str(len(alertas))), ("CRÍTICOS", str(n_criticos))]
 
 for i, (label, value) in enumerate(kpis):
     x = 50 + (i * col_width)
 
     # Fundo
-    c.setFillColor(HexColor("#f1f5f9"))
-    c.rect(x, y - 50, col_width - 10, 50, fill=True, stroke=True)
-    c.setStrokeColor(HexColor("#e2e8f0"))
+    c.setFillColor(HexColor("#f8fafc"))
+    c.rect(x, y - 60, col_width - 5, 60, fill=True, stroke=True)
+    c.setStrokeColor(HexColor("#cbd5e1"))
+    c.setLineWidth(1)
 
     # Valor grande
-    c.setFont("Helvetica-Bold", 24)
+    c.setFont("Helvetica-Bold", 28)
     c.setFillColor(color_dark)
-    c.drawString(x + 25, y - 25, value)
+    c.drawString(x + 30, y - 28, value)
 
     # Label
-    c.setFont("Helvetica", 9)
-    c.setFillColor(HexColor("#64748b"))
-    c.drawString(x + 10, y - 42, label)
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(HexColor("#475569"))
+    c.drawString(x + 15, y - 50, label)
 
-y -= 70
+y -= 85
 
 # Seção de alertas
 if alertas:
@@ -159,36 +165,47 @@ if categorias:
     c.setFont("Helvetica-Bold", 11)
     c.setFillColor(color_dark)
     c.drawString(50, y, "RESUMO POR CATEGORIA")
-    y -= 18
+    y -= 22
 
     c.setFont("Helvetica", 9)
     for cat, items in sorted(categorias.items()):
         cat_label = cat.replace('_', ' ').title()
 
-        c.setFillColor(HexColor("#f1f5f9"))
-        c.rect(50, y - 18, 500, 18, fill=True, stroke=True)
-        c.setStrokeColor(HexColor("#e2e8f0"))
+        # Cabeçalho da categoria
+        c.setFillColor(HexColor("#e8eef7"))
+        c.rect(50, y - 22, 500, 22, fill=True, stroke=True)
+        c.setStrokeColor(HexColor("#cbd5e1"))
+        c.setLineWidth(0.5)
 
-        c.setFont("Helvetica-Bold", 9)
+        c.setFont("Helvetica-Bold", 10)
         c.setFillColor(color_dark)
-        c.drawString(55, y - 12, cat_label)
+        c.drawString(60, y - 15, cat_label)
 
-        y -= 22
+        y -= 28
 
-        for item in items[:2]:
+        # Itens da categoria
+        for item in items[:3]:
             status = item.get('status', 'N/A')
-            status_color = color_green if status.upper() == 'LIMPO' else color_orange
+            status_upper = status.upper()
 
-            c.setFont("Helvetica", 8)
+            if status_upper == 'LIMPO':
+                status_color = color_green
+            elif status_upper == 'CRITICO':
+                status_color = color_red
+            else:
+                status_color = color_orange
+
+            c.setFont("Helvetica", 9)
             c.setFillColor(color_dark)
-            c.drawString(65, y, f"• {item.get('titulo_secao', 'N/A')[:50]}")
+            c.drawString(70, y, f"• {item.get('titulo_secao', 'N/A')[:48]}")
 
+            c.setFont("Helvetica-Bold", 9)
             c.setFillColor(status_color)
-            c.drawString(450, y, status.upper())
+            c.drawString(430, y, status_upper)
 
-            y -= 12
+            y -= 16
 
-        y -= 5
+        y -= 8
 
 # Rodapé
 c.setLineWidth(1)
