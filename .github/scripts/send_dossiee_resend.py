@@ -9,8 +9,6 @@ from datetime import date
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.colors import HexColor
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 import io
 
 cpf = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -24,6 +22,7 @@ if not all([cpf, nome, email_cliente]):
 
 ciclo = date.today().strftime("%Y-%m")
 cpf_fmt = f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}"
+today = date.today().strftime("%d/%m/%Y")
 
 # Buscar dados do Supabase
 sb_url = os.environ.get("SUPABASE_URL", "")
@@ -39,183 +38,200 @@ r = requests.get(f"{sb_url}/rest/v1/sub_pf_alertas?cpf=eq.{cpf_fmt}&ciclo=eq.{ci
 alertas = r.json() if r.ok else []
 n_criticos = sum(1 for a in alertas if a.get("severidade") == "critico")
 n_atencao = sum(1 for a in alertas if a.get("severidade") == "atencao")
+n_ok = len(alertas) - n_criticos - n_atencao
 
 r = requests.get(f"{sb_url}/rest/v1/sub_pf_dados?cpf=eq.{cpf_fmt}&ciclo=eq.{ciclo}", headers=hdrs, timeout=20)
 dados = r.json() if r.ok else []
 
-# Gerar PDF profissional
+# Cores profissionais
+color_dark_bg = HexColor("#0f172a")
+color_red = HexColor("#dc2626")
+color_green = HexColor("#16a34a")
+color_orange = HexColor("#d97706")
+color_gray_dark = HexColor("#1f2937")
+color_gray_light = HexColor("#f3f4f6")
+color_gray_text = HexColor("#6b7280")
+color_white = HexColor("#ffffff")
+
+# Gerar PDF
 pdf_buffer = io.BytesIO()
 c = canvas.Canvas(pdf_buffer, pagesize=A4)
 width, height = A4
 
-# Cores
-color_dark = HexColor("#0f172a")
-color_red = HexColor("#dc2626")
-color_green = HexColor("#16a34a")
-color_orange = HexColor("#d97706")
-color_light_bg = HexColor("#f8fafc")
+def draw_header():
+    """Header dark com logo espaço e data"""
+    c.setFillColor(color_dark_bg)
+    c.rect(0, height - 50, width, 50, fill=True, stroke=False)
 
-y = height - 50
-
-# Cabeçalho profissional
-c.setFont("Helvetica-Bold", 18)
-c.setFillColor(color_dark)
-c.drawString(50, y, "SUBRADAR")
-y -= 22
-
-c.setFont("Helvetica", 10)
-c.setFillColor(HexColor("#64748b"))
-c.drawString(50, y, "INTELIGÊNCIA CORPORATIVA")
-y -= 40
-
-# Banner colorido com dados principais
-banner_top = y
-c.setFillColor(color_red)
-c.rect(0, y - 100, width, 100, fill=True, stroke=False)
-
-# Score grande no banner (esquerda)
-c.setFont("Helvetica-Bold", 56)
-c.setFillColor(HexColor("#ffffff"))
-c.drawString(60, y - 60, str(score))
-
-# Faixa de risco (abaixo do score)
-c.setFont("Helvetica-Bold", 13)
-faixa_upper = faixa.upper()
-c.setFillColor(HexColor("#ffffff"))
-c.drawString(60, y - 82, faixa_upper)
-
-# Info no banner (direita)
-c.setFont("Helvetica-Bold", 12)
-c.setFillColor(HexColor("#ffffff"))
-c.drawString(300, y - 50, f"{nome}")
-
-c.setFont("Helvetica", 11)
-c.drawString(300, y - 68, f"CPF: {cpf_fmt}")
-c.drawString(300, y - 86, f"Data: {date.today().strftime('%d/%m/%Y')}")
-
-y -= 120
-
-# Resumo KPIs
-c.setFont("Helvetica-Bold", 11)
-c.setFillColor(color_dark)
-c.drawString(50, y, "RESUMO")
-y -= 25
-
-# Tabela de KPIs
-col_width = 120
-kpis = [("FONTES", "34"), ("ALERTAS", str(len(alertas))), ("CRÍTICOS", str(n_criticos))]
-
-for i, (label, value) in enumerate(kpis):
-    x = 50 + (i * col_width)
-
-    # Fundo
-    c.setFillColor(HexColor("#f8fafc"))
-    c.rect(x, y - 60, col_width - 5, 60, fill=True, stroke=True)
-    c.setStrokeColor(HexColor("#cbd5e1"))
-    c.setLineWidth(1)
-
-    # Valor grande
-    c.setFont("Helvetica-Bold", 28)
-    c.setFillColor(color_dark)
-    c.drawString(x + 30, y - 28, value)
-
-    # Label
-    c.setFont("Helvetica-Bold", 9)
-    c.setFillColor(HexColor("#475569"))
-    c.drawString(x + 15, y - 50, label)
-
-y -= 85
-
-# Seção de alertas
-if alertas:
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(color_dark)
-    c.drawString(50, y, "ALERTAS ENCONTRADOS")
-    y -= 20
+    # Logo placeholder (SUBRADAR)
+    c.setFont("Helvetica-Bold", 14)
+    c.setFillColor(color_white)
+    c.drawString(50, height - 30, "SUBRADAR")
 
     c.setFont("Helvetica", 9)
-    for alerta in alertas[:5]:
-        sev = alerta.get('severidade', 'info').upper()
-        cor = color_red if sev == 'CRITICO' else color_orange
+    c.setFillColor(color_gray_text)
+    c.drawString(50, height - 42, "INTELIGÊNCIA CORPORATIVA")
 
-        c.setFillColor(cor)
-        c.drawString(50, y, f"• {alerta.get('titulo', 'N/A')[:55]}")
-        y -= 15
+    # Data
+    c.setFont("Helvetica", 9)
+    c.setFillColor(color_gray_text)
+    c.drawRightString(width - 50, height - 30, "DOSSIÊ DE COMPLIANCE")
+    c.drawRightString(width - 50, height - 42, today)
 
-        if y < 100:
-            c.showPage()
-            y = height - 50
+def draw_banner():
+    """Banner vermelho com score e KPIs"""
+    y = height - 50
 
-    y -= 10
-else:
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(color_green)
-    c.drawString(50, y, "✓ Nenhum alerta encontrado")
-    y -= 30
+    # Banner vermelho
+    c.setFillColor(color_red)
+    c.rect(0, y - 110, width, 110, fill=True, stroke=False)
 
-# Dados por categoria
+    # Nome (esquerda)
+    c.setFont("Helvetica-Bold", 16)
+    c.setFillColor(color_white)
+    c.drawString(50, y - 35, nome.upper())
+
+    c.setFont("Helvetica", 11)
+    c.drawString(50, y - 52, f"CPF {cpf_fmt} · Ciclo {ciclo}")
+
+    # Score (direita, grande)
+    c.setFont("Helvetica-Bold", 48)
+    c.setFillColor(color_white)
+    c.drawRightString(width - 50, y - 45, str(score))
+
+    # Faixa
+    c.setFont("Helvetica-Bold", 12)
+    c.drawRightString(width - 50, y - 72, faixa.upper())
+
+    # KPIs na direita (pequeno)
+    c.setFont("Helvetica", 9)
+    kpi_text = f"{len(dados)} FONTES  {len(alertas)} OK  {n_criticos} ALERTAS"
+    c.drawRightString(width - 50, y - 92, kpi_text)
+
+    return y - 110
+
+def draw_section_title(y, title):
+    """Desenha título de seção"""
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColor(color_dark_bg)
+    c.drawString(50, y, title)
+    return y - 20
+
+def draw_table_header(y, cols):
+    """Desenha header de tabela"""
+    col_width = (width - 100) / len(cols)
+
+    c.setFillColor(color_gray_dark)
+    c.rect(50, y - 20, width - 100, 20, fill=True, stroke=False)
+
+    c.setFont("Helvetica-Bold", 10)
+    c.setFillColor(color_white)
+
+    x = 55
+    for col in cols:
+        c.drawString(x, y - 15, col)
+        x += col_width
+
+    return y - 20
+
+def draw_table_row(y, values, row_num, bg_color=None):
+    """Desenha linha de tabela"""
+    if bg_color is None:
+        bg_color = color_white if row_num % 2 == 0 else color_gray_light
+
+    col_width = (width - 100) / len(values)
+
+    c.setFillColor(bg_color)
+    c.rect(50, y - 20, width - 100, 20, fill=True, stroke=False)
+
+    c.setLineWidth(0.5)
+    c.setStrokeColor(HexColor("#e5e7eb"))
+    c.rect(50, y - 20, width - 100, 20, fill=False, stroke=True)
+
+    c.setFont("Helvetica", 9)
+    c.setFillColor(color_dark_bg)
+
+    x = 55
+    for val in values:
+        c.drawString(x, y - 14, str(val)[:40])
+        x += col_width
+
+    return y - 20
+
+# Desenhar PDF
+y = height - 50
+
+# Header
+draw_header()
+
+# Banner
+y = draw_banner()
+y -= 20
+
+# Resumo de categorias
+y = draw_section_title(y, "RESUMO DAS FONTES CONSULTADAS")
+y -= 10
+
+# Tabela de categorias
 categorias = {}
 for d in dados:
     cat = d.get("categoria", "outro")
     if cat not in categorias:
-        categorias[cat] = []
-    categorias[cat].append(d)
+        categorias[cat] = {"limpo": 0, "pendente": 0, "critico": 0}
+    status = d.get("status", "pendente").lower()
+    if status == "limpo":
+        categorias[cat]["limpo"] += 1
+    elif status == "critico":
+        categorias[cat]["critico"] += 1
+    else:
+        categorias[cat]["pendente"] += 1
 
 if categorias:
-    c.setFont("Helvetica-Bold", 11)
-    c.setFillColor(color_dark)
-    c.drawString(50, y, "RESUMO POR CATEGORIA")
-    y -= 22
+    y = draw_table_header(y, ["CATEGORIA", "LIMPO", "PENDENTE", "CRÍTICO"])
 
-    c.setFont("Helvetica", 9)
-    for cat, items in sorted(categorias.items()):
-        cat_label = cat.replace('_', ' ').title()
+    row_num = 0
+    for cat in sorted(categorias.keys()):
+        counts = categorias[cat]
+        values = [cat.replace("_", " ").title(), str(counts["limpo"]), str(counts["pendente"]), str(counts["critico"])]
+        y = draw_table_row(y, values, row_num)
+        row_num += 1
 
-        # Cabeçalho da categoria
-        c.setFillColor(HexColor("#e8eef7"))
-        c.rect(50, y - 22, 500, 22, fill=True, stroke=True)
-        c.setStrokeColor(HexColor("#cbd5e1"))
-        c.setLineWidth(0.5)
+y -= 15
 
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(color_dark)
-        c.drawString(60, y - 15, cat_label)
+# Alertas se houver
+if alertas:
+    y = draw_section_title(y, "ALERTAS ENCONTRADOS")
+    y -= 10
 
-        y -= 28
+    y = draw_table_header(y, ["TÍTULO", "SEVERIDADE"])
 
-        # Itens da categoria
-        for item in items[:3]:
-            status = item.get('status', 'N/A')
-            status_upper = status.upper()
+    row_num = 0
+    for alerta in alertas[:10]:
+        sev = alerta.get("severidade", "info").upper()
+        values = [alerta.get("titulo", "N/A")[:40], sev]
+        y = draw_table_row(y, values, row_num)
+        row_num += 1
 
-            if status_upper == 'LIMPO':
-                status_color = color_green
-            elif status_upper == 'CRITICO':
-                status_color = color_red
-            else:
-                status_color = color_orange
+y -= 15
 
-            c.setFont("Helvetica", 9)
-            c.setFillColor(color_dark)
-            c.drawString(70, y, f"• {item.get('titulo_secao', 'N/A')[:48]}")
+# Metodologia (se espaço)
+if y > 200:
+    y = draw_section_title(y, "CLASSIFICAÇÃO DE RISCO")
+    y -= 8
 
-            c.setFont("Helvetica-Bold", 9)
-            c.setFillColor(status_color)
-            c.drawString(430, y, status_upper)
+    c.setFont("Helvetica", 8)
+    c.setFillColor(color_dark_bg)
+    c.drawString(50, y, "CRÍTICO (30pts) · ATENÇÃO (10pts) · INFORMATIVO (2pts) · OK (0pts)")
 
-            y -= 16
-
-        y -= 8
-
-# Rodapé
-c.setLineWidth(1)
-c.setStrokeColor(HexColor("#e2e8f0"))
-c.line(50, 50, width - 50, 50)
+# Footer
+c.setLineWidth(0.5)
+c.setStrokeColor(HexColor("#e5e7eb"))
+c.line(50, 45, width - 50, 45)
 
 c.setFont("Helvetica", 8)
-c.setFillColor(HexColor("#94a3b8"))
-c.drawString(50, 35, "Dossiê gerado automaticamente pelo Subradar")
-c.drawString(50, 22, "Lessa Labs Tecnologia Ltda • CNPJ 65.659.055/0001-53")
+c.setFillColor(color_gray_text)
+c.drawString(50, 30, "Dossiê gerado automaticamente pelo Subradar")
+c.drawString(50, 18, "Lessa Labs Tecnologia Ltda · CNPJ 65.659.055/0001-53")
 
 c.showPage()
 c.save()
@@ -224,7 +240,7 @@ pdf_buffer.seek(0)
 pdf_bytes = pdf_buffer.getvalue()
 pdf_content = base64.b64encode(pdf_bytes).decode('utf-8')
 
-# HTML
+# HTML email
 html = f"""<!DOCTYPE html>
 <html>
 <head><title>Dossiê Subradar PF</title></head>
@@ -235,14 +251,14 @@ html = f"""<!DOCTYPE html>
       <p style="margin:4px 0"><strong>Nome:</strong> {nome}</p>
       <p style="margin:4px 0"><strong>CPF:</strong> {cpf_fmt}</p>
       <p style="margin:4px 0"><strong>Score de Risco:</strong> <span style="font-size:24px;color:#dc2626;font-weight:bold">{score}</span>/100</p>
-      <p style="margin:4px 0"><strong>Alertas críticos:</strong> {n_criticos}</p>
-      <p style="margin:4px 0"><strong>Data:</strong> {date.today().strftime("%d/%m/%Y")}</p>
+      <p style="margin:4px 0"><strong>Faixa:</strong> {faixa.upper()}</p>
+      <p style="margin:4px 0"><strong>Data:</strong> {today}</p>
     </div>
     <div style="padding:12px;background:#f0f9ff;border-radius:6px;margin-bottom:16px;border-left:4px solid #3b82f6">
       <p style="margin:0;font-size:12px;color:#1e40af">📎 <strong>PDF profissional anexado</strong></p>
     </div>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
-    <p style="font-size:12px;color:#64748b;margin:0">Dossiê gerado automaticamente pelo Subradar em {date.today().strftime("%d/%m/%Y")}.</p>
+    <p style="font-size:12px;color:#64748b;margin:0">Dossiê gerado automaticamente pelo Subradar em {today}.</p>
   </div>
 </body>
 </html>"""
