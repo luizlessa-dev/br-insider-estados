@@ -386,13 +386,18 @@ class BDCNegativacoesPFConnector(SubradarSource):
         if not mudou:
             return []
 
-        upsert("sub_snapshots", [{
-            "cpf": cpf_fmt,
-            "fonte": self.fonte,
-            "ciclo": ciclo,
-            "hash_dados": hash_novo,
-            "dados": {"registros": dados},
-        }])
+        # Persiste em sub_pf_dados (tabela específica para PF)
+        for d in dados:
+            alerta = _build_alerta(cpf_fmt, ciclo, d, self.fonte)
+            upsert("sub_pf_dados", [{
+                "cpf": cpf_fmt,
+                "fonte": self.fonte,
+                "ciclo": ciclo,
+                "titulo_secao": alerta["titulo"],
+                "descricao": alerta["descricao"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "categoria": alerta["categoria"],
+            }])
 
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
@@ -428,13 +433,18 @@ class BDCProcessosPFConnector(SubradarSource):
         if not mudou:
             return []
 
-        upsert("sub_snapshots", [{
-            "cpf": cpf_fmt,
-            "fonte": self.fonte,
-            "ciclo": ciclo,
-            "hash_dados": hash_novo,
-            "dados": {"registros": dados},
-        }])
+        # Persiste em sub_pf_dados (tabela específica para PF)
+        for d in dados:
+            alerta = _build_alerta(cpf_fmt, ciclo, d, self.fonte)
+            upsert("sub_pf_dados", [{
+                "cpf": cpf_fmt,
+                "fonte": self.fonte,
+                "ciclo": ciclo,
+                "titulo_secao": alerta["titulo"],
+                "descricao": alerta["descricao"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "categoria": alerta["categoria"],
+            }])
 
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
@@ -473,12 +483,17 @@ class BDCFinanceiroPFConnector(SubradarSource):
         if not mudou:
             return []
 
-        upsert("sub_snapshots", [{
-            "cpf": cpf_fmt,
-            "fonte": self.fonte,
-            "ciclo": ciclo,
-            "hash_dados": hash_novo,
-            "dados": {"registros": dados},
-        }])
+        # Persiste em sub_pf_dados (tabela específica para PF)
+        for d in dados:
+            alerta = _build_alerta(cpf_fmt, ciclo, d, self.fonte)
+            upsert("sub_pf_dados", [{
+                "cpf": cpf_fmt,
+                "fonte": self.fonte,
+                "ciclo": ciclo,
+                "titulo_secao": alerta["titulo"],
+                "descricao": alerta["descricao"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "categoria": alerta["categoria"],
+            }])
 
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
