@@ -1,0 +1,15 @@
+# Subradar PF Server Dependencies
+
+# Web framework
+Flask==2.3.3
+Flask-CORS==4.0.0
+Flask-Limiter==3.5.0
+
+# HTTP
+requests==2.31.0
+
+# PDF
+reportlab==4.0.7
+
+# Utilities
+python-dotenv==1.0.0
