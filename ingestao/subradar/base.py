@@ -74,11 +74,15 @@ def upsert(table: str, rows: list[dict]) -> None:
         batch = [_jsonable(r) for r in _normalize_rows(rows[i : i + chunk])]
         for attempt in range(5):
             try:
-                # sub_snapshots: unique (cnpj, ciclo, fonte) — usa on_conflict para ignorar duplicatas
+                # sub_snapshots: unique (cnpj/cpf, ciclo, fonte) — usa on_conflict para ignorar duplicatas
                 req_url  = url
                 req_hdrs = {**_supabase_headers()}
                 if table == "sub_snapshots":
-                    req_url  = url + "?on_conflict=cnpj,ciclo,fonte"
+                    # Detecta se é PF (cpf) ou PJ (cnpj)
+                    has_cpf = any("cpf" in row for row in batch)
+                    has_cnpj = any("cnpj" in row for row in batch)
+                    conflict_key = "cpf,ciclo,fonte" if has_cpf else "cnpj,ciclo,fonte"
+                    req_url  = url + f"?on_conflict={conflict_key}"
                     req_hdrs["Prefer"] = "resolution=ignore-duplicates,return=minimal"
                 elif table == "sub_pf_dados":
                     req_url  = url + "?on_conflict=cpf,ciclo,fonte"
