@@ -355,10 +355,11 @@ class BDCRestritivosQuodPFConnector(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
@@ -396,10 +397,11 @@ class BDCRestritevosBiroPFConnector(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
@@ -437,10 +439,11 @@ class BDCFlagsNegativosQuodPFConnector(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
@@ -478,10 +481,11 @@ class BDCSegurancaPublicaPFConnector(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
@@ -512,8 +516,18 @@ class BDCScoreQuodPFConnector(SubradarSource):
         if not mudou:
             return []
 
-        upsert("sub_snapshots", [{"cpf": cpf_fmt, "fonte": self.fonte, "ciclo": ciclo,
-                                   "hash_dados": hash_novo, "dados": dado}])
+        # Persiste em sub_pf_dados (tabela específica para PF)
+        alerta = _build_alerta(cpf_fmt, ciclo, dado, self.fonte)
+        upsert("sub_pf_dados", [{
+            "cpf": cpf_fmt,
+            "fonte": self.fonte,
+            "ciclo": ciclo,
+            "categoria": alerta["categoria"],
+            "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+            "titulo_secao": alerta["titulo"],
+            "resumo": alerta["descricao"],
+            "detalhes": {"dados": dado},
+        }])
         return [_build_alerta(cpf_fmt, ciclo, dado, self.fonte)]
 
 
@@ -601,10 +615,11 @@ class BDCNegativacoesPFConnectorV2(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
@@ -676,8 +691,18 @@ class BDCScoreQuodPFConnectorV2(SubradarSource):
         mudou, hash_novo = _salvar_snapshot(cpf_fmt, self.fonte, ciclo, dado)
         if not mudou:
             return []
-        upsert("sub_snapshots", [{"cpf": cpf_fmt, "fonte": self.fonte, "ciclo": ciclo,
-                                   "hash_dados": hash_novo, "dados": dado}])
+        # Persiste em sub_pf_dados (tabela específica para PF)
+        alerta = _build_alerta(cpf_fmt, ciclo, dado, self.fonte)
+        upsert("sub_pf_dados", [{
+            "cpf": cpf_fmt,
+            "fonte": self.fonte,
+            "ciclo": ciclo,
+            "categoria": alerta["categoria"],
+            "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+            "titulo_secao": alerta["titulo"],
+            "resumo": alerta["descricao"],
+            "detalhes": {"dados": dado},
+        }])
         return [_build_alerta(cpf_fmt, ciclo, dado, self.fonte)]
 
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:

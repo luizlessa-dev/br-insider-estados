@@ -393,10 +393,11 @@ class BDCNegativacoesPFConnector(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
 
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
@@ -440,10 +441,11 @@ class BDCProcessosPFConnector(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
 
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
@@ -490,10 +492,11 @@ class BDCFinanceiroPFConnector(SubradarSource):
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
                 "ciclo": ciclo,
-                "titulo_secao": alerta["titulo"],
-                "descricao": alerta["descricao"],
-                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
                 "categoria": alerta["categoria"],
+                "status": "critico" if alerta["severidade"] == "critico" else "limpo",
+                "titulo_secao": alerta["titulo"],
+                "resumo": alerta["descricao"],
+                "detalhes": {"tipo": d.get("tipo"), "dados": d},
             }])
 
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
