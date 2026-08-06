@@ -233,7 +233,7 @@ def _parse_score_quod(result: dict) -> dict | None:
     elif score < _SCORE_ATENCAO:
         sev, faixa = "atencao", "medio_risco"
     else:
-        sev, faixa = "info", "baixo_risco"
+        sev, faixa = "INFO", "baixo_risco"
 
     return {
         "tipo": "score_credito",
@@ -356,7 +356,7 @@ class BDCRestritivosQuodPFConnector(SubradarSource):
                 "fonte": self.fonte,
                 "ciclo": ciclo,
                 "categoria": alerta["categoria"],
-                "status": "CRITICO" if alerta["severidade"] == "critico" else "limpo",
+                "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
                 "titulo_secao": alerta["titulo"],
                 "resumo": alerta["descricao"],
                 "detalhes": {"tipo": d.get("tipo"), "dados": d},
@@ -398,7 +398,7 @@ class BDCRestritevosBiroPFConnector(SubradarSource):
                 "fonte": self.fonte,
                 "ciclo": ciclo,
                 "categoria": alerta["categoria"],
-                "status": "CRITICO" if alerta["severidade"] == "critico" else "limpo",
+                "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
                 "titulo_secao": alerta["titulo"],
                 "resumo": alerta["descricao"],
                 "detalhes": {"tipo": d.get("tipo"), "dados": d},
@@ -440,7 +440,7 @@ class BDCFlagsNegativosQuodPFConnector(SubradarSource):
                 "fonte": self.fonte,
                 "ciclo": ciclo,
                 "categoria": alerta["categoria"],
-                "status": "CRITICO" if alerta["severidade"] == "critico" else "limpo",
+                "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
                 "titulo_secao": alerta["titulo"],
                 "resumo": alerta["descricao"],
                 "detalhes": {"tipo": d.get("tipo"), "dados": d},
@@ -482,7 +482,7 @@ class BDCSegurancaPublicaPFConnector(SubradarSource):
                 "fonte": self.fonte,
                 "ciclo": ciclo,
                 "categoria": alerta["categoria"],
-                "status": "CRITICO" if alerta["severidade"] == "critico" else "limpo",
+                "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
                 "titulo_secao": alerta["titulo"],
                 "resumo": alerta["descricao"],
                 "detalhes": {"tipo": d.get("tipo"), "dados": d},
@@ -523,7 +523,7 @@ class BDCScoreQuodPFConnector(SubradarSource):
             "fonte": self.fonte,
             "ciclo": ciclo,
             "categoria": alerta["categoria"],
-            "status": "CRITICO" if alerta["severidade"] == "critico" else "limpo",
+            "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
             "titulo_secao": alerta["titulo"],
             "resumo": alerta["descricao"],
             "detalhes": {"dados": dado},
@@ -579,7 +579,7 @@ class BDCDadosFinanceirosPFConnector(SubradarSource):
             resumo_txt.append(f"Patrimônio: R$ {float(patrimonio):,.0f}".replace(",", "."))
         return {
             "fonte": self.fonte, "categoria": "financeiro",
-            "status": "LIMPO" if resumo_txt else "pendente",
+            "status": "LIMPO" if resumo_txt else "PENDENTE",
             "titulo_secao": "Dados Financeiros Estimados (BDC)",
             "resumo": " · ".join(resumo_txt) if resumo_txt else "Dados não disponíveis",
             "detalhes": data,
@@ -616,7 +616,7 @@ class BDCNegativacoesPFConnectorV2(SubradarSource):
                 "fonte": self.fonte,
                 "ciclo": ciclo,
                 "categoria": alerta["categoria"],
-                "status": "CRITICO" if alerta["severidade"] == "critico" else "limpo",
+                "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
                 "titulo_secao": alerta["titulo"],
                 "resumo": alerta["descricao"],
                 "detalhes": {"tipo": d.get("tipo"), "dados": d},
@@ -661,7 +661,7 @@ class BDCNegativacoesPFConnectorV2(SubradarSource):
         if total_consultas:
             partes.append(f"{total_consultas} consulta(s) ao CPF nos últimos 90+ dias")
 
-        status = "alerta" if (ativas or protestos or processos) else ("info" if has_neg else "limpo")
+        status = "ALERTA" if (ativas or protestos or processos) else ("INFO" if has_neg else "LIMPO")
         return {"fonte": self.fonte, "categoria": "financeiro",
                 "status": status,
                 "titulo_secao": "Negativações / Restrições (Quod)",
@@ -698,7 +698,7 @@ class BDCScoreQuodPFConnectorV2(SubradarSource):
             "fonte": self.fonte,
             "ciclo": ciclo,
             "categoria": alerta["categoria"],
-            "status": "CRITICO" if alerta["severidade"] == "critico" else "limpo",
+            "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
             "titulo_secao": alerta["titulo"],
             "resumo": alerta["descricao"],
             "detalhes": {"dados": dado},
@@ -723,7 +723,7 @@ class BDCScoreQuodPFConnectorV2(SubradarSource):
         score = dado["score"]
         faixa = dado["faixa"].replace("_", " ")
         return {"fonte": self.fonte, "categoria": "financeiro",
-                "status": "ALERTA" if score < _SCORE_ATENCAO else "limpo",
+                "status": "ALERTA" if score < _SCORE_ATENCAO else "LIMPO",
                 "titulo_secao": "Score de Crédito Quod (300–1000)",
                 "resumo": f"{score} — {faixa}",
                 "detalhes": dado}

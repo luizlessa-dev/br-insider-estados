@@ -28,7 +28,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sys
 
 import requests
 
@@ -241,7 +240,7 @@ def _build_alerta(doc_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
         descricao = str(dado)
         categoria = "credito"
 
-    result = {
+    return {
         "doc": doc_fmt,
         "ciclo": ciclo,
         "fonte": fonte,
@@ -252,8 +251,6 @@ def _build_alerta(doc_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
         "url_fonte": "https://bigdatacorp.com.br",
         "is_novo": True,
     }
-    sys.stderr.write(f"DEBUG _build_alerta: tipo={tipo}, titulo={titulo}, descricao={descricao[:50]}\n")
-    return result
 
 
 # ─────────────────────────────────────────────────────────────
@@ -383,7 +380,6 @@ class BDCNegativacoesPFConnector(SubradarSource):
 
         dados = _parse_negativacoes(result, "NegativeData") or _parse_negativacoes(result, "negative_data")
         if not dados:
-            logger.info("BDCNegativacoesPFConnector: sem dados para %s (result=%s)", cpf_fmt, result)
             return []
 
         mudou, hash_novo = snapshot_changed(cpf_fmt, self.fonte, ciclo, dados)
