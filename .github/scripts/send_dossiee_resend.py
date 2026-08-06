@@ -38,32 +38,71 @@ r = requests.get(f"{sb_url}/rest/v1/sub_pf_alertas?cpf=eq.{cpf_fmt}&ciclo=eq.{ci
 alertas = r.json() if r.ok else []
 n_criticos = sum(1 for a in alertas if a.get("severidade") == "critico")
 n_atencao = sum(1 for a in alertas if a.get("severidade") == "atencao")
-n_ok = len(alertas) - n_criticos - n_atencao
 
 r = requests.get(f"{sb_url}/rest/v1/sub_pf_dados?cpf=eq.{cpf_fmt}&ciclo=eq.{ciclo}", headers=hdrs, timeout=20)
 dados = r.json() if r.ok else []
 
-# Cores profissionais
+# Contar fontes por status
+fontes_ok = sum(1 for d in dados if d.get("status", "").lower() == "limpo")
+fontes_pendente = sum(1 for d in dados if d.get("status", "").lower() == "pendente")
+fontes_critico = sum(1 for d in dados if d.get("status", "").lower() == "critico")
+total_fontes = len(dados)
+
+# Definir cor do banner baseado no score
+def get_banner_color(score_val):
+    if score_val <= 20:
+        return HexColor("#16a34a")  # VERDE
+    elif score_val <= 50:
+        return HexColor("#d97706")  # AMARELO/LARANJA
+    elif score_val <= 80:
+        return HexColor("#dc2626")  # VERMELHO
+    else:
+        return HexColor("#7f1d1d")  # VERMELHO ESCURO (CRÍTICO)
+
+def get_faixa_color(score_val):
+    if score_val <= 20:
+        return "BAIXO"
+    elif score_val <= 50:
+        return "MÉDIO"
+    elif score_val <= 80:
+        return "ALTO"
+    else:
+        return "CRÍTICO"
+
+banner_color = get_banner_color(score)
+faixa_label = get_faixa_color(score)
+
+# Cores
 color_dark_bg = HexColor("#0f172a")
-color_red = HexColor("#dc2626")
 color_green = HexColor("#16a34a")
 color_orange = HexColor("#d97706")
+color_red = HexColor("#dc2626")
 color_gray_dark = HexColor("#1f2937")
 color_gray_light = HexColor("#f3f4f6")
 color_gray_text = HexColor("#6b7280")
 color_white = HexColor("#ffffff")
 
-# Gerar PDF
+# Gerar PDF multi-página
 pdf_buffer = io.BytesIO()
 c = canvas.Canvas(pdf_buffer, pagesize=A4)
 width, height = A4
+page_num = 0
+y = height
+
+def new_page():
+    global page_num, y
+    if page_num > 0:
+        c.showPage()
+    page_num += 1
+    y = height
+    draw_header()
+    y -= 60
 
 def draw_header():
-    """Header dark com logo espaço e data"""
+    """Header dark com logo e data"""
     c.setFillColor(color_dark_bg)
     c.rect(0, height - 50, width, 50, fill=True, stroke=False)
 
-    # Logo placeholder (SUBRADAR)
     c.setFont("Helvetica-Bold", 14)
     c.setFillColor(color_white)
     c.drawString(50, height - 30, "SUBRADAR")
@@ -72,107 +111,60 @@ def draw_header():
     c.setFillColor(color_gray_text)
     c.drawString(50, height - 42, "INTELIGÊNCIA CORPORATIVA")
 
-    # Data
     c.setFont("Helvetica", 9)
     c.setFillColor(color_gray_text)
     c.drawRightString(width - 50, height - 30, "DOSSIÊ DE COMPLIANCE")
     c.drawRightString(width - 50, height - 42, today)
 
-def draw_banner():
-    """Banner vermelho com score e KPIs"""
-    y = height - 50
+# Página 1: Banner + Resumo
+new_page()
 
-    # Banner vermelho
-    c.setFillColor(color_red)
-    c.rect(0, y - 110, width, 110, fill=True, stroke=False)
+# Banner colorido com cor dinâmica
+c.setFillColor(banner_color)
+c.rect(0, y - 120, width, 120, fill=True, stroke=False)
 
-    # Nome (esquerda)
-    c.setFont("Helvetica-Bold", 16)
-    c.setFillColor(color_white)
-    c.drawString(50, y - 35, nome.upper())
+c.setFont("Helvetica-Bold", 16)
+c.setFillColor(color_white)
+c.drawString(50, y - 40, nome.upper())
 
-    c.setFont("Helvetica", 11)
-    c.drawString(50, y - 52, f"CPF {cpf_fmt} · Ciclo {ciclo}")
+c.setFont("Helvetica", 11)
+c.drawString(50, y - 58, f"CPF {cpf_fmt} · Ciclo {ciclo}")
 
-    # Score (direita, grande)
-    c.setFont("Helvetica-Bold", 48)
-    c.setFillColor(color_white)
-    c.drawRightString(width - 50, y - 45, str(score))
+# Score grande (direita)
+c.setFont("Helvetica-Bold", 56)
+c.drawRightString(width - 50, y - 50, str(score))
 
-    # Faixa
-    c.setFont("Helvetica-Bold", 12)
-    c.drawRightString(width - 50, y - 72, faixa.upper())
+# Faixa (direita, embaixo do score)
+c.setFont("Helvetica-Bold", 13)
+c.drawRightString(width - 50, y - 85, faixa_label)
 
-    # KPIs na direita (pequeno)
-    c.setFont("Helvetica", 9)
-    kpi_text = f"{len(dados)} FONTES  {len(alertas)} OK  {n_criticos} ALERTAS"
-    c.drawRightString(width - 50, y - 92, kpi_text)
+# KPIs (direita, embaixo)
+c.setFont("Helvetica", 10)
+kpi_str = f"{total_fontes} FONTES  {fontes_ok} OK  {len(alertas)} ALERTAS"
+c.drawRightString(width - 50, y - 105, kpi_str)
 
-    return y - 110
-
-def draw_section_title(y, title):
-    """Desenha título de seção"""
-    c.setFont("Helvetica-Bold", 12)
-    c.setFillColor(color_dark_bg)
-    c.drawString(50, y, title)
-    return y - 20
-
-def draw_table_header(y, cols):
-    """Desenha header de tabela"""
-    col_width = (width - 100) / len(cols)
-
-    c.setFillColor(color_gray_dark)
-    c.rect(50, y - 20, width - 100, 20, fill=True, stroke=False)
-
-    c.setFont("Helvetica-Bold", 10)
-    c.setFillColor(color_white)
-
-    x = 55
-    for col in cols:
-        c.drawString(x, y - 15, col)
-        x += col_width
-
-    return y - 20
-
-def draw_table_row(y, values, row_num, bg_color=None):
-    """Desenha linha de tabela"""
-    if bg_color is None:
-        bg_color = color_white if row_num % 2 == 0 else color_gray_light
-
-    col_width = (width - 100) / len(values)
-
-    c.setFillColor(bg_color)
-    c.rect(50, y - 20, width - 100, 20, fill=True, stroke=False)
-
-    c.setLineWidth(0.5)
-    c.setStrokeColor(HexColor("#e5e7eb"))
-    c.rect(50, y - 20, width - 100, 20, fill=False, stroke=True)
-
-    c.setFont("Helvetica", 9)
-    c.setFillColor(color_dark_bg)
-
-    x = 55
-    for val in values:
-        c.drawString(x, y - 14, str(val)[:40])
-        x += col_width
-
-    return y - 20
-
-# Desenhar PDF
-y = height - 50
-
-# Header
-draw_header()
-
-# Banner
-y = draw_banner()
-y -= 20
+y -= 140
 
 # Resumo de categorias
-y = draw_section_title(y, "RESUMO DAS FONTES CONSULTADAS")
-y -= 10
+c.setFont("Helvetica-Bold", 12)
+c.setFillColor(color_dark_bg)
+c.drawString(50, y, "RESUMO DAS FONTES CONSULTADAS")
+y -= 20
 
 # Tabela de categorias
+c.setFillColor(color_gray_dark)
+c.rect(50, y - 20, width - 100, 20, fill=True, stroke=False)
+
+c.setFont("Helvetica-Bold", 10)
+c.setFillColor(color_white)
+c.drawString(60, y - 15, "CATEGORIA")
+c.drawString(250, y - 15, "LIMPO")
+c.drawString(350, y - 15, "PENDENTE")
+c.drawString(450, y - 15, "CRÍTICO")
+
+y -= 20
+
+# Agrupar por categoria
 categorias = {}
 for d in dados:
     cat = d.get("categoria", "outro")
@@ -186,44 +178,90 @@ for d in dados:
     else:
         categorias[cat]["pendente"] += 1
 
-if categorias:
-    y = draw_table_header(y, ["CATEGORIA", "LIMPO", "PENDENTE", "CRÍTICO"])
+row_num = 0
+for cat in sorted(categorias.keys()):
+    counts = categorias[cat]
 
-    row_num = 0
-    for cat in sorted(categorias.keys()):
-        counts = categorias[cat]
-        values = [cat.replace("_", " ").title(), str(counts["limpo"]), str(counts["pendente"]), str(counts["critico"])]
-        y = draw_table_row(y, values, row_num)
-        row_num += 1
+    bg_color = color_gray_light if row_num % 2 == 0 else color_white
+    c.setFillColor(bg_color)
+    c.rect(50, y - 18, width - 100, 18, fill=True, stroke=False)
 
-y -= 15
+    c.setLineWidth(0.5)
+    c.setStrokeColor(HexColor("#e5e7eb"))
+    c.rect(50, y - 18, width - 100, 18, fill=False, stroke=True)
 
-# Alertas se houver
-if alertas:
-    y = draw_section_title(y, "ALERTAS ENCONTRADOS")
-    y -= 10
-
-    y = draw_table_header(y, ["TÍTULO", "SEVERIDADE"])
-
-    row_num = 0
-    for alerta in alertas[:10]:
-        sev = alerta.get("severidade", "info").upper()
-        values = [alerta.get("titulo", "N/A")[:40], sev]
-        y = draw_table_row(y, values, row_num)
-        row_num += 1
-
-y -= 15
-
-# Metodologia (se espaço)
-if y > 200:
-    y = draw_section_title(y, "CLASSIFICAÇÃO DE RISCO")
-    y -= 8
-
-    c.setFont("Helvetica", 8)
+    c.setFont("Helvetica", 9)
     c.setFillColor(color_dark_bg)
-    c.drawString(50, y, "CRÍTICO (30pts) · ATENÇÃO (10pts) · INFORMATIVO (2pts) · OK (0pts)")
+    c.drawString(60, y - 12, cat.replace("_", " ").title())
+    c.drawString(250, y - 12, str(counts["limpo"]))
+    c.drawString(350, y - 12, str(counts["pendente"]))
+    c.drawString(450, y - 12, str(counts["critico"]))
 
-# Footer
+    y -= 18
+    row_num += 1
+
+    if y < 100:
+        new_page()
+
+# Página 2+: Lista completa de fontes
+y -= 20
+
+c.setFont("Helvetica-Bold", 12)
+c.setFillColor(color_dark_bg)
+c.drawString(50, y, "DETALHAMENTO DAS FONTES CONSULTADAS")
+y -= 20
+
+# Header tabela de fontes
+c.setFillColor(color_gray_dark)
+c.rect(50, y - 20, width - 100, 20, fill=True, stroke=False)
+
+c.setFont("Helvetica-Bold", 10)
+c.setFillColor(color_white)
+c.drawString(60, y - 15, "FONTE")
+c.drawString(400, y - 15, "STATUS")
+
+y -= 20
+
+# Listar todas as fontes
+row_num = 0
+for d in sorted(dados, key=lambda x: (x.get("categoria", ""), x.get("titulo_secao", ""))):
+    titulo = d.get("titulo_secao", "N/A")[:45]
+    status = d.get("status", "PENDENTE").upper()
+
+    # Determinar cor do status
+    if status == "LIMPO":
+        status_color = color_green
+    elif status == "CRITICO":
+        status_color = color_red
+    else:
+        status_color = color_orange
+
+    # Check se precisa nova página
+    if y < 80:
+        new_page()
+
+    # Linha da tabela
+    bg_color = color_gray_light if row_num % 2 == 0 else color_white
+    c.setFillColor(bg_color)
+    c.rect(50, y - 18, width - 100, 18, fill=True, stroke=False)
+
+    c.setLineWidth(0.5)
+    c.setStrokeColor(HexColor("#e5e7eb"))
+    c.rect(50, y - 18, width - 100, 18, fill=False, stroke=True)
+
+    c.setFont("Helvetica", 9)
+    c.setFillColor(color_dark_bg)
+    c.drawString(60, y - 12, titulo)
+
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillColor(status_color)
+    c.drawString(400, y - 12, status)
+
+    y -= 18
+    row_num += 1
+
+# Footer na última página
+y -= 10
 c.setLineWidth(0.5)
 c.setStrokeColor(HexColor("#e5e7eb"))
 c.line(50, 45, width - 50, 45)
@@ -250,12 +288,12 @@ html = f"""<!DOCTYPE html>
     <div style="background:#f1f5f9;padding:12px;border-radius:6px;margin-bottom:16px">
       <p style="margin:4px 0"><strong>Nome:</strong> {nome}</p>
       <p style="margin:4px 0"><strong>CPF:</strong> {cpf_fmt}</p>
-      <p style="margin:4px 0"><strong>Score de Risco:</strong> <span style="font-size:24px;color:#dc2626;font-weight:bold">{score}</span>/100</p>
-      <p style="margin:4px 0"><strong>Faixa:</strong> {faixa.upper()}</p>
+      <p style="margin:4px 0"><strong>Score de Risco:</strong> <span style="font-size:24px;font-weight:bold">{score}</span>/100 ({faixa_label})</p>
+      <p style="margin:4px 0"><strong>Fontes consultadas:</strong> {total_fontes}</p>
       <p style="margin:4px 0"><strong>Data:</strong> {today}</p>
     </div>
     <div style="padding:12px;background:#f0f9ff;border-radius:6px;margin-bottom:16px;border-left:4px solid #3b82f6">
-      <p style="margin:0;font-size:12px;color:#1e40af">📎 <strong>PDF profissional anexado</strong></p>
+      <p style="margin:0;font-size:12px;color:#1e40af">📎 <strong>PDF profissional com {page_num} página(s) anexado</strong></p>
     </div>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
     <p style="font-size:12px;color:#64748b;margin:0">Dossiê gerado automaticamente pelo Subradar em {today}.</p>
@@ -271,7 +309,7 @@ if not resend_key:
 payload = {
     "from": "retorno@subradar.com.br",
     "to": email_cliente,
-    "subject": f"Subradar PF — {nome} · Score {score}",
+    "subject": f"Subradar PF — {nome} · Score {score} ({faixa_label})",
     "html": html,
     "attachments": [
         {
