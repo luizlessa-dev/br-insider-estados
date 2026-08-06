@@ -380,6 +380,7 @@ class BDCNegativacoesPFConnector(SubradarSource):
 
         dados = _parse_negativacoes(result, "NegativeData") or _parse_negativacoes(result, "negative_data")
         if not dados:
+            logger.info("BDCNegativacoesPFConnector: sem dados para %s (result=%s)", cpf_fmt, result)
             return []
 
         mudou, hash_novo = snapshot_changed(cpf_fmt, self.fonte, ciclo, dados)
@@ -428,6 +429,7 @@ class BDCProcessosPFConnector(SubradarSource):
 
         dados = _parse_processos(result, "ProcessData") or _parse_processos(result, "process_data")
         if not dados:
+            logger.info("BDCProcessosPFConnector: sem dados para %s (result=%s)", cpf_fmt, result)
             return []
 
         mudou, hash_novo = snapshot_changed(cpf_fmt, self.fonte, ciclo, dados)
@@ -479,6 +481,7 @@ class BDCFinanceiroPFConnector(SubradarSource):
             or _parse_financeiro(result, "financial_data")
         )
         if not dados:
+            logger.info("BDCFinanceiroPFConnector: sem dados para %s (result=%s)", cpf_fmt, result)
             return []
 
         mudou, hash_novo = snapshot_changed(cpf_fmt, self.fonte, ciclo, dados)

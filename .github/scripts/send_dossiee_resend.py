@@ -42,18 +42,6 @@ n_atencao = sum(1 for a in alertas if a.get("severidade") == "atencao")
 r = requests.get(f"{sb_url}/rest/v1/sub_pf_dados?cpf=eq.{cpf_fmt}&ciclo=eq.{ciclo}", headers=hdrs, timeout=20)
 dados = r.json() if r.ok else []
 
-import sys
-sys.stderr.write(f"DEBUG: Query status={r.status_code}, registros={len(dados)}\n")
-sys.stderr.write(f"DEBUG: CPF={cpf_fmt}, ciclo={ciclo}\n")
-sys.stderr.flush()
-
-# DEBUG: verificar primeiro registro
-if dados:
-    print(f"DEBUG: Primeiro registro de sub_pf_dados:", flush=True)
-    print(f"  Chaves: {list(dados[0].keys())}", flush=True)
-    print(f"  Resumo: '{dados[0].get('resumo')}'", flush=True)
-    print(f"  Detalhes: {dados[0].get('detalhes')}", flush=True)
-
 # Contar fontes por status
 fontes_ok = sum(1 for d in dados if d.get("status", "").upper() == "LIMPO")
 fontes_pendente = sum(1 for d in dados if d.get("status", "").upper() == "PENDENTE")
