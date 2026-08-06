@@ -225,8 +225,9 @@ y -= 20
 # Listar todas as fontes
 row_num = 0
 for d in sorted(dados, key=lambda x: (x.get("categoria", ""), x.get("titulo_secao", ""))):
-    titulo = d.get("titulo_secao", "N/A")[:45]
+    titulo = d.get("titulo_secao", "N/A")
     status = d.get("status", "PENDENTE").upper()
+    descricao = d.get("descricao", "") or d.get("resultado", "") or ""
 
     # Determinar cor do status
     if status == "LIMPO":
@@ -236,28 +237,42 @@ for d in sorted(dados, key=lambda x: (x.get("categoria", ""), x.get("titulo_seca
     else:
         status_color = color_orange
 
+    # Calcular altura da linha (pode ter múltiplas linhas se descrição for longa)
+    desc_text = descricao[:60] if descricao else "—"
+    line_height = 18
+    if status == "PENDENTE" and descricao:
+        line_height = 28
+
     # Check se precisa nova página
-    if y < 80:
+    if y < (line_height + 20):
         new_page()
 
     # Linha da tabela
     bg_color = color_gray_light if row_num % 2 == 0 else color_white
     c.setFillColor(bg_color)
-    c.rect(50, y - 18, width - 100, 18, fill=True, stroke=False)
+    c.rect(50, y - line_height, width - 100, line_height, fill=True, stroke=False)
 
     c.setLineWidth(0.5)
     c.setStrokeColor(HexColor("#e5e7eb"))
-    c.rect(50, y - 18, width - 100, 18, fill=False, stroke=True)
+    c.rect(50, y - line_height, width - 100, line_height, fill=False, stroke=True)
 
+    # Fonte
     c.setFont("Helvetica", 9)
     c.setFillColor(color_dark_bg)
-    c.drawString(60, y - 12, titulo)
+    c.drawString(60, y - 12, titulo[:50])
 
+    # Status
     c.setFont("Helvetica-Bold", 9)
     c.setFillColor(status_color)
     c.drawString(400, y - 12, status)
 
-    y -= 18
+    # Descrição (se houver)
+    if status == "PENDENTE" and descricao:
+        c.setFont("Helvetica", 8)
+        c.setFillColor(color_gray_text)
+        c.drawString(60, y - 24, desc_text)
+
+    y -= line_height
     row_num += 1
 
 # Footer na última página
