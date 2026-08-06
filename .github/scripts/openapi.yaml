@@ -1,0 +1,367 @@
+openapi: 3.0.0
+info:
+  title: Subradar PF API
+  description: Production-grade API for compliance dossiê generation and email delivery
+  version: 1.0.0
+  contact:
+    name: Subradar Support
+    url: https://subradar.com.br
+  license:
+    name: Proprietary
+    url: https://subradar.com.br/license
+
+servers:
+  - url: http://localhost:5000
+    description: Local development server
+  - url: https://api.subradar.com.br
+    description: Production server
+
+tags:
+  - name: Health
+    description: Server health and status endpoints
+  - name: Dossiee
+    description: Compliance dossiê generation and delivery
+
+paths:
+  /:
+    get:
+      tags:
+        - Health
+      summary: Service info and health check
+      description: Returns service status and available endpoints
+      operationId: getServiceInfo
+      responses:
+        '200':
+          description: Service is online
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceInfo'
+      x-codeSamples:
+        - lang: bash
+          source: 'curl http://localhost:5000/'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Simple health check endpoint
+      operationId: getHealth
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+      x-codeSamples:
+        - lang: bash
+          source: 'curl http://localhost:5000/health'
+
+  /api/subradar/dossiee:
+    options:
+      tags:
+        - Dossiee
+      summary: CORS preflight
+      description: Handles CORS preflight requests
+      operationId: preflight
+      responses:
+        '204':
+          description: Preflight OK
+
+    post:
+      tags:
+        - Dossiee
+      summary: Generate and send compliance dossiê
+      description: |
+        Generates a professional PDF compliance report and optionally sends it via email.
+
+        ## Actions
+        - **send**: Generate PDF and send via email
+        - **generate**: Generate PDF only (returns base64-encoded)
+
+        ## Rate Limiting
+        - 10 requests per minute per IP address
+        - 200 requests per day per IP address
+
+        ## Caching
+        - Successful requests cached for 5 minutes
+        - Cache key: `{cpf}:{action}`
+
+        ## Processing Time
+        - Typical: 2-3 seconds
+        - With cache: <100ms
+      operationId: generateDossiee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DossieeRequest'
+            examples:
+              send:
+                summary: Send dossiê via email
+                value:
+                  cpf: "12345678901"
+                  nome: "João da Silva"
+                  email: "joao@example.com"
+                  action: "send"
+              generate:
+                summary: Generate PDF only
+                value:
+                  cpf: "123.456.789-01"
+                  nome: "Maria Santos"
+                  email: "maria@example.com"
+                  action: "generate"
+
+      responses:
+        '200':
+          description: Success - dossiê generated/sent
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SendSuccess'
+                  - $ref: '#/components/schemas/GenerateSuccess'
+              examples:
+                send:
+                  summary: Email sent response
+                  value:
+                    success: true
+                    score: 42
+                    faixa: "MÉDIO"
+                    message: "Dossiê enviado para joao@example.com"
+                generate:
+                  summary: PDF generated response
+                  value:
+                    success: true
+                    score: 42
+                    faixa: "MÉDIO"
+                    pdf: "JVBERi0xLjQK..."
+
+        '400':
+          description: Bad Request - validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missingField:
+                  summary: Missing required field
+                  value:
+                    success: false
+                    error: "Campo obrigatório ausente: cpf"
+                invalidCPF:
+                  summary: Invalid CPF format
+                  value:
+                    success: false
+                    error: "CPF deve conter 11 dígitos"
+                invalidEmail:
+                  summary: Invalid email format
+                  value:
+                    success: false
+                    error: "Email inválido"
+
+        '429':
+          description: Too Many Requests - rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Muitas requisições. Tente novamente em alguns minutos."
+
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Erro interno do servidor"
+
+        '503':
+          description: Service Unavailable - external API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                supabaseOffline:
+                  summary: Supabase is offline
+                  value:
+                    success: false
+                    error: "Supabase offline"
+                resendError:
+                  summary: Resend API error
+                  value:
+                    success: false
+                    error: "Resend API error: 429"
+
+        '504':
+          description: Gateway Timeout - request took too long
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Timeout ao processar requisição"
+
+components:
+  schemas:
+    ServiceInfo:
+      type: object
+      required:
+        - service
+        - version
+        - status
+        - endpoints
+      properties:
+        service:
+          type: string
+          example: "Subradar PF API"
+        version:
+          type: string
+          example: "1.0.0"
+        status:
+          type: string
+          enum: [online, offline]
+          example: "online"
+        endpoints:
+          type: object
+          additionalProperties:
+            type: string
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+          example: "healthy"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-08-06T11:30:45.123456"
+
+    DossieeRequest:
+      type: object
+      required:
+        - cpf
+        - nome
+        - email
+        - action
+      properties:
+        cpf:
+          type: string
+          description: "CPF (11 digits or formatted as XXX.XXX.XXX-XX)"
+          example: "12345678901"
+          pattern: '^\d{11}$|^\d{3}\.\d{3}\.\d{3}-\d{2}$'
+        nome:
+          type: string
+          description: "Full name (3-200 characters)"
+          example: "João da Silva"
+          minLength: 3
+          maxLength: 200
+        email:
+          type: string
+          description: "Email address for delivery (send action only)"
+          format: email
+          example: "joao@example.com"
+          maxLength: 255
+        action:
+          type: string
+          description: "Action to perform"
+          enum: [send, generate]
+          example: "send"
+
+    SendSuccess:
+      type: object
+      required:
+        - success
+        - score
+        - faixa
+        - message
+      properties:
+        success:
+          type: boolean
+          example: true
+        score:
+          type: integer
+          description: "Risk score (0-100)"
+          minimum: 0
+          maximum: 100
+          example: 42
+        faixa:
+          type: string
+          description: "Risk level"
+          enum: [BAIXO, MÉDIO, ALTO, CRÍTICO]
+          example: "MÉDIO"
+        message:
+          type: string
+          description: "Success message"
+          example: "Dossiê enviado para joao@example.com"
+
+    GenerateSuccess:
+      type: object
+      required:
+        - success
+        - score
+        - faixa
+        - pdf
+      properties:
+        success:
+          type: boolean
+          example: true
+        score:
+          type: integer
+          description: "Risk score (0-100)"
+          minimum: 0
+          maximum: 100
+          example: 42
+        faixa:
+          type: string
+          description: "Risk level"
+          enum: [BAIXO, MÉDIO, ALTO, CRÍTICO]
+          example: "MÉDIO"
+        pdf:
+          type: string
+          description: "Base64-encoded PDF content"
+          format: base64
+          example: "JVBERi0xLjQK..."
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+          description: "Error message"
+          example: "CPF deve conter 11 dígitos"
+
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: "Optional API key for authentication"
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: "Optional JWT bearer token"
+
+security:
+  - apiKey: []
+  - bearerAuth: []
