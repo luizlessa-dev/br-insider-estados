@@ -28,6 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 
 import requests
 
@@ -204,8 +205,6 @@ def _build_alerta(doc_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
     tipo = dado.get("tipo", "desconhecido")
     sev  = dado.get("_severidade", "info")
 
-    logger.info("_build_alerta: tipo=%s, sev=%s, dado=%s", tipo, sev, dado)
-
     if tipo == "negativacao":
         total = dado["total"]
         valor = dado["valor_total"]
@@ -242,7 +241,7 @@ def _build_alerta(doc_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
         descricao = str(dado)
         categoria = "credito"
 
-    return {
+    result = {
         "doc": doc_fmt,
         "ciclo": ciclo,
         "fonte": fonte,
@@ -253,6 +252,8 @@ def _build_alerta(doc_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
         "url_fonte": "https://bigdatacorp.com.br",
         "is_novo": True,
     }
+    sys.stderr.write(f"DEBUG _build_alerta: tipo={tipo}, titulo={titulo}, descricao={descricao[:50]}\n")
+    return result
 
 
 # ─────────────────────────────────────────────────────────────
