@@ -240,7 +240,7 @@ for d in sorted(dados, key=lambda x: (x.get("categoria", ""), x.get("titulo_seca
     # Calcular altura da linha (pode ter múltiplas linhas se descrição for longa)
     desc_text = descricao[:60] if descricao else "—"
     line_height = 18
-    if status == "PENDENTE" and descricao:
+    if descricao and status in ("PENDENTE", "ALERTA", "CRITICO"):
         line_height = 28
 
     # Check se precisa nova página
@@ -266,8 +266,8 @@ for d in sorted(dados, key=lambda x: (x.get("categoria", ""), x.get("titulo_seca
     c.setFillColor(status_color)
     c.drawString(400, y - 12, status)
 
-    # Descrição (se houver)
-    if status == "PENDENTE" and descricao:
+    # Descrição/Resumo (se houver e status não for LIMPO)
+    if descricao and status in ("PENDENTE", "ALERTA", "CRITICO"):
         c.setFont("Helvetica", 8)
         c.setFillColor(color_gray_text)
         c.drawString(60, y - 24, desc_text)
