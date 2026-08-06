@@ -425,7 +425,6 @@ def main() -> None:
     atencao = sum(1 for a in alertas if a.get("severidade") == "atencao")
     logger.info("Concluído — %d crítico(s), %d atenção, %d info",
                 criticos, atencao, len(alertas) - criticos - atencao)
-    sys.exit(1 if criticos else 0)
 
 
 if __name__ == "__main__":
