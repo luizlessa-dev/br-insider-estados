@@ -201,8 +201,10 @@ def _parse_processos(result: dict, dataset_key: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────
 
 def _build_alerta(doc_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
-    tipo = dado["tipo"]
-    sev  = dado["_severidade"]
+    tipo = dado.get("tipo", "desconhecido")
+    sev  = dado.get("_severidade", "info")
+
+    logger.info("_build_alerta: tipo=%s, sev=%s, dado=%s", tipo, sev, dado)
 
     if tipo == "negativacao":
         total = dado["total"]
