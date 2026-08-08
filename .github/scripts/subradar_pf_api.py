@@ -27,6 +27,7 @@ import json
 import re
 import base64
 import logging
+import tempfile
 from datetime import date
 from io import BytesIO
 from typing import Optional, Dict, Any
@@ -35,6 +36,13 @@ import requests
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.colors import HexColor
+
+# Importar gerador de PDF profissional
+try:
+    from subradar_pf_pdf import gerar_dossie_pf_arquivo, gerar_dossie_pf_base64
+    _HAS_PDF_GENERATOR = True
+except ImportError:
+    _HAS_PDF_GENERATOR = False
 
 # Setup logging
 logging.basicConfig(
@@ -249,15 +257,16 @@ def get_faixa_label(score: int) -> str:
         return "CRÍTICO"
 
 
-def generate_pdf(nome: str, cpf_fmt: str, score: int, dados: list) -> bytes:
+def generate_pdf(nome: str, cpf_fmt: str, score: int, dados: list, alertas: list = None) -> bytes:
     """
-    Generate professional PDF dossiê.
+    Generate professional PDF dossiê using ReportLab + Platypus.
 
     Args:
         nome: Full name
-        cpf_fmt: Formatted CPF
+        cpf_fmt: Formatted CPF (stripped to digits for processing)
         score: Risk score (0-100)
-        dados: List of compliance data records
+        dados: List of compliance data records (unused, for compatibility)
+        alertas: List of alert records to include
 
     Returns:
         PDF as bytes
@@ -266,87 +275,47 @@ def generate_pdf(nome: str, cpf_fmt: str, score: int, dados: list) -> bytes:
         PDFGenerationError: If PDF generation fails
     """
     try:
-        logger.info(f"Gerando PDF para {cpf_fmt}")
+        logger.info(f"Gerando PDF profissional para {cpf_fmt}")
 
-        faixa_label = get_faixa_label(score)
-        banner_color = get_banner_color(score)
-        today = date.today().strftime("%d/%m/%Y")
+        if not _HAS_PDF_GENERATOR:
+            raise PDFGenerationError("subradar_pf_pdf não está disponível")
 
-        # Colors
-        color_dark_bg = HexColor("#0f172a")
-        color_green = HexColor("#16a34a")
-        color_orange = HexColor("#d97706")
-        color_red = HexColor("#dc2626")
-        color_gray_light = HexColor("#f3f4f6")
-        color_gray_text = HexColor("#6b7280")
-        color_white = HexColor("#ffffff")
+        faixa = get_faixa_label(score)
+        cpf_digits = re.sub(r"\D", "", cpf_fmt)
 
-        # PDF setup
-        pdf_buffer = BytesIO()
-        c = canvas.Canvas(pdf_buffer, pagesize=A4)
-        width, height = A4
-        y = height - 50
+        # Converter alertas para formato esperado
+        alertas_formatados = []
+        if alertas:
+            for alerta in alertas:
+                alertas_formatados.append({
+                    "titulo": alerta.get("titulo", "Alerta"),
+                    "descricao": alerta.get("descricao", ""),
+                    "severidade": alerta.get("severidade", "info"),
+                })
 
-        # Header
-        c.setFillColor(color_dark_bg)
-        c.rect(0, y - 60, width, 60, fill=True)
-        c.setFont("Helvetica-Bold", 18)
-        c.setFillColor(color_white)
-        c.drawString(50, y - 35, "SUBRADAR PF")
-        c.setFont("Helvetica", 10)
-        c.drawString(50, y - 50, "Dossiê de Compliance")
-        y -= 80
+        # Gerar PDF em arquivo temporário e retornar como bytes
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
 
-        # Score banner
-        c.setFillColor(banner_color)
-        c.rect(50, y - 80, width - 100, 80, fill=True)
-        c.setFont("Helvetica-Bold", 48)
-        c.setFillColor(color_white)
-        c.drawString(70, y - 50, str(score))
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(200, y - 50, f"{faixa_label} RISCO")
-        y -= 100
+        try:
+            gerar_dossie_pf_arquivo(cpf_digits, nome, score, faixa, alertas_formatados, output_dir="/tmp")
 
-        # Info box
-        c.setFont("Helvetica", 10)
-        c.setFillColor(color_gray_text)
-        c.drawString(50, y, f"CPF: {cpf_fmt}")
-        y -= 15
-        c.drawString(50, y, f"Nome: {nome}")
-        y -= 15
-        c.drawString(50, y, f"Data: {today}")
-        y -= 30
+            # Construir nome esperado do arquivo
+            pdf_filename = f"subradar_pf_{cpf_digits}_{date.today().strftime('%Y%m%d')}.pdf"
+            pdf_path = f"/tmp/{pdf_filename}"
 
-        # Data table header
-        c.setFont("Helvetica-Bold", 10)
-        c.setFillColor(color_dark_bg)
-        c.drawString(50, y, "FONTE")
-        c.drawString(400, y, "STATUS")
-        y -= 20
+            if not os.path.exists(pdf_path):
+                raise PDFGenerationError(f"PDF não foi gerado em {pdf_path}")
 
-        # Data rows
-        for d in sorted(dados, key=lambda x: x.get("titulo_secao", "")):
-            titulo = d.get("titulo_secao", "N/A")[:50]
-            status = (d.get("status", "") or "").upper()
-            resumo = (d.get("resumo", "") or "").strip()
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
 
-            # Status color
-            if status == "LIMPO":
-                status_color = color_green
-            elif status == "CRITICO":
-                status_color = color_red
-            else:
-                status_color = color_orange
+            logger.info(f"PDF gerado com sucesso: {len(pdf_bytes)} bytes")
+            return pdf_bytes
 
-            # Row background
-            c.setFillColor(color_gray_light)
-            c.rect(50, y - 18, width - 100, 18, fill=True)
-            c.setLineWidth(0.5)
-            c.setStrokeColor(HexColor("#e5e7eb"))
-            c.rect(50, y - 18, width - 100, 18, fill=False, stroke=True)
-
-            # Texto
-            c.setFont("Helvetica", 9)
+        except Exception as e:
+            logger.error(f"Erro ao gerar PDF: {e}")
+            raise PDFGenerationError(f"Falha ao gerar PDF: {str(e)}")
             c.setFillColor(color_dark_bg)
             c.drawString(60, y - 12, titulo)
             c.setFont("Helvetica-Bold", 9)

@@ -355,7 +355,8 @@ def processar_cpf(
         if todos_alertas:
             for alerta in todos_alertas:
                 alerta["cliente_id"] = cliente_id
-            upsert("sub_alertas", todos_alertas)
+                alerta["cpf"] = cpf_fmt
+            upsert("sub_pf_alertas", todos_alertas)
             logger.info("Gravados %d alertas para %s", len(todos_alertas), cpf_fmt)
 
         # Grava dados estruturados do laudo (Opção B)
