@@ -6,7 +6,7 @@ Versão final com:
 - DIA 2: Cartório Imóveis Cofiex (1 paga)
 - DIA 3: SERASA Score (1 premium)
 
-Total: 25 fontes (20 consumer + 5 new)
+Total: 30 fontes (25 consumer + 5 new)
 Scoring: Proprietário (60%) + SERASA (40%)
 """
 from __future__ import annotations

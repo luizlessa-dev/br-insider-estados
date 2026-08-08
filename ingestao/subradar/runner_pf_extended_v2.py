@@ -5,7 +5,7 @@ Versão com:
 - DIA 1: CNPI, CCF, RENAJUD (3 gratuitas)
 - DIA 2: Cartório Imóveis Cofiex (1 paga)
 
-Total: 24 fontes (20 consumer + 4 new)
+Total: 29 fontes (25 consumer + 4 new)
 """
 from __future__ import annotations
 

@@ -6,7 +6,7 @@ Versão com as 3 novas fontes do DIA 1:
 - CCF (Cheque Sem Fundo)
 - Alienação RENAJUD
 
-Total: 23 fontes (20 consumer + 3 gratuitas)
+Total: 28 fontes (25 consumer + 3 gratuitas)
 """
 from __future__ import annotations
 

@@ -10,17 +10,19 @@ Mercados alvo:
   - Credenciamento de MEIs / autônomos / prestadores PF
   - Due diligence de sócios (use socios_compliance.py para via CNPJ)
 
-Fontes (20 APIs OFICIAIS DIRETAS):
+Fontes (25 APIs — diretas + BigDataCorp processos):
   - RFB: CPF, QSA
-  - Judicial: BNMP, CNDT, Escavador
+  - Judicial: BNMP, CNDT, BDC Processos
   - Eleitoral: TSE
   - Conselhos: CREA, CAU, CFC
   - Sanções: CEPIM, CEIS, CNEP, ListaSuja, PGFN
   - Diários: DOU, DOE
   - Tribunais: TCE, CVM
-  - Trânsito: DETRAN
   - Mídia: GDELT (gratuito)
   - Internacional: OFAC, UK, EU, ONU, BancoMundial, OpenSanctions
+  - BC Gratuitas: CNPI, CCF, RENAJUD
+  - Patrimônio: Cartório Imóveis (Cofiex)
+  - Crédito: SERASA Score, Negativações, Protestos
 """
 from __future__ import annotations
 
@@ -51,7 +53,7 @@ from .midia_adversa_gdelt_pf import MidiaAdversaGDELTPFConnector
 from .doe_estaduais_pf import DOEEstaduaisPFConnector
 from .cvm_insider_pf import CVMInsiderPFConnector
 from .tce_estaduais_pf import TCEEstaduaisPFConnector
-from .escavador_pf import EscavadorPFConnector
+from .bigdatacorp_negativacoes import BDCProcessosPFConnector
 from .dou_pf import DOUPFConnector
 from .cepim_pf import CEPIMRepresentantePFConnector
 from .opensanctions_pro import OpenSanctionsProPFConnector
@@ -75,7 +77,7 @@ FONTES_PF_CONSUMER = [
     # ── Judicial / Penal ─────────────────────────────────────────────────────
     BNMPMandadosPrisaoPFConnector(),    # BNMP/CNJ — mandados de prisão ativos
     CNDTTrabalhiPFConnector(),          # CNDT/TST — débitos trabalhistas como empregador
-    EscavadorPFConnector(),             # Escavador — processos judiciais nacionais por CPF
+    BDCProcessosPFConnector(),          # BigDataCorp — processos judiciais (cobertura maior que Escavador)
 
     # ── Eleitoral ────────────────────────────────────────────────────────────
     TSESituacaoEleitoralPFConnector(),  # TSE — quitação eleitoral

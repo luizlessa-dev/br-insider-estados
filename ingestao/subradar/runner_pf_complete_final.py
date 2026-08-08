@@ -3,13 +3,13 @@ Subradar PF — Complete Final (27 Fontes: Consumer + 7 Extras)
 
 VERSÃO FINAL COM COBERTURA DE CRÉDITO COMPLETA:
 
-Base (20 consumer):
+Base (25 consumer):
   + DIA 1: CNPI, CCF, RENAJUD (3 BC/PF gratuitas)
   + DIA 2: Cartório Imóveis (1 patrimonial paga)
   + DIA 3: SERASA Score (1 premium)
   + DIA 3 EXTRA: Negativações + Protestos (2 crédito)
 
-Total: 27 fontes
+Total: 32 fontes
 
 Cobertura de Crédito COMPLETA:
   ✅ Score Oficial (SERASA: 0-1000)
@@ -42,7 +42,7 @@ logging.basicConfig(
 logger = logging.getLogger("subradar.runner_pf_complete_final")
 
 # ---------------------------------------------------------------------------
-# Pipeline PF Complete Final — 25 + 2 crédito = 27 fontes
+# Pipeline PF Complete Final — 30 + 2 crédito = 32 fontes
 # ---------------------------------------------------------------------------
 
 FONTES_PF_COMPLETE_FINAL = FONTES_PF_COMPLETE + [
