@@ -19,6 +19,9 @@ Cobertura de Crédito COMPLETA:
 """
 from __future__ import annotations
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from .runner_pf_complete import (
     FONTES_PF_COMPLETE,
     _calcular_score_ponderado,
@@ -30,6 +33,7 @@ from .runner_pf_complete import (
 # Importar conectores Enterprise de crédito
 from .bigdatacorp_negativacoes import BDCNegativacoesPFConnector
 from .protestos_nacional import ProtestosNacionalPFConnector
+from .bdc_marketplace_pf import BDCScoreQuodPFConnectorV2
 
 import logging
 from .base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
@@ -47,6 +51,7 @@ logger = logging.getLogger("subradar.runner_pf_complete_final")
 
 FONTES_PF_COMPLETE_FINAL = FONTES_PF_COMPLETE + [
     # ── Extras: Cobertura de Crédito Completa ──────────────────────────────
+    BDCScoreQuodPFConnectorV2(),      # BigDataCorp Quod — Score de Crédito PF (300-1000)
     BDCNegativacoesPFConnector(),     # BigDataCorp — Negativações/Restrições
     ProtestosNacionalPFConnector(),   # Direct Data — Protestos IEPTB/CENPROT
 ]
@@ -89,8 +94,8 @@ def processar_cpf(
                 logger.info("  ✓ %s — %d alerta(s)", nome_fonte, len(alertas))
                 todos_alertas.extend(alertas)
 
-                # Captura alertas SERASA para weighting
-                if nome_fonte == "serasa_score_oficial":
+                # Captura alertas de score para weighting (BDC Quod ou SERASA)
+                if nome_fonte in ("bdc_score_quod_pf_v2", "serasa_score_oficial"):
                     alertas_serasa = alertas
 
             # Coleta dados estruturados
@@ -122,7 +127,7 @@ def processar_cpf(
     if dry_run:
         logger.info("DRY RUN — %d alerta(s) encontrado(s)", len(todos_alertas))
         print(f"\n  Score Proprietário: {score_proprietario}/100")
-        if weighting_dict["score_serasa_original"]:
+        if weighting_dict.get("score_serasa_original"):
             print(f"  Score SERASA: {weighting_dict['score_serasa_original']}/1000")
         print(f"  Score Final: {score_final}/100 [{faixa_final}]")
         print(f"  Método: {weighting_dict['metodo']}\n")
@@ -159,6 +164,7 @@ def processar_cpf(
             for alerta in todos_alertas:
                 alerta["cliente_id"] = cliente_id
                 alerta["cpf"] = cpf_fmt
+                alerta["ciclo"] = ciclo
             upsert("sub_pf_alertas", todos_alertas)
             logger.info("Gravados %d alertas para %s", len(todos_alertas), cpf_fmt)
 

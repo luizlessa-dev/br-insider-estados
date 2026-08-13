@@ -27,6 +27,7 @@ import argparse
 import logging
 import re
 import sys
+import time
 
 from .base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
 
@@ -304,6 +305,7 @@ def processar_cpf(
 
     for fonte in fontes:
         nome_fonte = getattr(fonte, "fonte", "?")
+        t0 = time.perf_counter()
         try:
             import inspect
             if hasattr(fonte, "consultar_cpf"):
@@ -334,6 +336,9 @@ def processar_cpf(
 
         except Exception as e:
             logger.error("  ✗ %s — erro: %s", nome_fonte, e)
+        finally:
+            dt = time.perf_counter() - t0
+            logger.info("TIMING %s: %.1fs", nome_fonte, dt)
 
     score = calcular_score_risco(todos_alertas)
     logger.info(
@@ -356,6 +361,7 @@ def processar_cpf(
             for alerta in todos_alertas:
                 alerta["cliente_id"] = cliente_id
                 alerta["cpf"] = cpf_fmt
+                alerta["ciclo"] = ciclo
             upsert("sub_pf_alertas", todos_alertas)
             logger.info("Gravados %d alertas para %s", len(todos_alertas), cpf_fmt)
 

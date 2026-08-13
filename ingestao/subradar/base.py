@@ -87,6 +87,11 @@ def upsert(table: str, rows: list[dict]) -> None:
                 elif table == "sub_pf_dados":
                     req_url  = url + "?on_conflict=cpf,ciclo,fonte"
                     req_hdrs["Prefer"] = "resolution=merge-duplicates,return=minimal"
+                elif table == "sub_pf_resultados":
+                    # id é determinístico (uuid5 de cpf+ciclo) — sem on_conflict, uma
+                    # segunda consulta do mesmo CPF no mesmo mês colide na PK e falha.
+                    req_url  = url + "?on_conflict=id"
+                    req_hdrs["Prefer"] = "resolution=merge-duplicates,return=minimal"
                 resp = requests.post(req_url, json=batch, headers=req_hdrs, timeout=60)
                 if resp.ok:
                     break
@@ -104,6 +109,27 @@ def upsert(table: str, rows: list[dict]) -> None:
         else:
             raise RuntimeError(f"upsert {table}: falhou após 5 tentativas")
     logger.info("upsert %s: %d linhas", table, len(rows))
+
+
+def patch(table: str, match: dict, fields: dict) -> None:
+    """Atualiza parcialmente linhas que casam com `match` (ex: {"id": "..."}), setando `fields`.
+
+    Diferente de `upsert`, que faz POST simples (sem on_conflict) e portanto sempre
+    tenta INSERT — usado quando a linha já existe e só queremos mudar alguns campos.
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        logger.warning("SUPABASE_URL/KEY ausentes — pulando update em %s", table)
+        return
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    params = {k: f"eq.{v}" for k, v in match.items()}
+    headers = {**_supabase_headers(), "Prefer": "return=minimal"}
+    body = dict(fields)
+    if table == "sub_pf_consultas" and "updated_at" not in body:
+        body["updated_at"] = datetime.utcnow().isoformat()
+    resp = requests.patch(url, params=params, json=_jsonable(body), headers=headers, timeout=30)
+    if not resp.ok:
+        logger.error("patch %s falhou: %s %s", table, resp.status_code, resp.text[:300])
+    resp.raise_for_status()
 
 
 def snapshot_changed(cnpj: str, fonte: str, ciclo: str, dados: Any) -> tuple[bool, str]:
