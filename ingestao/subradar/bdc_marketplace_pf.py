@@ -295,13 +295,19 @@ def _build_alerta(cpf_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
             f"Escores abaixo de {_SCORE_CRITICO} indicam alto risco de inadimplência."
         )
         categoria = "credito"
+        # Campos adicionais para compatibilidade com weighting
+        tipo_dado_extra = "score_credito"
+        score_valor_extra = score
 
     else:
         titulo = f"BDC Marketplace PF — {tipo}"
         descricao = str(dado)
         categoria = "credito"
+        tipo_dado_extra = None
+        score_valor_extra = None
 
-    return {
+    # Monta alerta base
+    alerta = {
         "cpf": cpf_fmt,
         "ciclo": ciclo,
         "fonte": fonte,
@@ -312,6 +318,15 @@ def _build_alerta(cpf_fmt: str, ciclo: str, dado: dict, fonte: str) -> dict:
         "url_fonte": "https://bigdatacorp.com.br",
         "is_novo": True,
     }
+
+    # Adiciona campos de score se aplicável
+    if tipo == "score_credito":
+        alerta["tipo_dado"] = "score_credito"
+        alerta["score_valor"] = score
+        alerta["score_faixa"] = dado.get("faixa", "").replace("_", " ")
+        alerta["score_maximo"] = 1000
+
+    return alerta
 
 
 def _salvar_snapshot(cpf_fmt: str, fonte: str, ciclo: str, dados: list) -> tuple[bool, str]:
