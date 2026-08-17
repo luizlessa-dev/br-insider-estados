@@ -1,6 +1,11 @@
 """
 Subradar PF — pipeline de compliance para Pessoa Física (CPF)
 
+*** ESTE é o pipeline de produção. *** Chamado por runner_pf_api.py (API Lambda
+usada por subradar-web/app/api/pf/submit) e por .github/workflows/subradar-pf-runner.yml
+(fallback manual). Qualquer outro runner_pf_*.py no diretório wip_5_fontes/ é
+experimental/não-promovido — ver wip_5_fontes/README.md antes de editar.
+
 Mercados alvo:
   - Imobiliárias: checagem de locatário
   - RH corporativo: background check de candidatos (com consentimento)
