@@ -150,7 +150,7 @@ class PREVICConnector(SubradarSource):
     fonte = "previc"
     request_delay = 0.0  # dados locais após cache
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
         ciclo = _ciclo_atual()
