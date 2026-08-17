@@ -18,6 +18,17 @@ env/
 data/
 dumps/
 
+# Segredos em config de deploy (zappa_settings.json guarda tokens em texto puro)
+zappa_settings.json
+
+# Dossiês/laudos de teste gerados localmente (contêm PII — nunca commitar)
+dossiE_*.pdf
+dossiE_*.html
+dossie_*.pdf
+dossie_*.html
+laudo_*.html
+laudo_*.pdf
+
 # SO / editor
 .DS_Store
 .idea/
