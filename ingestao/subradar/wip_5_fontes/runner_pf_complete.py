@@ -14,11 +14,11 @@ from __future__ import annotations
 from .runner_pf_extended_v2 import FONTES_PF_EXTENDED_V2
 
 # Importar novo conector
-from .serasa_score_pf import SerasaScorePFConnector
+from ..serasa_score_pf import SerasaScorePFConnector
 
 import logging
-from .base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
-from .runner_pf_consumer import calcular_score_risco, _strip, _fmt_cpf
+from ..base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
+from ..runner_pf_consumer import calcular_score_risco, _strip, _fmt_cpf
 
 logging.basicConfig(
     level=logging.INFO,

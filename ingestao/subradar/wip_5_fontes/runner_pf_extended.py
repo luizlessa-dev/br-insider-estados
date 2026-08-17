@@ -11,7 +11,7 @@ Total: 28 fontes (25 consumer + 3 gratuitas)
 from __future__ import annotations
 
 # Importar runner_pf_consumer como base
-from .runner_pf_consumer import (
+from ..runner_pf_consumer import (
     FONTES_PF_CONSUMER,
     calcular_score_risco,
     _strip,
@@ -22,15 +22,15 @@ from .runner_pf_consumer import (
 )
 
 # Importar as 3 novas fontes
-from .cnpi_pf import CNPIPFConnector
-from .ccf_pf import CCFConnector
-from .alienacao_renajud_pf import AlienacaoRENAJUDConnector
+from ..cnpi_pf import CNPIPFConnector
+from ..ccf_pf import CCFConnector
+from ..alienacao_renajud_pf import AlienacaoRENAJUDConnector
 
 import logging
 import re
 import sys
 
-from .base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
+from ..base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
 
 logging.basicConfig(
     level=logging.INFO,

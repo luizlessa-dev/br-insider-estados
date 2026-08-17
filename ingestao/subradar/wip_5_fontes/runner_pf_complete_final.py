@@ -31,12 +31,12 @@ from .runner_pf_complete import (
 )
 
 # Importar conectores Enterprise de crédito
-from .bigdatacorp_negativacoes import BDCNegativacoesPFConnector
-from .protestos_nacional import ProtestosNacionalPFConnector
-from .bdc_marketplace_pf import BDCScoreQuodPFConnectorV2
+from ..bigdatacorp_negativacoes import BDCNegativacoesPFConnector
+from ..protestos_nacional import ProtestosNacionalPFConnector
+from ..bdc_marketplace_pf import BDCScoreQuodPFConnectorV2
 
 import logging
-from .base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
+from ..base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
 
 logging.basicConfig(
     level=logging.INFO,
