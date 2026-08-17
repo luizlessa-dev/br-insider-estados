@@ -155,19 +155,3 @@ class DatajudImobConnector(SubradarImobSource):
         except Exception as e:
             self.log.exception("datajud: erro geral: %s", e)
             return None
-                "categoria": "judicial",
-                "status": "alerta" if acoes_encontradas else "limpo",
-                "titulo_secao": "Ações Judiciais sobre o Imóvel",
-                "resumo": f"{len(acoes_encontradas)} ação(ões) judicial(is) encontrada(s)",
-                "detalhes": {
-                    "total": len(acoes_encontradas),
-                    "proprietario": proprietario,
-                    "acoes": acoes_encontradas,
-                    "periodo_busca": f"{data_inicio} a {data_fim}",
-                    "atualizado_em": datetime.utcnow().isoformat(),
-                },
-            }
-
-        except Exception as e:
-            self.log.exception("datajud: erro geral: %s", e)
-            return None

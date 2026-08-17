@@ -70,7 +70,7 @@ def _buscar_proprietario_cpf_cnpj(consulta_id: str) -> str | None:
         return None
 
     try:
-        response = sb_client.from("sub_imob_consultas").select(
+        response = sb_client.table("sub_imob_consultas").select(
             "proprietario_cpf_cnpj"
         ).eq("id", consulta_id).single().execute()
 
