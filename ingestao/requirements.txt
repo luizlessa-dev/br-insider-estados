@@ -1,4 +1,5 @@
 requests>=2.31.0
+python-dotenv>=1.0.0     # load_dotenv em ingestao/rfb/seed_cnpj.py
 openpyxl>=3.1.0          # leitura de XLSX (ex-presidentes PR)
 urllib3>=2.0.0
 beautifulsoup4>=4.12.0   # para os conectores de scraping
