@@ -303,20 +303,76 @@ ponta. `tipo_doador`/`origem_receita` populados corretamente após o fix;
 `nome_doador_originario` vira `NULL` de verdade (não mais a string
 `"#NULO"`). Dados de teste limpos, branch apagada.
 
+## Complemento — 2016 + integração Python real, 2014 e 2016 (2026-08-24)
+
+### `TSE_LEGACY_APPROVED` deixou de ser env var estática
+
+Trocado por input booleano do `workflow_dispatch` (`confirmo_legado_2014_2016`,
+default `false`) — visível e auditável por execução, nunca "ligado" por
+padrão, cron nunca passa esse input. Ver commit no
+[ingest-tse.yml](../../.github/workflows/ingest-tse.yml).
+
+### Validação contra ZIP real de 2016
+
+Mesmo processo do 2014: `prestacao_contas_final_2016.zip` (1GB — CDN bloqueia
+este ambiente, confirmado de novo). **Parsing completo (todas as 26 UFs)**:
+5.587.817 despesas + 3.004.286 receitas, zero exceções, zero sentinela
+vazando. Header de despesas (25 colunas) e receitas (35 colunas) batem 100%
+com `COL_2016`/`COL_RECEITAS_2016` — mesmo padrão de nomeação de coluna
+"Tipo receita"→`tipo_doador` que 2014, já coberto pelo fix.
+
+### Integração Python REAL (não SQL simulado) — 2014 e 2016
+
+Item que ficava faltando: rodar `load_year()` de ponta a ponta de verdade
+(`LegacyZipSource.download_and_validate()` → `iter_rows()` →
+`backend.stage_rows()` via COPY real → `backend.promote()`), não a simulação
+via SQL direto feita na primeira rodada. Branch descartável nova
+(`vtvcvbgjnoarktufqxhn`), harness com um `Backend` que fala Postgres direto
+(sem service_role key desta branch) reaproveitando `copy_backend.py` pro
+staging.
+
+Pra cada ano (2014 e 2016), três testes, **todos com dado real (UF=AC/AL)**:
+
+1. **Carga real de ponta a ponta**: despesas + receitas via `load_year()`
+   completo. 2014: 13.246 despesas + 5.129 receitas. 2016: 19.024 despesas +
+   15.291 receitas. Todos `rows_after == rows_staged`, sem erro.
+2. **Rollback real**: baseline promovido (UF=AC), depois uma carga envenenada
+   (UF=AL com uma linha `valor_despesa=666.66` capturada por trigger na tabela
+   FINAL) através do `load_year()` real — a exceção do trigger propaga pra
+   fora de `load_year()` como esperado, e a tabela final permanece EXATAMENTE
+   no baseline (2014: 13.246; 2016: 19.024) — confirma que o swap dentro de
+   `tse_promote_year` é atômico mesmo quando acionado pelo caminho Python
+   completo, não só via SQL direto.
+3. **Concorrência real**: uma conexão externa segura o advisory lock do
+   mesmo `(dataset, ano)`; uma segunda carga real (UF=AL, disparada via
+   `load_year()` numa thread) fica comprovadamente bloqueada (não completa em
+   1,5s) até o lock externo ser liberado, daí prossegue e promove
+   corretamente (2014: 13.246→28.634; 2016: 19.024→88.545) — swap atômico,
+   sem mistura de UFs.
+
+Ambiente limpo, branch apagada. Nenhum dado de teste residual.
+
+### Nota operacional — vazamento de senha durante a sessão
+
+No processo de obter a connection string desta branch, a senha do banco
+chegou a aparecer em texto puro na conversa duas vezes: uma vez colada pelo
+usuário sem querer, outra vez por um comando de diagnóstico deste agente
+(`repr()` para checar caractere oculto, que imprimiu o valor). Em ambos os
+casos a senha foi trocada logo em seguida pelo usuário. Registrado aqui por
+transparência — não afeta a validade dos testes (a branch já foi apagada),
+mas é um lembrete de que ferramentas de diagnóstico precisam ser desenhadas
+pra NUNCA imprimir segredo, nem em caminhos de depuração.
+
 ## Veredito final — 2014/2016
 
-**Código pronto e validado contra ZIP real — mas `TSE_LEGACY_APPROVED` segue
-NÃO setado.** Falta, antes de considerar isso "aprovado pra produção" no
-mesmo sentido que os anos modernos:
-- Rodar a mesma bateria de testes de mecânica (rollback, concorrência,
-  benchmark) especificamente com `LegacyZipSource` — o que foi testado agora
-  foi a compatibilidade do PARSING com dado real; a mecânica staging+swap já
-  tinha sido exaustivamente validada com dado sintético/moderno e é o MESMO
-  código (`tse_promote_year`, `load_year`), então o risco residual aí é baixo,
-  mas não é zero.
-- Validar contra 2016 também (só 2014 foi testado contra ZIP real até agora).
-- Aprovação humana explícita e separada pra ativar `TSE_LEGACY_APPROVED=1`
-  contra produção — pedida no item 5 da tarefa original, ainda não dada.
+**Código pronto, validado contra ZIP real (parsing completo) E contra a
+mecânica real do pipeline seguro (`load_year()` de ponta a ponta, rollback,
+concorrência) para os dois anos.** Único item que falta:
+- Aprovação humana explícita e separada pra marcar
+  `confirmo_legado_2014_2016` numa execução real do workflow contra produção
+  — pedida no item 5 da tarefa original, ainda não dada. O mecanismo já
+  existe (input do workflow_dispatch), só falta a decisão de usar.
 
 Assinado por: Claude (agente) — pendente ratificação humana
+Data: 2026-08-24
 Data: 2026-08-24
