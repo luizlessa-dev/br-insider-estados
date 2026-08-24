@@ -40,9 +40,15 @@ name: Ingestão TSE
 # em produção por uma SEGUNDA trava, independente de TSE_SAFE_LOADER: exigem
 # TSE_LEGACY_APPROVED=1 (runner.py::_exigir_aprovacao_legado). Motivo: só os
 # anos modernos foram homologados numa branch descartável com ZIP real — 2014/
-# 2016 só têm cobertura de teste unitário (fakes) até agora, e são os mesmos
-# anos do incidente de 2026-06-20. NÃO setar TSE_LEGACY_APPROVED=1 aqui sem
-# aprovação humana separada, após homologar contra um ZIP real.
+# 2016 têm homologação parcial (parsing completo + amostra staging/swap com
+# ZIP real de 2014, ver HOMOLOGACAO.md), ainda faltando cobertura completa e
+# aprovação humana explícita, e são os mesmos anos do incidente de 2026-06-20.
+#
+# Em vez de env var estática (fácil esquecer ligada), a aprovação é um input
+# do workflow_dispatch (confirmo_legado_2014_2016, checkbox, default false) —
+# visível e auditável por execução no histórico de runs, nunca "ligado" por
+# padrão, e o cron agendado nunca passa esse input (schedule não tem
+# github.event.inputs, então resolve pra false de qualquer forma).
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -52,7 +58,7 @@ on:
   workflow_dispatch:
     inputs:
       dataset:
-        description: "Dataset a ingerir (receitas/despesas: 2018/2020/2022/2024 liberados — 2014/2016 exigem TSE_LEGACY_APPROVED=1, não setado)"
+        description: "Dataset a ingerir (receitas/despesas: 2018/2020/2022/2024 liberados — 2014/2016 exigem marcar o checkbox abaixo)"
         type: choice
         options:
           - candidatos
@@ -63,6 +69,10 @@ on:
       anos:
         description: "Anos separados por espaço (ex: 2022 2024)"
         default: "2022 2024"
+      confirmo_legado_2014_2016:
+        description: "Autorizo rodar 2014/2016 (LegacyZipSource, pipeline seguro) — marque só se já homologou contra ZIP real e tem aprovação explícita pra essa execução"
+        type: boolean
+        default: false
 
 concurrency:
   group: ingest-tse
@@ -80,6 +90,11 @@ jobs:
       # pipeline seguro (staging + swap atômico). Não é secret — é uma flag de
       # feature, ver ingestao/tse/runner.py::_exigir_safe_loader.
       TSE_SAFE_LOADER: "1"
+      # Só vira "1" quando o input confirmo_legado_2014_2016 for marcado NESTA
+      # execução (workflow_dispatch). Em runs de schedule, github.event.inputs
+      # não existe — a comparação cai no branch falso e resolve pra "" (vazio),
+      # nunca "1". Ver ingestao/tse/runner.py::_exigir_aprovacao_legado.
+      TSE_LEGACY_APPROVED: ${{ (github.event.inputs.confirmo_legado_2014_2016 == 'true') && '1' || '' }}
 
     steps:
       - uses: actions/checkout@v4
