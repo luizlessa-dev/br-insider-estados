@@ -58,7 +58,14 @@ class CopyBackend:
         if not self.dsn:
             raise RuntimeError("TSE_PG_DSN ausente (secret com a connection string TLS).")
         if "sslmode=" not in self.dsn:
-            self.dsn += " sslmode=require"
+            # URI (postgres://, postgresql://) exige query string; keyword=value
+            # aceita concatenação com espaço. Concatenar " sslmode=require" numa
+            # URI quebra o parser (a connection string do Supabase é URI).
+            if self.dsn.startswith(("postgres://", "postgresql://")):
+                sep = "&" if "?" in self.dsn else "?"
+                self.dsn += f"{sep}sslmode=require"
+            else:
+                self.dsn += " sslmode=require"
 
     def stage_via_copy(self, dataset: str, run_id: str, rows: Iterable[dict]) -> dict:
         """COPY streaming → temp → INSERT idempotente no staging. Retorna

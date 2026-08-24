@@ -94,9 +94,10 @@ def test_promote_serializado_sem_delete_concorrente():
                 "insert into tse_load_runs(run_id,dataset,ano,phase,status,min_expected) "
                 "values (%s,%s,%s,'staged','running',1)", (run_id, DATASET, ANO))
             cur.executemany(
-                "insert into tse_receitas_staging(run_id,ano_eleicao,numero_recibo,valor) "
-                "values (%s,%s,%s,1.0)",
-                [(run_id, ANO, f"C-{run_id}-{i}") for i in range(n)])
+                "insert into tse_receitas_staging"
+                "(run_id,ano_eleicao,numero_recibo,valor,row_fingerprint) "
+                "values (%s,%s,%s,1.0,encode(sha256(%s::bytea),'hex'))",
+                [(run_id, ANO, f"C-{run_id}-{i}", f"C-{run_id}-{i}") for i in range(n)])
         conn.commit()
 
     a = psycopg.connect(PGURL, autocommit=False)

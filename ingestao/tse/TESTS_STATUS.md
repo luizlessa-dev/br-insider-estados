@@ -14,31 +14,34 @@
 - **Parsing real** (download do CDN + parse, SEM escrita no Supabase): 2018 e
   2022 (2024 em coleta) — nomes de coluna SQ_*, cobertura, duplicidade.
 
-## PENDENTES — explicitamente NÃO resolvidos
+## Resolvidos em 2026-08-23 (conexão direta obtida)
 
-Estes dois NÃO foram executados e NÃO devem ser considerados resolvidos por
-aproximações:
+Os dois itens abaixo estavam pendentes porque o tooling MCP não expõe uma
+connection string Postgres direta. O usuário forneceu a DSN de uma branch
+descartável (`bahdswecdcfdnvqtyjup`) via arquivo local temporário (nunca
+colada no chat); ambos foram executados e resolvidos. Detalhe completo em
+[HOMOLOGACAO.md](HOMOLOGACAO.md).
 
-1. **Benchmark ponta a ponta (download → parse → COPY → promote) via conexão
-   direta.** O que foi medido é o custo SERVER-SIDE (INSERT...SELECT via MCP:
-   promote/count/gate) — isso é uma aproximação COPY-equivalente, **não** o
-   benchmark end-to-end. Falta rodar `copy_backend.py` contra um Postgres com
-   `TSE_PG_DSN` (conexão direta TLS), medindo download, parse, COPY real,
-   throughput e memória.
+1. **Benchmark ponta a ponta com COPY real** — harness sintético (ano fictício
+   1998), rows passadas como gerador (não lista, mede streaming real):
+   100k linhas em 17,24s (5.801 linhas/s, pico RSS 58,9 MB); 500k linhas em
+   40,00s (12.499 linhas/s, pico RSS 57,75 MB). Memória praticamente idêntica
+   com dataset 5× maior — confirma streaming sem acúmulo em RAM. Achado: bug
+   real em [copy_backend.py](copy_backend.py) (parsing de DSN URI quebrado por
+   concatenação incorreta de `sslmode=require`) — corrigido.
 
-2. **Concorrência com DUAS conexões Postgres simultâneas** (`test_concurrency_psycopg.py`).
-   Só foi observado, via `pg_locks`, que a RPC ADQUIRE o advisory lock — isso
-   **não** é o teste de bloqueio entre dois backends. Falta rodar as duas
-   conexões e registrar: início-A, aquisição do lock, tentativa-B, tempo de
-   espera, commit-A, aquisição-B, estado final.
-
-Motivo de ambos estarem pendentes: o tooling atual não expõe uma connection
-string direta ao Postgres da branch descartável (DNS direto desativado; o pooler
-só aceita `postgres.<ref>` com senha não recuperável via MCP). Ambos rodam
-assim que houver um ambiente descartável com conexão direta (`TSE_IT_PGURL` /
-`TSE_PG_DSN`).
+2. **Concorrência com duas conexões Postgres reais** (`test_concurrency_psycopg.py`) —
+   `test_advisory_lock_exclusao_mutua` e `test_promote_serializado_sem_delete_concorrente`
+   ambos passam. B bloqueia de verdade enquanto A segura `pg_advisory_xact_lock`
+   (≥1,0s de espera medido), libera após `A.commit()`, estado final consistente
+   (sem DELETE concorrente). Achado: o teste tinha um bug próprio (seed sem
+   `row_fingerprint`, NOT NULL desde a migration 0001) — corrigido.
 
 ## Gated (pulam sem env)
 
-- `test_integration_supabase.py` — requer `TSE_IT_URL` + `TSE_IT_SERVICE_KEY`.
-- `test_concurrency_psycopg.py` — requer `TSE_IT_PGURL`.
+- `test_integration_supabase.py` — requer `TSE_IT_URL` + `TSE_IT_SERVICE_KEY`
+  (não usado nesta rodada; equivalente rodado via SQL direto na branch, ver
+  HOMOLOGACAO.md).
+- `test_concurrency_psycopg.py` — requer `TSE_IT_PGURL` (resolvido em 2026-08-23,
+  ver acima; a branch que forneceu a DSN já foi apagada, então o teste volta a
+  pular por padrão até uma nova branch/DSN serem fornecidas).

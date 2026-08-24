@@ -38,3 +38,46 @@ Base factual disponível:
 Consultar backup/PITR do Supabase para 2014/2016/2018/2020 e determinar se
 existiu dado antes — só então classificar como "perda confirmada" ou
 "nunca carregado". Até lá, não afirmar perda.
+
+### Tentativa de verificação (2026-08-23)
+
+Não há ferramenta MCP do Supabase para listar retenção de backup/PITR, e o
+dashboard exige login que este agente não faz (fora do escopo de ação
+autônoma). Org `qsbrxkxtcizkievgtira` está no plano **pro**.
+
+Raciocínio circunstancial, independente da configuração exata: o DELETE
+comprovado (2014/2018) ocorreu em **2026-06-20**; esta verificação foi feita em
+**2026-08-23** — **64 dias depois**. Nenhum tier padrão de PITR do Supabase
+(7/14/28 dias, add-on pago no plano pro) cobre uma janela de 64 dias. Ou seja,
+mesmo que PITR estivesse ativo no momento do incidente, é muito provável que
+a janela de retenção **já não alcance mais** 2026-06-20 — a menos que exista
+configuração não padrão (Enterprise/retenção customizada).
+
+**Pendência real**: precisa de confirmação humana em Dashboard → Database →
+Backups → Point in time (janela de retenção atual e se cobria 20/jun quando o
+incidente ocorreu). Até essa confirmação, a classificação da tabela acima
+("perda não provada") permanece a mais honesta — não upgradar para "perda
+confirmada" nem para "descartado" sem essa evidência.
+
+### Confirmação humana (2026-08-24)
+
+Luiz conferiu Dashboard → Database → Backups → Point in time em
+`redggdtakzmsabwvjzhb`: a janela de retenção **não cobre** 20/06/2026, como o
+raciocínio circunstancial já indicava.
+
+**Isso NÃO promove 2014/2018 para "perda confirmada"** — a ausência de PITR
+prova que a pergunta "havia dado antes do DELETE?" é **inverificável
+permanentemente**, não que havia dado. A classificação correta agora é:
+
+| Ano | Status final |
+|---|---|
+| 2014 | DELETE comprovado (20/jun) + existência anterior **inverificável para sempre** (sem backup na janela). Trata-se como "carga nova" ao reingerir — não há como saber se está reparando uma perda ou populando pela primeira vez. |
+| 2018 | Idem 2014. |
+| 2016 | Causa desconhecida, sem DELETE comprovado, também sem como verificar existência anterior — mesma situação prática de 2014/2018 para efeito de decisão. |
+| 2020 | Idem 2016. |
+
+**Implicação prática**: para efeito de decidir COMO reingerir, os 4 anos são
+equivalentes — tratam-se como carga nova via pipeline seguro (staging + swap),
+não como "restauração". Isso não muda a ordem de risco entre eles (2016/2018
+seguem legados/bloqueados por outros motivos — ver runner.py `ANOS_LEGADOS`;
+2020 continua o candidato mais seguro pro primeiro teste real).
