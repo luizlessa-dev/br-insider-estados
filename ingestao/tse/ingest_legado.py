@@ -6,7 +6,17 @@ URLs:
   2014: prestacao_final_2014.zip
   2016: prestacao_contas_final_2016.zip
 
-Uso:
+⚠️  As funções `ingerir`/`ingerir_receitas` deste módulo (delete-before-load)
+NÃO são mais o caminho usado por `python -m ingestao.tse.runner` — desde
+2026-08-24, receitas/despesas de 2014/2016 passam pelo pipeline seguro
+(staging + swap atômico) via `legacy_source.LegacyZipSource`, que reaproveita
+só os parsers deste arquivo (`iter_receitas_legado`/`iter_despesas_legado`),
+não a orquestração de escrita. Rodar este módulo direto (CLI abaixo) continua
+funcionando como escape-hatch manual, mas é o mesmo caminho destrutivo que
+causou o incidente de 2026-06-20 — exige aprovação explícita separada antes de
+usar contra produção.
+
+Uso (manual, só com aprovação):
   python -m ingestao.tse.ingest_legado --ano 2014 --zip /tmp/tse_2014.zip
   python -m ingestao.tse.ingest_legado --ano 2016 --zip /tmp/tse_2016.zip
 """
@@ -32,8 +42,13 @@ logging.basicConfig(
 )
 log = logging.getLogger("tse.legado")
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["INTERNAL_SUPABASE_SERVICE_ROLE_KEY"]
+def _sb_credentials() -> tuple[str, str]:
+    """Lida sob demanda (não no import do módulo) — os parsers puros
+    (iter_receitas_legado/iter_despesas_legado, reaproveitados por
+    legacy_source.py) não precisam de credencial nenhuma pra funcionar."""
+    url = os.environ["SUPABASE_URL"]
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["INTERNAL_SUPABASE_SERVICE_ROLE_KEY"]
+    return url, key
 
 ZIP_URLS = {
     2014: "https://cdn.tse.jus.br/estatistica/sead/odsele/prestacao_contas/prestacao_final_2014.zip",
@@ -282,7 +297,7 @@ def _insert_receitas_com_retry(sb_factory, batch: list, tentativas: int = 5) -> 
 
 def ingerir_receitas(ano: int, zip_path: str, skip_delete: bool = False, ufs: list | None = None) -> None:
     def sb_factory():
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
+        return create_client(*_sb_credentials())
 
     sb = sb_factory()
 
@@ -328,7 +343,7 @@ def _insert_com_retry(sb_factory, batch: list, tentativas: int = 5) -> None:
 
 def ingerir(ano: int, zip_path: str, skip_delete: bool = False, ufs: list | None = None) -> None:
     def sb_factory():
-        return create_client(SUPABASE_URL, SUPABASE_KEY)
+        return create_client(*_sb_credentials())
 
     sb = sb_factory()
 

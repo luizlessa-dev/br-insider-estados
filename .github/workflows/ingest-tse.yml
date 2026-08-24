@@ -35,9 +35,14 @@ name: Ingestão TSE
 # SafeLoaderDisabled sem NENHUM fallback pro caminho antigo — o delete-before-load
 # permanece INALCANÇÁVEL por execução normal.
 #
-# 2014 e 2016 continuam BLOQUEADOS por código (ANOS_LEGADOS em runner.py):
-# dependem de ingest_legado.py (ainda delete-before-load, não migrado pro
-# pipeline seguro). Não tentar via dispatch manual até essa migração terminar.
+# 2014 e 2016 (código migrado pro pipeline seguro em 2026-08-24, LegacyZipSource
+# + testes unitários — ver ingestao/tse/legacy_source.py) continuam BLOQUEADOS
+# em produção por uma SEGUNDA trava, independente de TSE_SAFE_LOADER: exigem
+# TSE_LEGACY_APPROVED=1 (runner.py::_exigir_aprovacao_legado). Motivo: só os
+# anos modernos foram homologados numa branch descartável com ZIP real — 2014/
+# 2016 só têm cobertura de teste unitário (fakes) até agora, e são os mesmos
+# anos do incidente de 2026-06-20. NÃO setar TSE_LEGACY_APPROVED=1 aqui sem
+# aprovação humana separada, após homologar contra um ZIP real.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -47,7 +52,7 @@ on:
   workflow_dispatch:
     inputs:
       dataset:
-        description: "Dataset a ingerir (receitas/despesas: só anos 2018/2020/2022/2024 — 2014/2016 seguem bloqueados)"
+        description: "Dataset a ingerir (receitas/despesas: 2018/2020/2022/2024 liberados — 2014/2016 exigem TSE_LEGACY_APPROVED=1, não setado)"
         type: choice
         options:
           - candidatos

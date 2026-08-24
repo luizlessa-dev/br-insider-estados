@@ -18,37 +18,15 @@ import logging
 import os
 import sys
 
-import requests
-
 from .connector import get_candidatos, iter_despesas, iter_receitas
-from .ingest_legado import (
-    ZIP_URLS as ZIP_URLS_LEGADO,
-    ingerir as ingerir_despesas_legado,
-    ingerir_receitas as ingerir_receitas_legado,
-)
 from .persistence import TSEWriter
 
-# Anos cujo ZIP de prestação de contas usa URL/formato diferente do padrão moderno.
-# O connector.py tenta prestacao_de_contas_eleitorais_candidatos_{ano}.zip (404 nesses anos).
-# ingest_legado.py sabe as URLs corretas e lida com o formato .txt.
+# Anos cujo ZIP de prestação de contas usa URL/formato diferente do padrão moderno
+# (layout de colunas por índice, arquivos .txt por UF, latin-1). Roteados pelo
+# _run_safe() abaixo para legacy_source.LegacyZipSource em vez de
+# zip_source.ZipYearSource — mesmo pipeline seguro (staging + swap atômico),
+# só muda o parser de origem.
 ANOS_LEGADOS = {2014, 2016}
-
-
-def _baixar_zip_legado(ano: int) -> str:
-    """Baixa o ZIP legado para /tmp e retorna o caminho. Reutiliza se já existe."""
-    zip_path = f"/tmp/tse_{ano}.zip"
-    if os.path.exists(zip_path):
-        logger.info("ZIP legado %d já existe: %s", ano, zip_path)
-        return zip_path
-    url = ZIP_URLS_LEGADO[ano]
-    logger.info("Baixando ZIP legado %d → %s", ano, zip_path)
-    r = requests.get(url, stream=True, timeout=600)
-    r.raise_for_status()
-    with open(zip_path, "wb") as f:
-        for chunk in r.iter_content(65536):
-            f.write(chunk)
-    logger.info("Download concluído: %s", zip_path)
-    return zip_path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -85,6 +63,14 @@ class SafeLoaderDisabled(RuntimeError):
     """Receitas/despesas exigem TSE_SAFE_LOADER=1 (pipeline seguro)."""
 
 
+class AnoLegadoNaoAprovado(RuntimeError):
+    """2014/2016 exigem aprovação humana separada (TSE_LEGACY_APPROVED=1),
+    além de TSE_SAFE_LOADER=1. O código está migrado pro pipeline seguro
+    (LegacyZipSource) mas isso NÃO é sozinho autorização pra rodar contra
+    produção — ver ingestao/tse/HOMOLOGACAO.md: só os anos modernos foram
+    homologados numa branch descartável até agora."""
+
+
 def _exigir_safe_loader(dataset: str) -> None:
     if not SAFE_LOADER:
         raise SafeLoaderDisabled(
@@ -95,13 +81,33 @@ def _exigir_safe_loader(dataset: str) -> None:
         )
 
 
+def _exigir_aprovacao_legado(dataset: str, ano: int) -> None:
+    if ano in ANOS_LEGADOS and os.environ.get("TSE_LEGACY_APPROVED") != "1":
+        raise AnoLegadoNaoAprovado(
+            f"'{dataset}' {ano}: BLOQUEADO. O ano {ano} usa LegacyZipSource "
+            f"(pipeline seguro, formato de coluna antigo) — código pronto e com "
+            f"testes unitários, mas AINDA NÃO homologado numa branch descartável "
+            f"com ZIP real, e é o mesmo ano do incidente de 2026-06-20. Exige "
+            f"aprovação humana separada: defina TSE_LEGACY_APPROVED=1 depois de "
+            f"validar contra um ZIP real numa branch descartável."
+        )
+
+
 def _run_safe(writer: TSEWriter, dataset: str, ano: int) -> int:
-    """Executa receitas/despesas modernas pelo pipeline seguro. Retorna linhas finais."""
+    """Executa receitas/despesas pelo pipeline seguro. Retorna linhas finais.
+    Anos legado (ANOS_LEGADOS) usam LegacyZipSource (parser de formato antigo);
+    os demais usam ZipYearSource (connector.py moderno). Em ambos os casos o
+    DELETE só acontece dentro de tse_promote_year() (swap atômico) — nunca
+    antes do download, ao contrário do ingest_legado.py standalone."""
     from .safe_backend import PostgrestBackend
     from .safe_loader import load_year
-    from .zip_source import ZipYearSource
 
-    source = ZipYearSource(dataset, ano)
+    if ano in ANOS_LEGADOS:
+        from .legacy_source import LegacyZipSource
+        source = LegacyZipSource(dataset, ano)
+    else:
+        from .zip_source import ZipYearSource
+        source = ZipYearSource(dataset, ano)
     backend = PostgrestBackend(writer)
     result = load_year(dataset, ano, source, backend)
     return int(result.get("rows_after") or 0)
@@ -111,14 +117,8 @@ def run_receitas(writer: TSEWriter, ano: int) -> None:
     dataset = f"receitas_{ano}"
     log_id = writer.start_log(dataset)
     try:
-        if ano in ANOS_LEGADOS:
-            # 2014/2016: ainda usam ingest_legado (delete-before-load). NÃO liberar
-            # como teste seguro. Bloqueado até o legado ganhar o mesmo tratamento.
-            raise SafeLoaderDisabled(
-                f"receitas {ano}: ano legado ainda usa ingest_legado "
-                f"(delete-before-load). Bloqueado até migração para o pipeline seguro."
-            )
         _exigir_safe_loader("receitas")
+        _exigir_aprovacao_legado("receitas", ano)
         n = _run_safe(writer, "receitas", ano)
         writer.finish_log(log_id, "ok", n_novos=n)
         logger.info("receitas %d: %d gravadas", ano, n)
@@ -132,12 +132,8 @@ def run_despesas(writer: TSEWriter, ano: int, skip_delete: bool = False) -> None
     dataset = f"despesas_{ano}"
     log_id = writer.start_log(dataset)
     try:
-        if ano in ANOS_LEGADOS:
-            raise SafeLoaderDisabled(
-                f"despesas {ano}: ano legado ainda usa ingest_legado "
-                f"(delete-before-load). Bloqueado até migração para o pipeline seguro."
-            )
         _exigir_safe_loader("despesas")
+        _exigir_aprovacao_legado("despesas", ano)
         # o pipeline seguro substitui o ano inteiro atomicamente; skip_delete
         # não se aplica (não há delete-antes-do-load para pular).
         n = _run_safe(writer, "despesas", ano)
