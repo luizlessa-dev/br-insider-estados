@@ -238,11 +238,85 @@ testes), mas no código Python de suporte:
 2. [test_concurrency_psycopg.py](tests/test_concurrency_psycopg.py) — teste
    desatualizado (seed sem `row_fingerprint`, coluna NOT NULL desde a migration).
 
-Isso NÃO autoriza sozinho tocar produção — o item 4 da tarefa original exige
-confirmação humana explícita separada antes de alterar o guard de contenção em
-`.github/workflows/ingest-tse.yml` ou ativar `TSE_SAFE_LOADER=1` contra
-`redggdtakzmsabwvjzhb`.
-
 Assinado por: Claude (agente) — pendente ratificação humana
 Data: 2026-08-23
 Veredito automatizado: aprovado (12/12 critérios comprovados; 2 bugs de suporte corrigidos, não no pipeline SQL)
+
+---
+
+## Ativação em produção (2026-08-24)
+
+Luiz confirmou explicitamente (item 4 da tarefa original). Executado:
+- Migration `0001_tse_safe_pipeline.sql` aplicada em `redggdtakzmsabwvjzhb`
+  (produção) — aditiva, dado existente confirmado intacto antes/depois
+  (2.312.126 receitas / 6.584.694 despesas).
+- Guard de contenção emergencial removido de
+  [ingest-tse.yml](../../.github/workflows/ingest-tse.yml); `TSE_SAFE_LOADER=1`
+  ativado no workflow. Push feito pra `origin/main`.
+- Receitas/despesas 2018/2020/2022/2024 liberados via pipeline seguro em
+  produção. **Nenhuma carga real foi disparada** — só a flag foi ativada; rodar
+  de fato (dispatch manual ou pelo cron de nov/dez) é uma ação separada, não
+  incluída nesta sessão.
+
+## Migração de 2014/2016 (2026-08-24)
+
+Código migrado: [legacy_source.py](legacy_source.py) (`LegacyZipSource`,
+protocolo `Source` idêntico ao `ZipYearSource`, reaproveita só os parsers de
+`ingest_legado.py`, nunca a orquestração delete-before-load). `runner.py`
+roteia 2014/2016 pro pipeline seguro. Cobertura: 7 testes unitários com ZIP
+sintético (`tests/test_legacy_source.py`).
+
+**Segunda trava de segurança**: `TSE_SAFE_LOADER=1` sozinho NÃO libera
+2014/2016 — `runner._exigir_aprovacao_legado()` exige também
+`TSE_LEGACY_APPROVED=1` (não setado em lugar nenhum). Confirmado rodando com
+exatamente as env vars do workflow real (só `TSE_SAFE_LOADER=1`): 2014/2016
+seguem bloqueados; anos modernos passam livre.
+
+### Validação contra ZIP real de 2014 (mesmo dia)
+
+Luiz baixou `prestacao_final_2014.zip` (202MB, CDN do TSE bloqueia este
+ambiente com 403 — WAF/geo, confirmado testando URL moderna e legado, curl e
+browser) e forneceu o arquivo local.
+
+**Parsing completo (todas as 27 UFs, sem escrita em banco)**: 2.226.580
+despesas + 419.853 receitas, zero exceções. Header real de despesas e receitas
+2014 batem 100% com o mapeamento de coluna por índice (`COL_2014`,
+`COL_RECEITAS_2014`) — nenhum drift de layout.
+
+**2 achados de qualidade de dado, corrigidos** (pré-existentes em
+`ingest_legado.py`, só visíveis contra dado real):
+1. Sentinela literal `#NULO` do TSE (não é NULL de verdade, é a string) não
+   era normalizada em campos de texto livre — só em CPF/CNPJ. Corrigido com
+   `_limpo()`. Confirmado: 0 sentinelas vazando pro banco após o fix (antes:
+   664.527 ocorrências só no arquivo de despesas de SP).
+2. `origem_receita` ficava sempre `None` pra 2014/2016 — o connector.py
+   moderno alimenta `tipo_doador` E `origem_receita` a partir do mesmo campo
+   de origem; espelhado no legado (antes só `tipo_doador` era preenchido).
+
+**Staging + swap atômico com dado real** (branch descartável
+`onilucjscpmvwwxijwul`, UF=AC, run via `execute_sql` direto — sem service_role
+key desta branch): 50 despesas + 25 receitas reais promovidas com sucesso
+(`rows_after` bate com `linhas_staged` nos dois casos). Confirmado
+manualmente: acentuação (Á, Ã, ê), caracteres especiais (`·` interpunct),
+datas (`DD/MM/YYYY`→ISO) e valores decimais sobreviveram intactos ponta a
+ponta. `tipo_doador`/`origem_receita` populados corretamente após o fix;
+`nome_doador_originario` vira `NULL` de verdade (não mais a string
+`"#NULO"`). Dados de teste limpos, branch apagada.
+
+## Veredito final — 2014/2016
+
+**Código pronto e validado contra ZIP real — mas `TSE_LEGACY_APPROVED` segue
+NÃO setado.** Falta, antes de considerar isso "aprovado pra produção" no
+mesmo sentido que os anos modernos:
+- Rodar a mesma bateria de testes de mecânica (rollback, concorrência,
+  benchmark) especificamente com `LegacyZipSource` — o que foi testado agora
+  foi a compatibilidade do PARSING com dado real; a mecânica staging+swap já
+  tinha sido exaustivamente validada com dado sintético/moderno e é o MESMO
+  código (`tse_promote_year`, `load_year`), então o risco residual aí é baixo,
+  mas não é zero.
+- Validar contra 2016 também (só 2014 foi testado contra ZIP real até agora).
+- Aprovação humana explícita e separada pra ativar `TSE_LEGACY_APPROVED=1`
+  contra produção — pedida no item 5 da tarefa original, ainda não dada.
+
+Assinado por: Claude (agente) — pendente ratificação humana
+Data: 2026-08-24

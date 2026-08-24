@@ -109,6 +109,24 @@ def _strip(v: str) -> str:
     return v.strip().strip('"')
 
 
+# Sentinela literal do TSE pra "não informado" nos arquivos de 2014/2016 (achado
+# validando contra ZIP real de 2014, 2026-08-24): aparece SEMPRE como o valor
+# INTEIRO do campo (nunca substring de um nome real), em ~1,8 ocorrência por
+# linha nos campos de texto livre. Sem essa normalização, a string literal
+# "#NULO" ia pro banco em vez de NULL.
+_SENTINELS = {"#NULO"}
+
+
+def _limpo(v: str) -> str | None:
+    """_strip() + normaliza sentinela do TSE (#NULO) pra None. Só usar na
+    construção do dict de SAÍDA — nunca no filtro de cargo (que precisa de
+    string, não None, pra comparar contra CARGOS_ALVO)."""
+    s = _strip(v)
+    if not s or s.upper() in _SENTINELS:
+        return None
+    return s
+
+
 def _doc(v: str) -> str | None:
     """Normaliza CPF/CNPJ: dígitos apenas; None pra sentinela negativo do TSE
     (-1/-3/-4 = não divulgável) ou comprimento < 11. Evita que '-4' vire '4' e
@@ -172,16 +190,16 @@ def iter_despesas_legado(zip_path: str, ano: int, ufs: list | None = None):
 
                     yield {
                         "ano_eleicao":        ano,
-                        "numero_documento":   _strip(row[col["numero_documento"]]),
+                        "numero_documento":   _limpo(row[col["numero_documento"]]),
                         "cpf_candidato":      cpf or None,
-                        "nome_candidato":     _strip(row[col["nome_candidato"]]),
-                        "cargo":              _strip(row[col["cargo"]]),
-                        "sigla_partido":      _strip(row[col["sigla_partido"]]),
-                        "uf":                 _strip(row[col["uf"]]),
+                        "nome_candidato":     _limpo(row[col["nome_candidato"]]),
+                        "cargo":              _limpo(row[col["cargo"]]),
+                        "sigla_partido":      _limpo(row[col["sigla_partido"]]),
+                        "uf":                 _limpo(row[col["uf"]]),
                         "cpf_cnpj_fornecedor": cnpj or None,
-                        "nome_fornecedor":    _strip(row[col["nome_fornecedor"]]),
-                        "tipo_despesa":       _strip(row[col["tipo_despesa"]]),
-                        "descricao_despesa":  _strip(row[col["descricao_despesa"]]),
+                        "nome_fornecedor":    _limpo(row[col["nome_fornecedor"]]),
+                        "tipo_despesa":       _limpo(row[col["tipo_despesa"]]),
+                        "descricao_despesa":  _limpo(row[col["descricao_despesa"]]),
                         "origem_despesa":     None,
                         "especie_recurso":    None,
                         "fonte_recurso":      None,
@@ -258,24 +276,38 @@ def iter_receitas_legado(zip_path: str, ano: int, ufs: list | None = None):
                     if not valor:
                         continue
 
+                    # "Tipo receita" do TSE (col tipo_doador) é uma classificação de
+                    # ORIGEM do recurso (ex.: "Recursos de partido político", "Doação
+                    # de pessoa física") — não é PF/PJ do doador. O connector.py
+                    # moderno alimenta tipo_doador E origem_receita a partir do mesmo
+                    # campo de origem (DS_ORIGEM_RECEITA); espelhado aqui pra manter
+                    # os dois campos preenchidos igual aos anos modernos, em vez de
+                    # deixar origem_receita sempre None só pra 2014/2016.
+                    origem = _limpo(row[col["tipo_doador"]])
+
                     yield {
                         "ano_eleicao": ano,
-                        "numero_recibo": _strip(row[col["numero_recibo"]]) or None,
+                        "numero_recibo": _limpo(row[col["numero_recibo"]]),
                         "cpf_candidato": _doc(row[col["cpf_candidato"]]),
-                        "nome_candidato": _strip(row[col["nome_candidato"]]) or None,
-                        "cargo": _strip(row[col["cargo"]]) or None,
-                        "sigla_partido": _strip(row[col["sigla_partido"]]) or None,
-                        "uf": _strip(row[col["uf"]]) or None,
+                        "nome_candidato": _limpo(row[col["nome_candidato"]]),
+                        "cargo": _limpo(row[col["cargo"]]),
+                        "sigla_partido": _limpo(row[col["sigla_partido"]]),
+                        "uf": _limpo(row[col["uf"]]),
                         "cpf_cnpj_doador": _doc(row[col["cpf_cnpj_doador"]]),
-                        "nome_doador": _strip(row[col["nome_doador_rfb"]]) or None,
-                        "tipo_doador": _strip(row[col["tipo_doador"]]) or None,
-                        "setor_economico_doador": _strip(row[col["setor_economico_doador"]]) or None,
+                        "nome_doador": _limpo(row[col["nome_doador_rfb"]]),
+                        "tipo_doador": origem,
+                        "setor_economico_doador": _limpo(row[col["setor_economico_doador"]]),
                         "cpf_cnpj_doador_originario": _doc(row[col["cpf_cnpj_doador_originario"]]),
-                        "nome_doador_originario": _strip(row[col["nome_doador_originario_rfb"]]) or None,
-                        "natureza_receita": _strip(row[col["descricao"]]) or None,
-                        "origem_receita": None,
-                        "especie_recurso": _strip(row[col["especie_recurso"]]) or None,
-                        "fonte_recurso": _strip(row[col["fonte_recurso"]]) or None,
+                        "nome_doador_originario": _limpo(row[col["nome_doador_originario_rfb"]]),
+                        # "Descricao da receita" (texto livre) não tem equivalente
+                        # estrutural em tse_receitas — mantido em natureza_receita
+                        # como melhor aproximação disponível (ver nota no header do
+                        # arquivo: não é o mesmo tipo de dado que DS_NATUREZA_RECEITA
+                        # dos anos modernos, que é categórico, não texto livre).
+                        "natureza_receita": _limpo(row[col["descricao"]]),
+                        "origem_receita": origem,
+                        "especie_recurso": _limpo(row[col["especie_recurso"]]),
+                        "fonte_recurso": _limpo(row[col["fonte_recurso"]]),
                         "valor": valor,
                         "data_receita": _parse_data(row[col["data_receita"]]),
                         "data_prestacao_contas": None,
