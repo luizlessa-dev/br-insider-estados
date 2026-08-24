@@ -182,14 +182,19 @@ class PostgrestBackend(Backend):
         if run.staging_expires_at_days:
             expires = (datetime.now(timezone.utc)
                        + timedelta(days=run.staging_expires_at_days)).isoformat()
+        # Nomes de coluna reais de tse_load_runs (sql/0001_tse_safe_pipeline.sql):
+        # linhas_parseadas/linhas_staged, não rows_parsed/rows_staged — e não
+        # existe coluna pra rows_downloaded. Mismatch achado em produção
+        # (2026-08-24): PostgREST rejeitava com 400/PGRST204, silenciado como
+        # WARNING não-fatal — a carga seguia, mas o progresso nunca era gravado.
         payload = {
             "run_id": run.run_id,
             "dataset": run.dataset,
             "ano": run.ano,
             "phase": run.phase,
             "status": run.status,
-            "rows_downloaded": run.rows_downloaded,
-            "rows_staged": run.rows_staged,
+            "linhas_parseadas": run.rows_parsed,
+            "linhas_staged": run.rows_staged,
             "rows_final_before": run.rows_final_before,
             "rows_final_after": run.rows_final_after,
             "min_expected": run.min_expected,
