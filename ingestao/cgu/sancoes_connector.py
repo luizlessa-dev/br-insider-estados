@@ -198,24 +198,24 @@ def _parse_record(raw: dict, cadastro: Cadastro) -> Sancao:
 
 # ─── Conector ─────────────────────────────────────────────────────────────────
 
-# Nomes dos parâmetros de data variam por endpoint (inconsistência da API):
-#   CEIS → dataInicialSancao / dataFinalSancao
-#   CNEP → dataInicioSancao  / dataFimSancao
-DATE_PARAMS: dict[str, tuple[str, str]] = {
-    "CEIS": ("dataInicialSancao", "dataFinalSancao"),
-    "CNEP": ("dataInicioSancao",  "dataFimSancao"),
-}
-
-
 class SancoesConnector:
     """
     Itera sobre todos os registros do CEIS ou CNEP via API paginada.
-    Usa janelas anuais para cobrir todo o histórico sem depender de
-    tamanhoPagina (não documentado pela API).
 
-    Atenção: os parâmetros de data têm nomes DIFERENTES por endpoint:
-      CEIS → dataInicialSancao / dataFinalSancao
-      CNEP → dataInicioSancao  / dataFimSancao
+    ACHADO 2026-08-25: os parâmetros dataInicialSancao/dataFinalSancao
+    (CEIS) e dataInicioSancao/dataFimSancao (CNEP) quebram a paginação da
+    API — com QUALQUER filtro de data presente (janela anual, janela ampla,
+    tanto faz), a API só devolve a página 1 e para. Testado direto: CEIS
+    filtrado por ano inteiro devolve ~4 registros; CEIS sem filtro nenhum
+    devolve 15/página de forma contínua até a página 1572 (~23,5 mil
+    registros reais). Efeito prático: a ingestão semanal rodava "com
+    sucesso" (exit 0) trazendo só ~10% do CEIS real (2.411 de ~23.500),
+    porque a estratégia de janela anual dependia desse filtro quebrado.
+
+    Fix: iteração cheia agora pagina SEM nenhum filtro de data. Ingestão
+    incremental (iter_incremental_*) também para de depender do filtro de
+    data da API — faz o mesmo scan completo e filtra client-side por
+    data_referencia/data_inicio >= desde.
     """
 
     def __init__(self, api_key: str) -> None:
@@ -234,73 +234,57 @@ class SancoesConnector:
             time.sleep(PAGE_DELAY - elapsed)
         self._last_req = time.monotonic()
 
-    def _fetch_page(self, url: str, cadastro: Cadastro,
-                    pagina: int, ini: str, fim: str) -> list[dict]:
+    def _fetch_page(self, url: str, pagina: int) -> list[dict]:
         self._throttle()
-        param_ini, param_fim = DATE_PARAMS[cadastro]
-        params = {
-            param_ini: ini,
-            param_fim: fim,
-            "pagina":  pagina,
-        }
-        resp = self.session.get(url, params=params, timeout=45)
+        resp = self.session.get(url, params={"pagina": pagina}, timeout=45)
         if resp.status_code == 401:
             raise PermissionError("Chave da API inválida ou expirada.")
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else []
 
-    def _iter_year(self, url: str, cadastro: Cadastro, ano: int) -> Iterator[Sancao]:
-        ini = f"01/01/{ano}"
-        fim = f"31/12/{ano}"
+    def _iter_full(self, url: str, cadastro: Cadastro) -> Iterator[Sancao]:
+        """Pagina o cadastro inteiro, sem filtro de data (ver docstring da classe)."""
         pagina = 1
         total = 0
         while True:
-            records = self._fetch_page(url, cadastro, pagina, ini, fim)
+            records = self._fetch_page(url, pagina)
             if not records:
                 break
             for r in records:
                 yield _parse_record(r, cadastro)
                 total += 1
-            logger.debug("%s %d: pág %d → %d acumulados", cadastro, ano, pagina, total)
+            if pagina % 100 == 0:
+                logger.debug("%s: pág %d → %d acumulados", cadastro, pagina, total)
             pagina += 1
-        if total:
-            logger.info("%s %d: %d registros", cadastro, ano, total)
+        logger.info("%s: %d registros", cadastro, total)
 
     def iter_ceis(self, ano_inicio: int = FIRST_YEAR) -> Iterator[Sancao]:
-        """Itera sobre todos os registros do CEIS (2013 → ano atual)."""
-        ano_fim = datetime.utcnow().year
-        for ano in range(ano_inicio, ano_fim + 1):
-            yield from self._iter_year(BASE_CEIS, "CEIS", ano)
+        """Itera sobre todos os registros do CEIS. ano_inicio ignorado — a API
+        não suporta filtro de data confiável, então a única forma correta de
+        cobrir o histórico é escanear tudo (ver docstring da classe)."""
+        yield from self._iter_full(BASE_CEIS, "CEIS")
 
     def iter_cnep(self, ano_inicio: int = FIRST_YEAR) -> Iterator[Sancao]:
-        """Itera sobre todos os registros do CNEP (2013 → ano atual)."""
-        ano_fim = datetime.utcnow().year
-        for ano in range(ano_inicio, ano_fim + 1):
-            yield from self._iter_year(BASE_CNEP, "CNEP", ano)
+        """Itera sobre todos os registros do CNEP. ano_inicio ignorado — idem iter_ceis."""
+        yield from self._iter_full(BASE_CNEP, "CNEP")
 
     def iter_incremental_ceis(self, desde: date) -> Iterator[Sancao]:
-        """Ingestão incremental do CEIS a partir de uma data."""
-        ini = desde.strftime("%d/%m/%Y")
-        fim = datetime.utcnow().strftime("%d/%m/%Y")
-        pagina = 1
-        while True:
-            records = self._fetch_page(BASE_CEIS, "CEIS", pagina, ini, fim)
-            if not records:
-                break
-            for r in records:
-                yield _parse_record(r, "CEIS")
-            pagina += 1
+        """Ingestão incremental do CEIS a partir de uma data.
+
+        O filtro de data da API não é confiável (ver docstring da classe),
+        então isso faz o mesmo scan completo do iter_ceis e filtra
+        client-side por data_referencia (fallback: data_inicio) >= desde.
+        Mais lento que um filtro server-side de verdade, mas correto.
+        """
+        for sancao in self._iter_full(BASE_CEIS, "CEIS"):
+            ref = sancao.data_referencia or sancao.data_inicio
+            if ref is not None and ref >= desde:
+                yield sancao
 
     def iter_incremental_cnep(self, desde: date) -> Iterator[Sancao]:
-        """Ingestão incremental do CNEP a partir de uma data."""
-        ini = desde.strftime("%d/%m/%Y")
-        fim = datetime.utcnow().strftime("%d/%m/%Y")
-        pagina = 1
-        while True:
-            records = self._fetch_page(BASE_CNEP, "CNEP", pagina, ini, fim)
-            if not records:
-                break
-            for r in records:
-                yield _parse_record(r, "CNEP")
-            pagina += 1
+        """Ingestão incremental do CNEP a partir de uma data. Ver iter_incremental_ceis."""
+        for sancao in self._iter_full(BASE_CNEP, "CNEP"):
+            ref = sancao.data_referencia or sancao.data_inicio
+            if ref is not None and ref >= desde:
+                yield sancao
