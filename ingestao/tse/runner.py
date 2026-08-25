@@ -98,8 +98,14 @@ def _run_safe(writer: TSEWriter, dataset: str, ano: int) -> int:
     Anos legado (ANOS_LEGADOS) usam LegacyZipSource (parser de formato antigo);
     os demais usam ZipYearSource (connector.py moderno). Em ambos os casos o
     DELETE só acontece dentro de tse_promote_year() (swap atômico) — nunca
-    antes do download, ao contrário do ingest_legado.py standalone."""
-    from .safe_backend import PostgrestBackend
+    antes do download, ao contrário do ingest_legado.py standalone.
+
+    Backend: DirectPgBackend (COPY, via TSE_PG_DSN) se a env var estiver
+    presente; senão PostgrestBackend (REST) como fallback. Achado em produção
+    (2026-08-24, despesas 2016): PostgrestBackend.stage_rows() faz dois counts
+    exatos por batch de 500, cujo custo cresce com o staging e bateu em
+    statement_timeout do Postgres com ~1,3M linhas acumuladas. DirectPgBackend
+    evita isso (um COPY, uma contagem via rowcount) — ver copy_backend.py."""
     from .safe_loader import load_year
 
     if ano in ANOS_LEGADOS:
@@ -108,7 +114,16 @@ def _run_safe(writer: TSEWriter, dataset: str, ano: int) -> int:
     else:
         from .zip_source import ZipYearSource
         source = ZipYearSource(dataset, ano)
-    backend = PostgrestBackend(writer)
+
+    if os.environ.get("TSE_PG_DSN"):
+        from .copy_backend import DirectPgBackend
+        backend = DirectPgBackend()
+        logger.info("backend: DirectPgBackend (COPY, TSE_PG_DSN presente)")
+    else:
+        from .safe_backend import PostgrestBackend
+        backend = PostgrestBackend(writer)
+        logger.info("backend: PostgrestBackend (REST) — TSE_PG_DSN ausente")
+
     result = load_year(dataset, ano, source, backend)
     return int(result.get("rows_after") or 0)
 
