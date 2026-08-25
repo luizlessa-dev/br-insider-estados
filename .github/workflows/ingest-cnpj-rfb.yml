@@ -1,13 +1,16 @@
 name: Ingestão CNPJ Receita Federal
 
 # Cadência: mensal (dump RFB atualiza no início de cada mês).
-# Baixa 10 partições de Empresas (~700 MB cada comprimido) e filtra pelos
+# Baixa 10 partições de Empresas (~90-100 MB cada comprimido) e filtra pelos
 # CNPJs já presentes no banco — estratégia "filtro reverso" com DuckDB.
 # QSA (sócios) é opcional via input manual (arquivos Socios*.zip são igualmente pesados).
 #
-# Restrição: dadosabertos.rfb.gov.br só responde para IPs brasileiros.
-# GHA usa runners AWS us-east-1 — em teoria aceito. Se bloquear, migrar
-# para runner self-hosted ou usar um proxy brasileiro.
+# Fonte: arquivos.receitafederal.gov.br (plataforma SERPRO+, Nextcloud público),
+# descoberta dinamicamente via PROPFIND (mês mais recente sob Dados/Cadastros/CNPJ/).
+# `dadosabertos.rfb.gov.br` (usado antes) está MORTO — não é bloqueio de IP de
+# datacenter como se pensava: confirmado timeout total em 3 redes independentes
+# (GHA, rede residencial BR, ambiente de dev) em 25/08/2026. A RFB migrou de
+# plataforma sem avisar. Corrigido em ingestao/rfb/cnpj_connector.py.
 #
 # Secrets necessários:
 #   SUPABASE_URL

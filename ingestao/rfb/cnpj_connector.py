@@ -2,7 +2,13 @@
 CNPJ Receita Federal — The Brasilia Insider
 Enriquece CNPJs já presentes no banco (emendas + TSE) com dados cadastrais.
 
-Fonte: https://dadosabertos.rfb.gov.br/CNPJ/
+Fonte: https://arquivos.receitafederal.gov.br/ (plataforma SERPRO+, Nextcloud
+  público), pasta Dados/Cadastros/CNPJ/{AAAA-MM}/ — mensal, uma subpasta por mês.
+  `dadosabertos.rfb.gov.br` (usado antes) está morto — timeout total confirmado
+  em 3 redes independentes (GitHub Actions, rede residencial, este ambiente) em
+  25/08/2026. A RFB migrou pra essa nova plataforma sem avisar; o domínio antigo
+  só nunca mais respondeu. Confirmado via PROPFIND que os nomes de arquivo
+  (Empresas{0-9}.zip, Socios{0-9}.zip) não mudaram, só o host/path.
   Arquivos: Empresas{0-9}.zip + Socios{0-9}.zip + Estabelecimentos{0-9}.zip
   Atualização: mensal
 
@@ -25,7 +31,7 @@ Layout dos arquivos (separador ";", sem cabeçalho, encoding latin-1):
                     DATA_INICIO_ATIVIDADE;CNAE_FISCAL;CNAE_FISCAL_SECUNDARIA;
                     TIPO_LOGRADOURO;LOGRADOURO;NUMERO;COMPLEMENTO;BAIRRO;CEP;UF;MUNICIPIO;...
 
-Base URL: https://dadosabertos.rfb.gov.br/CNPJ/
+Base URL: https://arquivos.receitafederal.gov.br/public.php/dav/files/gn672Ad4CF8N6TK/Dados/Cadastros/CNPJ/{AAAA-MM}/
   Empresas0.zip … Empresas9.zip
   Socios0.zip   … Socios9.zip  (opcionais — pesados, baixar sob demanda)
 
@@ -47,7 +53,9 @@ from urllib3.util.retry import Retry
 
 logger = logging.getLogger("rfb.cnpj")
 
-BASE_URL = "https://dadosabertos.rfb.gov.br/CNPJ"
+SERPRO_HOST = "https://arquivos.receitafederal.gov.br"
+SERPRO_SHARE_TOKEN = "gn672Ad4CF8N6TK"
+SERPRO_CNPJ_DIR = f"{SERPRO_HOST}/public.php/dav/files/{SERPRO_SHARE_TOKEN}/Dados/Cadastros/CNPJ"
 PARTICOES = list(range(10))   # 0..9
 
 EMPRESA_COLS = [
@@ -133,22 +141,49 @@ def _filter_partition_duckdb(
     except ImportError:
         raise RuntimeError("duckdb não instalado. Execute: pip install duckdb")
 
-    con = duckdb.connect(database=":memory:")
+    # DuckDB não lê CSV de dentro de um .zip (não é um filesystem de arquivo
+    # único como .gz/.zst — é um contêiner com índice) — testado contra dado
+    # real em 25/08/2026: `read_csv` direto no .zip falha tanto na validação
+    # de encoding quanto no sniff de dialeto, porque está lendo os bytes
+    # binários do contêiner, não o CSV. Extrai primeiro via unzip -p | iconv
+    # (mesmo padrão usado pros ZIPs do TSE no ElectioLab), convertendo pra
+    # UTF-8 antes — os dumps da RFB têm bytes fora do Latin-1 estrito
+    # (Windows-1252), que o validador de encoding do DuckDB 1.5+ rejeita.
+    import subprocess
 
-    # DuckDB lê ZIP diretamente
+    csv_path = zip_path.with_suffix(".csv")
+    try:
+        with open(csv_path, "wb") as f:
+            unzip_proc = subprocess.Popen(["unzip", "-p", str(zip_path)], stdout=subprocess.PIPE)
+            iconv_proc = subprocess.Popen(
+                ["iconv", "-f", "WINDOWS-1252//TRANSLIT", "-t", "UTF-8//IGNORE"],
+                stdin=unzip_proc.stdout,
+                stdout=f,
+            )
+            unzip_proc.stdout.close()
+            iconv_proc.communicate()
+            unzip_proc.wait()
+    except Exception as e:
+        logger.error("Extração de %s falhou: %s", zip_path.name, e)
+        csv_path.unlink(missing_ok=True)
+        return []
+
+    con = duckdb.connect(database=":memory:")
     parquet_list = ",".join(f"'{c}'" for c in target_cnpjs_basico)
-    col_names = ", ".join(f"column{i:02d} AS {col}" for i, col in enumerate(cols))
+    # Nomes reais gerados pelo DuckDB pra CSV sem header: column0, column1, ...
+    # (sem zero-padding — column00 não existe e falha silenciosamente antes).
+    col_names = ", ".join(f"column{i} AS {col}" for i, col in enumerate(cols))
 
     query = f"""
     SELECT {col_names}
     FROM read_csv(
-        '{zip_path}',
+        '{csv_path}',
         delim=';',
         header=false,
-        encoding='latin1',
+        quote='"',
         ignore_errors=true
     )
-    WHERE column00 IN ({parquet_list})
+    WHERE column0 IN ({parquet_list})
     """
 
     try:
@@ -162,6 +197,7 @@ def _filter_partition_duckdb(
         return []
     finally:
         con.close()
+        csv_path.unlink(missing_ok=True)
 
 
 # ─── API pública: CNPJs individuais (lento, para enriquecimento pontual) ──────
@@ -201,9 +237,34 @@ class CNPJConnector:
     def __init__(self, workdir: str | None = None) -> None:
         self.session = _build_session()
         self.workdir = pathlib.Path(workdir or tempfile.gettempdir())
+        self._mes: str | None = None
+
+    def _mes_mais_recente(self) -> str:
+        """Descobre a subpasta AAAA-MM mais recente via PROPFIND (Nextcloud WebDAV).
+        Evita hardcodar o mês corrente — a RFB às vezes atrasa a publicação."""
+        if self._mes:
+            return self._mes
+        body = (
+            '<?xml version="1.0"?>'
+            '<d:propfind xmlns:d="DAV:"><d:prop><d:displayname/><d:resourcetype/></d:prop></d:propfind>'
+        )
+        resp = self.session.request(
+            "PROPFIND",
+            f"{SERPRO_CNPJ_DIR}/",
+            headers={"Depth": "1", "Content-Type": "application/xml"},
+            data=body,
+            timeout=30,
+        )
+        resp.raise_for_status()
+        meses = sorted(set(re.findall(r"<d:displayname>(\d{4}-\d{2})</d:displayname>", resp.text)))
+        if not meses:
+            raise RuntimeError(f"Nenhuma pasta AAAA-MM encontrada em {SERPRO_CNPJ_DIR}/")
+        self._mes = meses[-1]
+        logger.info("rfb.cnpj: usando dump de %s (mais recente disponível)", self._mes)
+        return self._mes
 
     def _particao_url(self, entity: str, idx: int) -> str:
-        return f"{BASE_URL}/{entity}{idx}.zip"
+        return f"{SERPRO_CNPJ_DIR}/{self._mes_mais_recente()}/{entity}{idx}.zip"
 
     def iter_empresas(self, target_cnpjs: set[str]) -> Iterator[dict]:
         """
