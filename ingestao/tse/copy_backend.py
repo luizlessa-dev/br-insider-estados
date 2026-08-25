@@ -77,7 +77,11 @@ class CopyBackend:
         staging = _STAGING[dataset]
         tmp = f"_tse_copy_{run_id.replace('-', '')}"
 
-        conn = psycopg.connect(self.dsn, autocommit=False)
+        # connect_timeout só pro handshake — sem statement_timeout aqui: o
+        # COPY streaming de datasets grandes pode legitimamente levar dezenas
+        # de minutos (despesas 2016 completo: ~24min), proporcional ao
+        # volume, não é uma query travada.
+        conn = psycopg.connect(self.dsn, autocommit=False, connect_timeout=30)
         enviadas = inseridas = 0
         try:
             with conn.cursor() as cur:
@@ -165,7 +169,17 @@ class DirectPgBackend(Backend):
 
     def _connect(self):
         import psycopg
-        return psycopg.connect(self.dsn, autocommit=True)
+        # connect_timeout: TCP/handshake. statement_timeout (server-side, via
+        # options): teto pra qualquer query travar indefinidamente através do
+        # pooler. Achado em produção (2026-08-25): sem isso, um promote() de
+        # despesas 2016 (~5,6M linhas) ficou preso >4h sem erro nenhum — o
+        # staging completou (COPY ok), mas a conexão do promote nunca voltou
+        # nem deu timeout, e só "morreu" quando o pooler derrubou a sessão
+        # ociosa. 20min cobre folgado o maior swap já medido (despesas 2016
+        # completo) com margem.
+        return psycopg.connect(
+            self.dsn, autocommit=True, connect_timeout=30,
+            options="-c statement_timeout=1200000")
 
     def count_final(self, dataset: str, ano: int) -> int:
         with self._connect() as conn:
