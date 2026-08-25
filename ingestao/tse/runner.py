@@ -161,6 +161,15 @@ def run_despesas(writer: TSEWriter, ano: int, skip_delete: bool = False) -> None
 
 
 def main() -> None:
+    # Import + chamada LOCAL (não no topo do módulo): carregar .env é um
+    # side-effect que só deve acontecer ao rodar como CLI de verdade. No
+    # topo do módulo, qualquer `import runner` (inclusive os testes) herdaria
+    # TSE_PG_DSN/credenciais de produção do .env local sem intenção — já
+    # aconteceu uma vez (2026-08-24): um teste com fakes acabou conectando
+    # em produção de verdade porque TSE_PG_DSN estava no ambiente.
+    from dotenv import load_dotenv
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Ingestão TSE → Supabase")
     parser.add_argument(
         "--dataset",
