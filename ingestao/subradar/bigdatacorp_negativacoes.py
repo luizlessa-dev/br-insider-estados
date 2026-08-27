@@ -60,15 +60,21 @@ def _headers() -> dict:
     }
 
 
-def _post_bdc(base_url: str, datasets: str, doc_digits: str) -> dict | None:
-    """POST genérico para qualquer endpoint BDC — retorna primeiro Result ou None."""
+def _post_bdc(base_url: str, datasets: str, doc_digits: str,
+              timeout: int = 30) -> dict | None:
+    """POST genérico para qualquer endpoint BDC — retorna primeiro Result ou None.
+
+    `timeout` é parâmetro porque /empresas é bem mais lento que /pessoas: a
+    consulta de processos por CNPJ estoura os 30s padrão com frequência, e o
+    read timeout chegava aqui como None, indistinguível de "sem dados".
+    """
     payload = {
         "Datasets": datasets,
         "q": f"doc{{{doc_digits}}}",
         "Limit": 1,
     }
     try:
-        resp = requests.post(base_url, json=payload, headers=_headers(), timeout=30)
+        resp = requests.post(base_url, json=payload, headers=_headers(), timeout=timeout)
         if resp.status_code == 401:
             logger.error("BigDataCorp Neg.: token inválido (HTTP 401)")
             return None

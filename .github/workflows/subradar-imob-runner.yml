@@ -1,5 +1,11 @@
 name: Subradar Imob - Entrega de Dossiê
 
+# A entrega saiu deste workflow e passou para dentro do runner
+# (ingestao/subradar/entrega_imob.py). O passo antigo "Notificar cliente por
+# email" rodava com `if: success()`: bastava o Python terminar com código 0
+# para o e-mail sair, mesmo que nenhuma fonte tivesse respondido. Hoje quem
+# decide enviar é a trava de completude, não o exit code.
+
 on:
   workflow_dispatch:
     inputs:
@@ -33,30 +39,49 @@ jobs:
           cache: pip
 
       - name: Instalar dependências
-        run: |
-          pip install -r ingestao/requirements.txt
+        run: pip install -r ingestao/requirements.txt
 
-      - name: Executar pipeline Imob
+      - name: Executar pipeline Imob e entregar
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # A fonte judicial consulta o BigDataCorp pelo CPF/CNPJ do
+          # proprietário. Sem estes dois secrets a seção sai "pendente" e a
+          # entrega é retida — que é o comportamento correto, mas inútil.
+          BIGDATA_CORP_TOKEN_ID: ${{ secrets.BIGDATA_CORP_TOKEN_ID }}
+          BIGDATA_CORP_ACCESS_TOKEN: ${{ secrets.BIGDATA_CORP_ACCESS_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SUBRADAR_FROM: ${{ secrets.SUBRADAR_FROM }}
+          SUBRADAR_OPERADOR: ${{ secrets.SUBRADAR_OPERADOR }}
+          SUBRADAR_BASE_URL: ${{ secrets.SUBRADAR_BASE_URL }}
         run: |
           python3 -m ingestao.subradar.runner_imob \
             --matricula "${{ github.event.inputs.matricula }}" \
             --cartorio-id "${{ github.event.inputs.cartorio_id }}" \
-            --cliente-id "${{ github.event.inputs.consulta_id }}"
-
-      - name: Notificar cliente por email
-        if: success()
-        env:
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        run: |
-          python3 .github/scripts/send_dossie_imob_resend.py \
             --consulta-id "${{ github.event.inputs.consulta_id }}" \
-            --email "${{ github.event.inputs.email_cliente }}"
+            --email-cliente "${{ github.event.inputs.email_cliente }}"
 
-      - name: Notificar erro
+      - name: Registrar falha na consulta
         if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          echo "Pipeline falhou para matrícula ${{ github.event.inputs.matricula }}"
-          echo "Consulta ID: ${{ github.event.inputs.consulta_id }}"
+          # O runner já grava status=erro nas falhas que consegue capturar.
+          # Este passo cobre o resto (timeout do job, falha de dependência),
+          # senão o pedido ficaria "processando" para sempre.
+          python3 - <<'PY'
+          import os, requests
+          url = os.environ["SUPABASE_URL"].rstrip("/")
+          key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+          requests.patch(
+              f"{url}/rest/v1/sub_imob_consultas",
+              headers={"apikey": key, "Authorization": f"Bearer {key}",
+                       "Content-Type": "application/json"},
+              params={"id": "eq.${{ github.event.inputs.consulta_id }}",
+                      "status": "eq.processando"},
+              json={"status": "erro",
+                    "mensagem_erro": "Job do GitHub Actions falhou — ver run ${{ github.run_id }}"},
+              timeout=30,
+          )
+          PY

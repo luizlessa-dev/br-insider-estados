@@ -1,43 +1,44 @@
 """
-CNPJ-CNJ para Subradar Imob — dados de ônus reais registrados via CNPJ.
-Fonte: API pública CNJ (CNPJ-CNJ ou via cartórios participantes)
+Titularidade e ônus reais do imóvel — sem cobertura contratada.
 
-Próximas versões:
-- Integração ONR (manual, com custo)
-- SICAR/IBAMA (CAR rural)
-- Prefeituras (IPTU, habite-se)
+Não existe fonte pública que devolva titularidade ou ônus (hipoteca, alienação
+fiduciária, penhora, servidão) a partir da matrícula. O caminho real é o ONR
+(Operador Nacional do Registro, registrodeimoveis.org.br): consulta paga, por
+matrícula, com contrato. Enquanto não houver contrato, estas duas seções
+declaram a lacuna no laudo em vez de desaparecer dele.
+
+Até 27/08/2026 os dois conectores retornavam None, o que os removia
+silenciosamente do laudo. O efeito prático era um dossiê de compliance
+imobiliário que nunca mencionava ônus reais — e um cliente não tem como
+distinguir "verificamos e está livre" de uma seção que nunca existiu.
 """
 from __future__ import annotations
 
-from .base_imob import SubradarImobSource, logger
+from .base_imob import SubradarImobSource, sem_cobertura
+
+_MOTIVO_ONR = (
+    "titularidade e ônus por matrícula só são obtidos via ONR "
+    "(registrodeimoveis.org.br), consulta paga ainda não contratada"
+)
 
 
 class CNPJCNJImobConnector(SubradarImobSource):
-    """CNPJ-CNJ — titularidade e ônus reais básicos."""
+    """Titularidade do imóvel."""
     fonte = "cnpj_cnj_registros"
-    base_url = "https://www.cnj.jus.br"  # placeholder — sem API pública direta
 
-    def consultar_imovel(self, matricula: str, cartorio_id: str | None = None) -> dict | None:
-        """
-        CNPJ-CNJ não expõe API pública para matrícula imobiliária.
-        Implementação futura: integração via ONR (paga) ou parser de cartório.
-        Por agora, retorna estrutura básica para teste.
-        """
-        self.log.info("consulta CNPJ-CNJ para matrícula: %s (cartório: %s)", matricula, cartorio_id)
-
-        # TODO: integrar com ONR ou API de cartório específico
-        # Para MVP: retornar None (não aplicável) até ter integração real
-        return None
+    def consultar_imovel(self, matricula: str, cartorio_id: str | None = None, **_) -> dict:
+        return sem_cobertura(
+            self.fonte, "titularidade", "Titularidade e Propriedade", _MOTIVO_ONR,
+            {"matricula": matricula, "cartorio_id": cartorio_id, "requer": "contrato ONR"},
+        )
 
 
 class OususReaisConnector(SubradarImobSource):
-    """Placeholder para conectar dados de ônus reais."""
+    """Ônus reais: hipoteca, alienação fiduciária, penhora, servidão."""
     fonte = "onus_reais"
 
-    def consultar_imovel(self, matricula: str, cartorio_id: str | None = None) -> dict | None:
-        """
-        Ônus reais: hipotecas, alienação fiduciária, penhoras, servidões.
-        Requer integração com RI Digital ou base de cartórios.
-        """
-        self.log.debug("ônus reais para %s (cartório: %s)", matricula, cartorio_id)
-        return None
+    def consultar_imovel(self, matricula: str, cartorio_id: str | None = None, **_) -> dict:
+        return sem_cobertura(
+            self.fonte, "onus_reais", "Ônus Reais", _MOTIVO_ONR,
+            {"matricula": matricula, "cartorio_id": cartorio_id, "requer": "contrato ONR"},
+        )
