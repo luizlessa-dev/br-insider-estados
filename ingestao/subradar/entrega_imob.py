@@ -36,7 +36,10 @@ RESEND_KEY = os.environ.get("RESEND_API_KEY", "")
 # string vazia, e "" passaria pelo default, deixando o remetente em branco.
 REMETENTE = os.environ.get("SUBRADAR_FROM") or "retorno@subradar.com.br"
 OPERADOR = os.environ.get("SUBRADAR_OPERADOR") or "luiz@lessalabs.com"
-BASE_SITE = (os.environ.get("SUBRADAR_BASE_URL") or "https://subradar.dev").rstrip("/")
+# subradar.com.br, confirmado nos alias do projeto na Vercel. O default herdado
+# do send_dossie_imob_resend.py era subradar.dev, domínio que não resolve — o
+# e-mail de entrega levava o cliente a um link morto.
+BASE_SITE = (os.environ.get("SUBRADAR_BASE_URL") or "https://subradar.com.br").rstrip("/")
 
 # Status que significam "esta fonte não respondeu". Laudo com qualquer um deles
 # não vai para o cliente. `nao_contratada` fica de fora de propósito: é limite
