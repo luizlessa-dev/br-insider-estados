@@ -4,8 +4,11 @@ Conector: Situação Cadastral do CPF (Receita Federal)
 Verifica se o CPF está regular, suspenso, cancelado, pendente de regularização
 ou nulo (não existe). CPF irregular invalida qualquer outra consulta.
 
-Fonte primária: BigDataCorp /peoplev2 com dataset basic_data (se token disponível)
-Fonte secundária: ReceitaWS API pública (sem autenticação, rate-limited)
+Fonte: BigDataCorp /peoplev2 com dataset basic_data.
+
+Sem credencial BigDataCorp a seção fica pendente — não existe fonte pública
+gratuita de situação de CPF. (Havia aqui um fallback para ReceitaWS, mas aquela
+API só atende CNPJ: /v1/cpf responde 404, então nunca funcionou.)
 
 Retorna alerta crítico se CPF não estiver REGULAR.
 """
@@ -21,9 +24,12 @@ from .base import SubradarSource
 
 logger = logging.getLogger("subradar.cpf_situacao")
 
-BDC_TOKEN = os.environ.get("BIGDATA_CORP_TOKEN", "")
+# Mesmas variáveis do resto dos conectores BigDataCorp. Este módulo lia
+# BIGDATA_CORP_TOKEN, que não é o nome usado em lugar nenhum do projeto — a
+# fonte primária ficava permanentemente vazia.
+from .bigdatacorp import BDC_TOKEN_ID, BDC_ACCESS_TOKEN, _headers
+
 _BDC_PF_URL = "https://bigboost.bigdatacorp.com.br/peoplev2"
-_RECEITAWS_URL = "https://www.receitaws.com.br/v1/cpf"
 
 _STATUS_LABELS = {
     "REGULAR": "Regular",
@@ -42,13 +48,13 @@ def _strip(doc: str) -> str:
 
 def _via_bigdatacorp(cpf: str) -> str | None:
     """Retorna situação cadastral via BigDataCorp. None se indisponível."""
-    if not BDC_TOKEN:
+    if not BDC_ACCESS_TOKEN or not BDC_TOKEN_ID:
         return None
     try:
         resp = requests.post(
             _BDC_PF_URL,
             json={"Datasets": "basic_data", "q": f"doc{{{cpf}}}", "Limit": 1},
-            headers={"accept": "application/json", "content-type": "application/json", "AccessToken": BDC_TOKEN},
+            headers=_headers(),
             timeout=15,
         )
         if not resp.ok:
@@ -61,21 +67,6 @@ def _via_bigdatacorp(cpf: str) -> str | None:
         return None
 
 
-def _via_receitaws(cpf: str) -> str | None:
-    """Retorna situação via ReceitaWS (fallback, rate-limited)."""
-    try:
-        resp = requests.get(
-            f"{_RECEITAWS_URL}/{cpf}",
-            headers={"User-Agent": "subradar/1.0"},
-            timeout=10,
-        )
-        if resp.ok:
-            return resp.json().get("situacao") or None
-    except Exception as e:
-        logger.debug("ReceitaWS CPF situacao: %s", e)
-    return None
-
-
 class CPFSituacaoConnector(SubradarSource):
     """Verifica a situação cadastral do CPF na Receita Federal."""
     fonte = "cpf_situacao_rfb"
@@ -86,7 +77,7 @@ class CPFSituacaoConnector(SubradarSource):
         if len(cpf) != 11:
             return []
 
-        situacao = _via_bigdatacorp(cpf) or _via_receitaws(cpf)
+        situacao = _via_bigdatacorp(cpf)
 
         if situacao is None:
             logger.debug("cpf_situacao: situação não disponível para CPF %s***", cpf[:3])
@@ -119,7 +110,7 @@ class CPFSituacaoConnector(SubradarSource):
         cpf_d = _strip(cpf)
         if len(cpf_d) != 11:
             return None
-        situacao = _via_bigdatacorp(cpf_d) or _via_receitaws(cpf_d)
+        situacao = _via_bigdatacorp(cpf_d)
         if situacao is None:
             return {
                 "fonte": self.fonte, "categoria": "cadastral",

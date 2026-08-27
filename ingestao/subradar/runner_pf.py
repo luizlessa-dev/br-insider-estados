@@ -66,7 +66,10 @@ from .cvm_insider_pf import CVMInsiderPFConnector
 from .tce_estaduais_pf import TCEEstaduaisPFConnector
 from .escavador_pf import EscavadorPFConnector
 from .bdc_ondemand_async import submit_ondemand_pf
-from .bigdatacorp_negativacoes import BDCNegativacoesPFConnector, BDCProcessosPFConnector, BDCFinanceiroPFConnector
+from .bigdatacorp_negativacoes import (
+    BDCNegativacoesPFConnector, BDCProcessosPFConnector, BDCFinanceiroPFConnector,
+    BDCVinculosPFConnector, BDCKycPFConnector,
+)
 from .protestos_nacional import ProtestosNacionalPFConnector
 from .policia_federal_pf import PoliciaFederalPFConnector
 from .policia_civil_pf import PolicíaCivilPFConnector
@@ -85,7 +88,7 @@ logger = logging.getLogger("subradar.runner_pf")
 FONTES_PF = [
     # ── Cadastral ────────────────────────────────────────────────────────────
     CPFSituacaoConnector(),             # Situação cadastral do CPF na RFB
-    QSAReversoConnector(),              # Empresas onde o CPF é sócio + situação delas
+    BDCVinculosPFConnector(),           # Vínculos societários e empregatícios (business_relationships)
 
     # ── Judicial / Penal ─────────────────────────────────────────────────────
     BNMPMandadosPrisaoPFConnector(),    # BNMP/CNJ — mandados de prisão ativos
@@ -93,7 +96,9 @@ FONTES_PF = [
     PolicíaCivilPFConnector(),          # BDC Ondemand — antecedentes PC (12 estados)
     AntecedentesHCrimosPFConnector(),   # Infosimples — antecedentes criminais (Polícia Federal)
     CNDTTrabalhiPFConnector(),          # CNDT/TST — débitos trabalhistas como empregador
-    EscavadorPFConnector(),             # Escavador — processos judiciais nacionais por CPF
+    # EscavadorPFConnector() saiu do fluxo PF: BDCProcessosPFConnector (dataset
+    # "processes") cobre processos judiciais e a conta Escavador está com saldo
+    # bloqueado. Reativar só se a cobertura do BDC se mostrar insuficiente.
     ProcessosInfosimplesPFConnector(),  # Infosimples — processos TRF/TRT (fallback Escavador)
 
     # ── Eleitoral / Idoneidade ───────────────────────────────────────────────
@@ -140,6 +145,7 @@ FONTES_PF = [
     UNSanctionsConnector(),             # ONU — Conselho de Segurança
     WorldBankDebarmentConnector(),      # Banco Mundial — Debarment
     OpenSanctionsProPFConnector(),      # OpenSanctions Pro — PEPs, INTERPOL, 400+ listas
+    BDCKycPFConnector(),                # BigDataCorp KYC — PEP e sanções (match >= 85%)
 ]
 
 # Fontes pagas — somente modo avulsa
@@ -250,15 +256,19 @@ def calcular_score_risco(alertas: list[dict]) -> dict:
         grupo = cat if cat else fonte
         por_categoria[grupo] = por_categoria.get(grupo, 0) + pts
 
-    # Bônus por categorias de alto impacto presentes
-    fontes_ativas = {(a.get("fonte") or "").lower() for a in alertas}
-    cats_ativas = {(a.get("categoria") or "").lower() for a in alertas}
+    # Bônus por categorias de alto impacto — só conta achado que pontuou.
+    # Alertas "ok" (fonte consultada, nada encontrado) também trazem fonte e
+    # categoria; incluí-los fazia o score subir a cada fonte limpa a mais.
+    pontuaram = [a for a in alertas if (a.get("severidade") or "").lower() in ("critico", "atencao")]
+    fontes_ativas = {(a.get("fonte") or "").lower() for a in pontuaram}
+    cats_ativas = {(a.get("categoria") or "").lower() for a in pontuaram}
 
     if fontes_ativas & _CAT_JUDICIAL or cats_ativas & {"judicial", "trabalhista"}:
         score += 10
     if fontes_ativas & _CAT_INTERNACIONAL or cats_ativas & {"internacional"}:
         score += 10
-    if fontes_ativas & _CAT_CGU or cats_ativas & {"sanções"}:
+    # Os conectores gravam a categoria como "sancao"; "sanções" nunca casava.
+    if fontes_ativas & _CAT_CGU or cats_ativas & {"sancao", "sancoes", "sanções"}:
         score += 5
 
     score = min(score, 100)

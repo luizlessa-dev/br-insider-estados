@@ -52,6 +52,36 @@ def _strip(cpf: str) -> str:
     return re.sub(r"\D", "", str(cpf or ""))
 
 
+_INFOSIMPLES_TOKEN = os.environ.get("INFOSIMPLES_TOKEN", "")
+_INFOSIMPLES_CNDT = "https://api.infosimples.com/api/v2/consultas/tribunal/tst/cndt"
+
+
+def _via_infosimples(cpf: str) -> dict | None:
+    """Emite a CNDT pelo TST via Infosimples.
+
+    Fonte primária: devolve a certidão real (número, validade, processos), ao
+    contrário do Direct Data, que hoje responde 403. None quando não emitiu.
+    """
+    if not _INFOSIMPLES_TOKEN:
+        return None
+    try:
+        resp = requests.post(
+            _INFOSIMPLES_CNDT,
+            data={"cpf": cpf, "token": _INFOSIMPLES_TOKEN, "timeout": 600},
+            timeout=600,
+        )
+        j = resp.json()
+        if j.get("code") != 200:
+            logger.warning("CNDT Infosimples: code %s (%s)", j.get("code"),
+                           str(j.get("code_message"))[:80])
+            return None
+        itens = j.get("data") or []
+        return itens[0] if itens else None
+    except Exception as e:
+        logger.warning("CNDT Infosimples: %s", e)
+        return None
+
+
 def _via_direct_data(cpf: str) -> dict | None:
     """
     Consulta CNDT via Direct Data v3.
@@ -172,6 +202,36 @@ class CNDTTrabalhiPFConnector(SubradarSource):
         }]
 
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cert = _via_infosimples(_strip(cpf))
+        if cert is not None:
+            consta = bool(cert.get("consta"))
+            numero = cert.get("certidao_codigo") or cert.get("certidao") or ""
+            validade = cert.get("validade") or ""
+            processos = cert.get("processos_encontrados") or []
+            return {
+                "fonte": self.fonte, "categoria": "trabalhista",
+                "status": "alerta" if consta else "limpo",
+                "titulo_secao": "CNDT/TST — Débitos Trabalhistas",
+                "resumo": (
+                    f"Certidão POSITIVA — {len(processos)} processo(s)" if consta
+                    else f"Certidão negativa nº {numero}, válida até {validade}"
+                ),
+                "detalhes": {
+                    "certidao": numero, "validade": validade,
+                    "consta": consta, "processos": processos[:10],
+                },
+            }
+
+        # Certidão ausente não é certidão negativa: sem emissão não há como
+        # afirmar que não existem débitos trabalhistas.
+        if _via_direct_data(_strip(cpf)) is None:
+            return {
+                "fonte": self.fonte, "categoria": "trabalhista",
+                "status": "pendente",
+                "titulo_secao": "CNDT/TST — Débitos Trabalhistas",
+                "resumo": "Não foi possível emitir a certidão junto ao TST",
+                "detalhes": {},
+            }
         alertas = self.consultar_cnpj(cpf, razao_social=nome)
         n = len(alertas)
         return {

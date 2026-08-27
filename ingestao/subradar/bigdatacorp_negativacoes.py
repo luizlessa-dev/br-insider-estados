@@ -44,7 +44,11 @@ _BASE_PESSOAS  = "https://plataforma.bigdatacorp.com.br/pessoas"
 # Datasets a ativar no portal BDC
 _DS_NEGATIVE  = "negative_data"
 _DS_FINANCIAL = "financial_data"
-_DS_PROCESS   = "process_data"
+# "process_data" responde -109 (fora do plano). O dataset liberado chama-se
+# "processes" e devolve o bloco "Processes". Confirmado por sondagem em 27/08/2026.
+_DS_PROCESS   = "processes"
+_DS_VINCULOS  = "business_relationships"
+_DS_KYC       = "kyc"
 
 
 def _headers() -> dict:
@@ -74,6 +78,53 @@ def _post_bdc(base_url: str, datasets: str, doc_digits: str) -> dict | None:
     except Exception as e:
         logger.error("BigDataCorp Neg.: erro em %s: %s", base_url, e)
         return None
+
+
+def _consulta_pf(dataset: str, bloco: str, cpf11: str) -> tuple[str, dict]:
+    """Consulta um dataset PF e classifica o desfecho.
+
+    Devolve (estado, dados) com estado em {"ok", "falha", "fora_do_plano"}.
+    Sem essa distinção, erro de rede, token recusado e dataset fora do contrato
+    viravam dado vazio — e dado vazio virava "nada consta" no laudo.
+    """
+    if not BDC_ACCESS_TOKEN or not BDC_TOKEN_ID:
+        return "falha", {}
+    result = _post_bdc(_BASE_PESSOAS, dataset, cpf11)
+    if result is None:
+        return "falha", {}
+    dados = result.get(bloco) or {}
+    if isinstance(dados, dict) and (dados.get("Code") or dados.get("code")) == -109:
+        logger.warning("BigDataCorp: dataset '%s' fora do plano (-109)", dataset)
+        return "fora_do_plano", {}
+    return "ok", dados
+
+
+def dados_cadastrais_pf(cpf11: str) -> dict:
+    """Nome, data de nascimento e nome da mãe do CPF, via basic_data.
+
+    A emissão de certidões oficiais (antecedentes da PF, por exemplo) exige
+    esses campos e o formulário do Subradar só coleta CPF e nome. Buscar aqui
+    evita pedir mais dados ao cliente.
+    """
+    estado, d = _consulta_pf("basic_data", "BasicData", cpf11)
+    if estado != "ok" or not d:
+        return {}
+    nasc = (d.get("BirthDate") or "")[:10]
+    return {
+        "nome": d.get("Name") or "",
+        "nascimento": nasc,
+        "nome_mae": d.get("MotherName") or "",
+        "situacao": d.get("TaxIdStatus") or "",
+    }
+
+
+def _pendencia(fonte: str, categoria: str, titulo: str, motivo: str) -> dict:
+    return {
+        "fonte": fonte, "categoria": categoria, "status": "pendente",
+        "titulo_secao": titulo,
+        "resumo": f"Não foi possível consultar — {motivo}",
+        "detalhes": {},
+    }
 
 
 def _dataset_ativo(result: dict, dataset_key: str) -> bool:
@@ -412,6 +463,12 @@ class BDCProcessosPFConnector(SubradarSource):
     fonte = "bdc_processos_pf"
     request_delay = 1.0
 
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return None
+        return _resumo_processos_pf(cpf11, self.fonte)
+
     def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
         if not BDC_ACCESS_TOKEN:
             return []
@@ -450,6 +507,193 @@ class BDCProcessosPFConnector(SubradarSource):
             }])
 
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
+
+
+def _classifica_processo(lw: dict) -> str:
+    """Severidade de um processo, do ponto de vista de quem vai contratar."""
+    tipo_vara = (lw.get("CourtType") or "").upper()
+    status = (lw.get("Status") or "").upper()
+    encerrado = status in ("ARQUIVADO", "BAIXADO", "EXTINTO")
+    if "CRIMINAL" in tipo_vara and not encerrado:
+        return "critico"
+    if not encerrado:
+        return "atencao"
+    return "info"
+
+
+def _resumo_processos_pf(cpf11: str, fonte: str) -> dict:
+    estado, d = _consulta_pf(_DS_PROCESS, "Processes", cpf11)
+    titulo = "Processos Judiciais"
+    if estado == "falha":
+        return _pendencia(fonte, "judicial", titulo, "BigDataCorp indisponível")
+    if estado == "fora_do_plano":
+        return _pendencia(fonte, "judicial", titulo, "dataset de processos fora do plano contratado")
+
+    lawsuits = d.get("Lawsuits") or []
+    total = d.get("TotalLawsuits") or len(lawsuits)
+    if not total:
+        return {
+            "fonte": fonte, "categoria": "judicial", "status": "limpo",
+            "titulo_secao": titulo, "resumo": "Nenhum processo judicial encontrado",
+            "detalhes": {"total": 0},
+        }
+
+    sev = [_classifica_processo(lw) for lw in lawsuits]
+    ativos = [lw for lw, sv in zip(lawsuits, sev) if sv in ("critico", "atencao")]
+    criminais = [lw for lw, sv in zip(lawsuits, sev) if sv == "critico"]
+
+    partes = [f"{total} processo(s)"]
+    if d.get("TotalLawsuitsAsDefendant"):
+        partes.append(f"{d['TotalLawsuitsAsDefendant']} como réu(ré)")
+    if ativos:
+        partes.append(f"{len(ativos)} em andamento")
+    if criminais:
+        partes.append(f"{len(criminais)} criminal(is) em curso")
+
+    return {
+        "fonte": fonte, "categoria": "judicial",
+        "status": "critico" if criminais else ("alerta" if ativos else "limpo"),
+        "titulo_secao": titulo,
+        "resumo": " · ".join(partes),
+        "detalhes": {
+            "total": total,
+            "como_autor": d.get("TotalLawsuitsAsAuthor"),
+            "como_reu": d.get("TotalLawsuitsAsDefendant"),
+            "primeiro": d.get("FirstLawsuitDate"),
+            "ultimo": d.get("LastLawsuitDate"),
+            "ultimos_365_dias": d.get("Last365DaysLawsuits"),
+            "processos": [{
+                "numero": lw.get("Number"),
+                "tribunal": lw.get("CourtName"),
+                "uf": lw.get("State"),
+                "vara": lw.get("CourtType"),
+                "tipo": lw.get("Type"),
+                "assunto": lw.get("MainSubject"),
+                "status": lw.get("Status"),
+                "severidade": sv,
+            } for lw, sv in zip(lawsuits, sev)],
+        },
+    }
+
+
+class BDCVinculosPFConnector(SubradarSource):
+    """Vínculos societários e empregatícios via BigDataCorp (business_relationships).
+
+    Substitui o QSA reverso, que consultava uma coluna inexistente no Supabase e
+    devolvia "nenhuma participação societária" para qualquer CPF.
+    """
+    fonte = "bdc_vinculos_pf"
+    request_delay = 1.0
+
+    def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
+        return []  # a seção é montada em resumo_pf; alertas saem dos processos
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return None
+        titulo = "Vínculos Societários e Empregatícios"
+        estado, d = _consulta_pf(_DS_VINCULOS, "BusinessRelationships", cpf11)
+        if estado == "falha":
+            return _pendencia(self.fonte, "societario", titulo, "BigDataCorp indisponível")
+        if estado == "fora_do_plano":
+            return _pendencia(self.fonte, "societario", titulo, "dataset fora do plano contratado")
+
+        rels = d.get("BusinessRelationships") or []
+        socios = d.get("TotalOwnerships") or 0
+        partners = d.get("TotalPartners") or 0
+        ativos = [r for r in rels if r.get("IsCurrentlyActive")]
+
+        if not rels:
+            return {
+                "fonte": self.fonte, "categoria": "societario", "status": "limpo",
+                "titulo_secao": titulo, "resumo": "Nenhum vínculo societário ou empregatício encontrado",
+                "detalhes": {"total": 0},
+            }
+
+        partes = [f"{len(rels)} vínculo(s)"]
+        if socios or partners:
+            partes.append(f"{socios + partners} societário(s)")
+        if ativos:
+            partes.append(f"{len(ativos)} ativo(s)")
+
+        return {
+            "fonte": self.fonte, "categoria": "societario",
+            "status": "alerta" if (socios or partners) else "limpo",
+            "titulo_secao": titulo,
+            "resumo": " · ".join(partes),
+            "detalhes": {
+                "total": len(rels),
+                "societarios": socios + partners,
+                "empregos": d.get("TotalEmployments"),
+                "vinculos": [{
+                    "entidade": r.get("RelatedEntityName"),
+                    "documento": r.get("RelatedEntityTaxIdNumber"),
+                    "tipo": r.get("RelationshipType"),
+                    "ativo": r.get("IsCurrentlyActive"),
+                    "inicio": (r.get("RelationshipStartDate") or "")[:10],
+                    "fim": (r.get("RelationshipEndDate") or "")[:10],
+                } for r in rels],
+            },
+        }
+
+
+# Abaixo desse limiar o "match" do KYC é homonímia, não identificação. A busca é
+# por nome, então nomes comuns colidem com listas internacionais.
+_KYC_MATCH_MINIMO = 85
+
+
+class BDCKycPFConnector(SubradarSource):
+    """PEP e sanções via BigDataCorp (kyc), com limiar de similaridade de nome."""
+    fonte = "bdc_kyc_pf"
+    request_delay = 1.0
+
+    def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
+        return []
+
+    def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf11 = re.sub(r"\D", "", str(cpf or ""))
+        if len(cpf11) != 11:
+            return None
+        titulo = "PEP e Sanções (BigDataCorp)"
+        estado, d = _consulta_pf(_DS_KYC, "KycData", cpf11)
+        if estado == "falha":
+            return _pendencia(self.fonte, "internacional", titulo, "BigDataCorp indisponível")
+        if estado == "fora_do_plano":
+            return _pendencia(self.fonte, "internacional", titulo, "dataset fora do plano contratado")
+
+        is_pep = bool(d.get("IsCurrentlyPEP"))
+        sancionado = bool(d.get("IsCurrentlySanctioned"))
+        brutos = d.get("SanctionsHistory") or []
+        relevantes = [x for x in brutos if (x.get("MatchRate") or 0) >= _KYC_MATCH_MINIMO]
+        descartados = len(brutos) - len(relevantes)
+
+        partes = []
+        if is_pep:
+            partes.append("Pessoa politicamente exposta")
+        if relevantes:
+            partes.append(f"{len(relevantes)} correspondência(s) em listas restritivas")
+        resumo = " · ".join(partes) if partes else "Não consta como PEP nem em listas restritivas"
+        if descartados:
+            resumo += f" ({descartados} homônimo(s) descartado(s))"
+
+        return {
+            "fonte": self.fonte, "categoria": "internacional",
+            "status": "alerta" if (is_pep or sancionado or relevantes) else "limpo",
+            "titulo_secao": titulo,
+            "resumo": resumo,
+            "detalhes": {
+                "is_pep": is_pep,
+                "sancionado": sancionado,
+                "match_minimo": _KYC_MATCH_MINIMO,
+                "descartados_por_similaridade": descartados,
+                "correspondencias": [{
+                    "fonte": x.get("Source"),
+                    "tipo": x.get("StandardizedSanctionType"),
+                    "match": x.get("MatchRate"),
+                } for x in relevantes],
+            },
+        }
 
 
 class BDCFinanceiroPFConnector(SubradarSource):

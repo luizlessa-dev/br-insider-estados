@@ -59,7 +59,14 @@ def _sev_pf(titulo: str) -> str:
     return "info"
 
 
-def _buscar_processos_cpf(cpf: str) -> list[dict]:
+def _buscar_processos_cpf(cpf: str) -> list[dict] | None:
+    """Processos do CPF, ou None quando a consulta não pôde ser feita.
+
+    Lista vazia significa "consultei e não há processos". None significa "não
+    consegui consultar" — saldo bloqueado, token recusado, rede fora. Os dois
+    casos retornavam [] e viravam "Nenhum processo judicial encontrado" no
+    laudo, afirmando ausência de processos sem ter perguntado a ninguém.
+    """
     todos: list[dict] = []
     page = 1
 
@@ -73,19 +80,23 @@ def _buscar_processos_cpf(cpf: str) -> list[dict]:
             )
         except Exception as e:
             logger.warning("Escavador PF: erro de rede pág %d: %s", page, e)
-            break
+            return None if page == 1 else todos
 
         if r.status_code in (401, 402, 403):
             msg = r.json().get("error", "") if "json" in r.headers.get("Content-Type", "") else ""
             logger.warning("Escavador PF: sem acesso (HTTP %d) — %s", r.status_code, msg)
+            return None
+        if r.status_code == 404:
             break
-        if r.status_code == 404 or not r.ok:
-            break
+        if not r.ok:
+            logger.warning("Escavador PF: HTTP %d na pág %d", r.status_code, page)
+            return None if page == 1 else todos
 
         try:
             data = r.json()
         except Exception:
-            break
+            logger.warning("Escavador PF: resposta ilegível na pág %d", page)
+            return None if page == 1 else todos
 
         items = data.get("items") or data.get("data") or []
         todos.extend(items)
@@ -122,7 +133,8 @@ class EscavadorPFConnector(SubradarSource):
         processos = _buscar_processos_cpf(cpf)
 
         if not processos:
-            logger.debug("escavador_pf: nenhum processo para CPF %s***", cpf[:3])
+            logger.debug("escavador_pf: nenhum processo para CPF %s*** (consulta=%s)",
+                         cpf[:3], "falhou" if processos is None else "ok")
             return []
 
         alertas = []
@@ -164,7 +176,7 @@ class EscavadorPFConnector(SubradarSource):
         if not ESCAVADOR_KEY:
             return {
                 "fonte": self.fonte, "categoria": "judicial",
-                "status": "pendente", "titulo_secao": "Processos Judiciais",
+                "status": "pendente", "titulo_secao": "Processos Judiciais — cobertura complementar (Escavador)",
                 "resumo": "Chave Escavador não configurada",
                 "detalhes": {},
             }
@@ -172,11 +184,18 @@ class EscavadorPFConnector(SubradarSource):
         if len(cpf_d) != 11:
             return None
         processos = _buscar_processos_cpf(cpf_d)
+        if processos is None:
+            return {
+                "fonte": self.fonte, "categoria": "judicial",
+                "status": "pendente", "titulo_secao": "Processos Judiciais — cobertura complementar (Escavador)",
+                "resumo": "Não foi possível consultar — Escavador indisponível (saldo ou credencial)",
+                "detalhes": {},
+            }
         n = len(processos)
         if n == 0:
             return {
                 "fonte": self.fonte, "categoria": "judicial",
-                "status": "limpo", "titulo_secao": "Processos Judiciais",
+                "status": "limpo", "titulo_secao": "Processos Judiciais — cobertura complementar (Escavador)",
                 "resumo": "Nenhum processo judicial encontrado",
                 "detalhes": {"total": 0},
             }
@@ -195,7 +214,7 @@ class EscavadorPFConnector(SubradarSource):
             })
         return {
             "fonte": self.fonte, "categoria": "judicial",
-            "status": "alerta", "titulo_secao": "Processos Judiciais",
+            "status": "alerta", "titulo_secao": "Processos Judiciais — cobertura complementar (Escavador)",
             "resumo": resumo,
             "detalhes": {"total": n, "criticos": criticos, "processos": itens},
         }

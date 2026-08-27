@@ -24,6 +24,7 @@ from .dou import (
     INLabsSession,
     INLABS_EMAIL, INLABS_PASSWORD, ANTHROPIC_KEY,
     _extrair_artigos_com_cnpj,
+    _sem_acentos,
     _classificar_artigo,
     KEYWORDS_CRITICO, KEYWORDS_ATENCAO,
 )
@@ -47,28 +48,32 @@ _ATENCAO_PF = KEYWORDS_ATENCAO + [
 
 
 def _normalize(s: str) -> str:
-    s = unicodedata.normalize("NFD", s)
-    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
-    return s.upper().strip()
+    return _sem_acentos(s).upper().strip()
 
 
 def _nome_patterns(nome: str) -> list[str]:
-    """Gera variantes do nome para busca: nome completo e nome sem acentos."""
-    nome_norm = _normalize(nome)
-    patterns = [nome.upper(), nome_norm]
-    # Também testa primeiros dois nomes + último sobrenome (evita meio nome)
-    partes = nome_norm.split()
-    if len(partes) >= 3:
-        patterns.append(f"{partes[0]} {partes[-1]}")
+    """Gera variantes do nome para busca: nome completo e nome sem acentos.
+
+    Só o nome completo. A variante "primeiro + último sobrenome" que existia
+    aqui casava com terceiros: consultando "Danielle Justiniano Byczynski
+    Martins", o padrão "DANIELLE MARTINS" batia em "DANIELLE MARTINS DE
+    MENEZES" numa lista de servidores. Num laudo de compliance, atribuir a
+    publicação de outra pessoa é pior do que não achar a publicação.
+    """
+    patterns = [nome.upper(), _normalize(nome)]
     return list(dict.fromkeys(patterns))  # dedup mantendo ordem
 
 
 def _extrair_artigos_com_nome(zip_bytes: bytes, nome: str) -> list[dict]:
     """Abre ZIP, lê XMLs e retorna artigos que mencionam o nome da pessoa."""
-    patterns = _nome_patterns(nome)
-    # Reutiliza a função do dou.py passando o nome como "razao_social"
-    # e um CNPJ fake vazio para não ter match por CNPJ
-    return _extrair_artigos_com_cnpj(zip_bytes, cnpj_limpo="", razao_social=nome)
+    # Reutiliza a extração do dou.py, mas com os padrões de nome: sem CNPJ,
+    # o match é só por extra_patterns.
+    return _extrair_artigos_com_cnpj(
+        zip_bytes,
+        cnpj_limpo="",
+        razao_social=None,
+        extra_patterns=_nome_patterns(nome),
+    )
 
 
 def _classificar_artigo_pf(artigo: dict, nome: str) -> tuple[str, str, str]:
@@ -216,6 +221,25 @@ class DOUPFConnector(SubradarSource):
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
         if not nome:
             return None
+
+        # Sem acesso ao INLabs não dá para afirmar ausência de menções: a seção
+        # tem que sair pendente, nunca "limpo".
+        indisponivel = ""
+        if not INLABS_EMAIL or not INLABS_PASSWORD:
+            indisponivel = "credenciais INLabs não configuradas"
+        elif not INLabsSession.ensure_logged_in():
+            indisponivel = "INLabs indisponível no momento da consulta"
+        if indisponivel:
+            logger.warning("dou_pf: seção pendente — %s", indisponivel)
+            return {
+                "fonte": self.fonte,
+                "categoria": "dou",
+                "status": "pendente",
+                "titulo_secao": "Diário Oficial da União (DOU)",
+                "resumo": f"Não foi possível consultar — {indisponivel}",
+                "detalhes": {"total": 0, "titulos": []},
+            }
+
         alertas = self.consultar_cnpj(cpf, razao_social=nome)
         n = len(alertas)
         return {

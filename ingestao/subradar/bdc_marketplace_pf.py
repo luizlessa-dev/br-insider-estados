@@ -592,11 +592,16 @@ class BDCDadosFinanceirosPFConnector(SubradarSource):
             resumo_txt.append(f"Renda estimada: R$ {float(renda):,.0f}".replace(",", "."))
         if patrimonio:
             resumo_txt.append(f"Patrimônio: R$ {float(patrimonio):,.0f}".replace(",", "."))
+        # Fonte consultada com sucesso, mas sem estimativa para este CPF, não é
+        # pendência: marcar PENDENTE fazia o laudo parecer inacabado.
         return {
             "fonte": self.fonte, "categoria": "financeiro",
-            "status": "LIMPO" if resumo_txt else "PENDENTE",
+            "status": "LIMPO" if resumo_txt else "nao_aplicavel",
             "titulo_secao": "Dados Financeiros Estimados (BDC)",
-            "resumo": " · ".join(resumo_txt) if resumo_txt else "Dados não disponíveis",
+            "resumo": (
+                " · ".join(resumo_txt) if resumo_txt
+                else "Fonte consultada — sem estimativa de renda/patrimônio para este CPF"
+            ),
             "detalhes": data,
         }
 

@@ -28,6 +28,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import date, timedelta
@@ -71,13 +72,42 @@ def _fmt_cnpj(cnpj: str) -> str:
 
 
 def _cnpj_patterns(cnpj_limpo: str) -> list[str]:
-    """Gera variantes de formato do CNPJ para busca no XML."""
+    """Gera variantes de formato do CNPJ para busca no XML.
+
+    Sem um CNPJ de 14 dígitos não há padrão possível: devolve lista vazia em vez
+    de variantes truncadas. Um padrão vazio casaria com todo XML do DOU.
+    """
     c = cnpj_limpo
+    if len(c) != 14:
+        return []
     return [
         c,
         f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:14]}",
         f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}",
     ]
+
+
+def _sem_acentos(s: str) -> str:
+    """Remove diacríticos, para comparar nome consultado x grafia do DOU."""
+    s = unicodedata.normalize("NFD", s)
+    return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def _prefiltro(patterns: list[str]) -> str:
+    """Token ASCII mais longo dos padrões, usado como filtro barato.
+
+    Normalizar o XML inteiro custa caro e quase todo artigo do DOU não menciona
+    a pessoa. Se o token nem aparece no texto cru, pula sem normalizar.
+    """
+    if not patterns:
+        return ""
+    # Só serve token presente em todos os padrões — senão o filtro descartaria
+    # artigos que casariam por uma das variantes do nome.
+    comuns = set.intersection(*[
+        {t.upper() for t in p.split() if len(t) >= 4 and t.isascii()}
+        for p in patterns
+    ])
+    return max(comuns, key=len) if comuns else ""
 
 
 class INLabsSession:
@@ -184,9 +214,21 @@ def _download_zip_http(data: str, secao: str) -> bytes | None:
     return None
 
 
-def _extrair_artigos_com_cnpj(zip_bytes: bytes, cnpj_limpo: str, razao_social: str | None) -> list[dict]:
-    """Abre ZIP, lê XMLs e retorna artigos que mencionam o CNPJ."""
+def _extrair_artigos_com_cnpj(
+    zip_bytes: bytes,
+    cnpj_limpo: str,
+    razao_social: str | None,
+    extra_patterns: list[str] | None = None,
+) -> list[dict]:
+    """Abre ZIP, lê XMLs e retorna artigos que mencionam o CNPJ.
+
+    `extra_patterns` é o caminho de pessoa física (ver dou_pf): substitui o
+    fallback por razão social truncada e casa contra o texto sem acentos, para
+    que a grafia do DOU não precise bater com a digitada pelo cliente.
+    """
     patterns = _cnpj_patterns(cnpj_limpo)
+    nome_patterns = [_sem_acentos(p).upper() for p in (extra_patterns or [])]
+    prefiltro = _prefiltro(nome_patterns)
     hits = []
     try:
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
@@ -199,7 +241,11 @@ def _extrair_artigos_com_cnpj(zip_bytes: bytes, cnpj_limpo: str, razao_social: s
 
                     # Busca rápida por CNPJ antes de parsear XML
                     encontrou = any(p in texto_xml for p in patterns)
-                    if not encontrou and razao_social:
+                    if not encontrou and nome_patterns:
+                        if not prefiltro or prefiltro in texto_xml.upper():
+                            texto_norm = _sem_acentos(texto_xml).upper()
+                            encontrou = any(p in texto_norm for p in nome_patterns)
+                    elif not encontrou and razao_social:
                         # Busca também pela razão social (truncada em 20 chars pra evitar falsos negativos)
                         rs_curta = razao_social[:20].upper()
                         encontrou = rs_curta in texto_xml.upper()

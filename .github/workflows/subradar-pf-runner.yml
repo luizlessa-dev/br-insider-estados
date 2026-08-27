@@ -47,10 +47,12 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           BIGDATA_CORP_TOKEN_ID: ${{ secrets.BIGDATA_CORP_TOKEN_ID }}
           BIGDATA_CORP_ACCESS_TOKEN: ${{ secrets.BIGDATA_CORP_ACCESS_TOKEN }}
-          ESCAVADOR_TOKEN: ${{ secrets.ESCAVADOR_TOKEN }}
           DIRECT_DATA_TOKEN: ${{ secrets.DIRECT_DATA_TOKEN }}
           OPENSANCTIONS_PRO_KEY: ${{ secrets.OPENSANCTIONS_PRO_KEY }}
           INFOSIMPLES_TOKEN: ${{ secrets.INFOSIMPLES_TOKEN }}
+          # Sem estas, o conector do DOU pula a fonte e a seção some do laudo.
+          INLABS_EMAIL: ${{ secrets.INLABS_EMAIL }}
+          INLABS_PASSWORD: ${{ secrets.INLABS_PASSWORD }}
         run: |
           AVULSA_FLAG=""
           if [ "${{ github.event.inputs.tipo }}" = "completa" ]; then
@@ -62,7 +64,7 @@ jobs:
             --cliente-id "${{ github.event.inputs.consulta_id }}" \
             $AVULSA_FLAG
 
-      - name: Enviar email com Resend
+      - name: Entregar dossiê (retém se houver fonte pendente)
         if: success()
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

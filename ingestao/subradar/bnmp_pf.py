@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import unicodedata
 
 import requests
 
@@ -33,8 +34,62 @@ def _strip(cpf: str) -> str:
     return re.sub(r"\D", "", str(cpf or ""))
 
 
-def _consultar_bnmp(cpf: str) -> list[dict]:
-    """Consulta Direct Data v3 — BNMP mandados de prisão por CPF."""
+_INFOSIMPLES_TOKEN = os.environ.get("INFOSIMPLES_TOKEN", "")
+_INFOSIMPLES_BNMP = "https://api.infosimples.com/api/v2/consultas/cnj/mandados-prisao"
+
+
+def _norm(txt: str) -> str:
+    return unicodedata.normalize("NFD", str(txt or "")).encode("ascii", "ignore").decode().upper().strip()
+
+
+def _via_infosimples(nome: str, nome_mae: str = "") -> list[dict] | None:
+    """Mandados de prisão no BNMP/CNJ, buscando por nome.
+
+    O BNMP não indexa CPF — os próprios registros trazem "cpf": "Não Informado"
+    — então a busca é por nome e o filtro de homônimo é o nome da mãe, que vem
+    em cada mandado. Consulta por CPF respondia sempre "sem dados", inclusive
+    para CPF inexistente.
+
+    None quando a consulta falhou; lista vazia quando buscou e nada consta.
+    """
+    if not _INFOSIMPLES_TOKEN or not nome:
+        return None
+    try:
+        r = requests.post(
+            _INFOSIMPLES_BNMP,
+            data={"nome": nome, "token": _INFOSIMPLES_TOKEN, "timeout": 600},
+            timeout=600,
+        )
+        j = r.json()
+        code = j.get("code")
+        # 612 = a busca rodou e não achou ninguém com esse nome.
+        if code == 612:
+            return []
+        if code != 200:
+            logger.warning("BNMP Infosimples: code %s (%s)", code, str(j.get("code_message"))[:80])
+            return None
+        itens = j.get("data") or []
+        if not nome_mae:
+            return itens
+        alvo = _norm(nome_mae)
+        filtrados = [m for m in itens if _norm(m.get("mae")) == alvo]
+        if itens and not filtrados:
+            logger.info("BNMP: %d mandado(s) homônimo(s) descartado(s) pela filiação", len(itens))
+        return filtrados
+    except Exception as e:
+        logger.warning("BNMP Infosimples: %s", e)
+        return None
+
+
+def _consultar_bnmp(cpf: str) -> list[dict] | None:
+    """Consulta Direct Data v3 — BNMP mandados de prisão por CPF.
+
+    None quando a consulta não pôde ser feita; lista vazia quando consultou e
+    não há mandado. Sem essa distinção, um 403 do Direct Data virava "nenhum
+    mandado de prisão encontrado" no laudo.
+    """
+    if not _DD_TOKEN:
+        return None
     try:
         resp = requests.get(
             f"{_DD_V3_BASE}/CNJMandadosPrisao",
@@ -42,8 +97,9 @@ def _consultar_bnmp(cpf: str) -> list[dict]:
             timeout=20,
         )
         if not resp.ok:
-            logger.debug("BNMP: HTTP %d para CPF %s***", resp.status_code, cpf[:3])
-            return []
+            logger.warning("BNMP: HTTP %d para CPF %s*** — consulta não realizada",
+                           resp.status_code, cpf[:3])
+            return None
         data = resp.json()
         if isinstance(data, list):
             return data
@@ -51,8 +107,8 @@ def _consultar_bnmp(cpf: str) -> list[dict]:
             return data.get("data", data.get("mandados", data.get("result", [])))
         return []
     except Exception as e:
-        logger.debug("BNMP: %s", e)
-        return []
+        logger.warning("BNMP: %s", e)
+        return None
 
 
 class BNMPMandadosPrisaoPFConnector(SubradarSource):
@@ -74,7 +130,7 @@ class BNMPMandadosPrisaoPFConnector(SubradarSource):
             return []
 
         cpf_fmt = f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}"
-        mandados = _consultar_bnmp(cpf)
+        mandados = _consultar_bnmp(cpf) or []
 
         if not mandados:
             logger.debug("bnmp_pf: sem mandados para CPF %s***", cpf[:3])
@@ -125,7 +181,23 @@ class BNMPMandadosPrisaoPFConnector(SubradarSource):
         cpf_digits = re.sub(r"\D", "", str(cpf or ""))
         if len(cpf_digits) != 11:
             return None
-        mandados = _consultar_bnmp(cpf_digits)
+        # Fonte primária: Infosimples por nome (o Direct Data responde 403).
+        cad = {}
+        try:
+            from .bigdatacorp_negativacoes import dados_cadastrais_pf
+            cad = dados_cadastrais_pf(cpf_digits) or {}
+        except Exception:
+            pass
+        mandados = _via_infosimples(nome or cad.get("nome", ""), cad.get("nome_mae", ""))
+        if mandados is None:
+            mandados = _consultar_bnmp(cpf_digits)
+        if mandados is None:
+            return {
+                "fonte": self.fonte, "categoria": "judicial",
+                "status": "pendente", "titulo_secao": "Mandados de Prisão (BNMP/CNJ)",
+                "resumo": "Não foi possível consultar — Direct Data indisponível (token ou saldo)",
+                "detalhes": {},
+            }
         ativos = [
             m for m in mandados
             if not (m.get("status") or m.get("situacao") or m.get("statusMandado") or "").lower().strip()

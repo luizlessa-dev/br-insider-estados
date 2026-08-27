@@ -2,7 +2,11 @@
 Conector: CFC — Conselho Federal de Contabilidade
 
 API REST pública e gratuita. Consulta situação do contador por CPF.
-Retorna '1' (ativo), '0' (inativo) ou 'Erro' (CPF não encontrado no CFC).
+Responde JSON: {"EhContadorAtivo": 0|1, "PossuiCNAIAtivo": 0|1}.
+
+O endpoint já respondeu texto puro ('1'/'0'/'Erro') e mudou para JSON sem aviso;
+o parsing abaixo aceita as duas formas e, em qualquer resposta que não confirme
+explicitamente o registro ativo, não gera alerta.
 
 Endpoint: GET https://sistemas.cfc.org.br/servico/api/Profissional?cpf={cpf}
 Autenticação: nenhuma.
@@ -56,23 +60,34 @@ class CFCContadoresConnector(SubradarSource):
             logger.debug("CFC API: HTTP %d para CPF %s***", resp.status_code, cpf[:3])
             return []
 
-        resultado = resp.text.strip().strip('"')  # retorna string "1", "0" ou "Erro"
+        # Só afirma registro ativo quando a resposta confirma. Qualquer outro
+        # formato é tratado como "não confirmado" — antes, o corpo JSON inteiro
+        # caía no ramo de ativo e todo CPF consultado virava contador ativo.
+        ativo = False
+        try:
+            payload = resp.json()
+            if isinstance(payload, dict):
+                ativo = str(payload.get("EhContadorAtivo", "0")) == "1"
+            else:
+                ativo = str(payload).strip() == "1"
+        except ValueError:
+            ativo = resp.text.strip().strip('"') == "1"
 
-        if resultado == "Erro" or resultado == "0":
+        if not ativo:
             logger.debug("cfc_contadores: CPF %s*** não registrado ou inativo no CFC", cpf[:3])
             return []
 
-        # resultado == "1" — registrado e ATIVO (contador praticante)
         cpf_fmt = f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:11]}"
         return [{
             "fonte": self.fonte,
             "categoria": "cadastral",
             "severidade": "atencao",
-            "titulo": f"CFC — contador ATIVO: {cpf_fmt}",
+            "titulo": "Registro ativo no Conselho Federal de Contabilidade",
             "descricao": (
-                f"O CPF {cpf_fmt} está registrado e ATIVO no Conselho Federal de "
-                "Contabilidade (CFC). Verifique possível conflito de interesse em "
-                "prestação de serviços contábeis."
+                "O CPF consta como contador com registro ativo no Conselho Federal "
+                "de Contabilidade (CFC). É um dado cadastral, não uma ocorrência "
+                "adversa: relevante apenas quando a função envolve serviços "
+                "contábeis ou pode configurar conflito de interesse."
             ),
             "url_fonte": "https://www.cfc.org.br/consulta-de-profissional/",
             "is_novo": True,

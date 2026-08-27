@@ -53,6 +53,20 @@ def handler(event, context):
     return _api_handler(event, context)
 
 
+def _email_da_consulta(consulta_id: str) -> str:
+    """E-mail do cliente gravado em sub_pf_consultas pelo /api/pf/submit."""
+    try:
+        # _supabase_select vive em api_subradar (base.py só expõe upsert/patch).
+        from api_subradar import _supabase_select
+        rows = _supabase_select("sub_pf_consultas", {
+            "id": f"eq.{consulta_id}", "select": "email_cliente", "limit": 1,
+        })
+        return (rows[0].get("email_cliente") or "") if rows else ""
+    except Exception:
+        logger.exception("Não foi possível ler o e-mail da consulta %s", consulta_id)
+        return ""
+
+
 def _run_worker(event: dict) -> dict:
     from ingestao.subradar.base import patch
     from ingestao.subradar.runner_pf import processar_cpf
@@ -83,6 +97,22 @@ def _run_worker(event: dict) -> dict:
             "resultado_id": resultado_id,
         })
         logger.info("Worker concluído: consulta_id=%s", consulta_id)
+
+        # Entrega automática. A trava é completude, não severidade: laudo com
+        # fonte que não respondeu fica retido e o operador é avisado, porque um
+        # "nada consta" de fonte muda que não respondeu é pior que não entregar.
+        try:
+            from ingestao.subradar.entrega_pf import entregar
+            email_cliente = event.get("email_cliente") or _email_da_consulta(consulta_id)
+            if not email_cliente:
+                logger.error("Sem e-mail do cliente para %s — entrega não tentada", consulta_id)
+            else:
+                r = entregar(consulta_id, cpf, nome, email_cliente,
+                             tipo=event.get("tipo", "completa"))
+                logger.info("Entrega %s: %s",
+                            "OK" if r["enviado"] else "RETIDA", r.get("motivo") or "enviado")
+        except Exception:
+            logger.exception("Falha na etapa de entrega: consulta_id=%s", consulta_id)
     except Exception as e:
         logger.exception("Worker falhou: consulta_id=%s", consulta_id)
         patch("sub_pf_consultas", {"id": consulta_id}, {
