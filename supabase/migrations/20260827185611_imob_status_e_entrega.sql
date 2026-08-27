@@ -30,22 +30,3 @@ comment on column public.sub_imob_consultas.entrega_bloqueio is
   'Motivo pelo qual a entrega foi retida (fonte pendente, falha no envio). NULL = sem bloqueio.';
 comment on column public.sub_imob_consultas.entregue_em is
   'Quando o dossiê foi efetivamente enviado ao cliente.';
-
--- Faixa de risco 'indeterminado': é o que sai quando alguma fonte não
--- respondeu. Sem ela o pipeline calculava a faixa e morria na gravação — o
--- primeiro run real terminou com HTTP 400 exatamente aqui.
-alter table public.sub_imob_resultados
-  drop constraint if exists sub_imob_resultados_faixa_risco_check;
-
-alter table public.sub_imob_resultados
-  add constraint sub_imob_resultados_faixa_risco_check
-  check (faixa_risco in ('verde','amarelo','laranja','vermelho','indeterminado'));
-
--- Status 'retida': pipeline concluído, entrega segurada por laudo incompleto.
--- Sem esse valor a retenção não teria como ser registrada.
-alter table public.sub_imob_consultas
-  drop constraint if exists sub_imob_consultas_status_check;
-
-alter table public.sub_imob_consultas
-  add constraint sub_imob_consultas_status_check
-  check (status in ('pendente','processando','concluido','retida','erro'));
