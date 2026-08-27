@@ -159,7 +159,11 @@ FONTES = [
     INPIMarcasConnector(),                 # INPI — marcas registradas, oposições e nulidades
     MidiaAdversaGDELTPJConnector(),        # Mídia adversa PJ — GDELT Doc API (gratuito, sem chave)
     DOEEstaduaisPJConnector(),             # DOE estaduais — SP/MG/RJ (interdição, embargo, autuação)
-    InfosimplesCNDEstadualPJConnector(),   # Infosimples — CND estadual (27 UFs, ativo via GOV.BR vinculado)
+    # InfosimplesCNDEstadualPJConnector() saiu do monitoramento mensal: varre as
+    # 27 UFs a R$ 0,20-0,50 cada, R$ 5,40-13,50 por CNPJ por ciclo. No plano
+    # Profissional a receita é R$ 49,80/CNPJ/mês — uma fonte sozinha comeria de
+    # 11% a 27% da margem. Segue disponível na consulta avulsa (dossiê de
+    # R$ 197), onde o custo cabe no preço. Ver FONTES_AVULSA abaixo.
     InfosimplesPGFNPJConnector(),          # Infosimples — PGFN/RFB certidão conjunta (INFOSIMPLES_TOKEN) — fonte "pgfn_certidao"
     BNDESDevedoresPJConnector(),           # BNDES — lista de inadimplentes (portal público)
 ]
@@ -167,6 +171,7 @@ FONTES = [
 # Fontes exclusivas para consulta avulsa (dossiê pontual R$ 197).
 # Não incluídas no ciclo de monitoramento — cobram por consulta.
 FONTES_AVULSA = FONTES + [
+    InfosimplesCNDEstadualPJConnector(),   # CND estadual das 27 UFs — só no dossiê pontual (custo por UF)
     BigDataCorpScoreConnector(),  # BigDataCorp Score Quod/Boa Vista PJ (~R$ 2,41/consulta)
     # DirectDataConnector removido: ~90% duplicava cobertura gratuita BDC+Infosimples; custo R$15,70/consulta.
     # Manter créditos Direct Data para ProtestosNacionalConnector + MonitorApp.
