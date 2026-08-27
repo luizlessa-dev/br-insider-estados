@@ -34,6 +34,11 @@ from .base import SubradarSource
 
 logger = logging.getLogger("subradar.doe_estaduais_pf")
 
+# Portais que não responderam nesta apuração. O de MG mudou de endereço
+# (jornal.iof.mg.gov.br/rest/items responde 404 desde a migração para
+# jornalminasgerais.mg.gov.br) e o laudo afirmava cobrir os três estados.
+_FALHAS: set[str] = set()
+
 ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 DOE_SP_TOKEN = os.environ.get("DOE_SP_TOKEN", "")
 
@@ -116,6 +121,7 @@ def _nome_presente(nome: str, texto: str) -> bool:
 
 def _buscar_doe_estado(estado: dict, nome: str, dias: int = 90) -> list[dict]:
     """Tenta busca no portal DOE estadual. Gracioso em falha."""
+    _FALHAS.discard(estado["sigla"])
     desde = (datetime.now(timezone.utc) - timedelta(days=dias)).strftime("%Y-%m-%d")
     metodo = estado.get("method", "GET").upper()
     params = estado["params_fn"](nome, desde)
@@ -135,7 +141,8 @@ def _buscar_doe_estado(estado: dict, nome: str, dias: int = 90) -> list[dict]:
                 timeout=12,
             )
         if not resp.ok:
-            logger.debug("DOE-%s: HTTP %d", estado["sigla"], resp.status_code)
+            logger.warning("DOE-%s: HTTP %d — portal não consultado", estado["sigla"], resp.status_code)
+            _FALHAS.add(estado["sigla"])
             return []
 
         # Tenta JSON primeiro
@@ -285,13 +292,32 @@ class DOEEstaduaisPFConnector(SubradarSource):
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
         if not nome or len(nome.split()) < 2:
             return None
+        _FALHAS.clear()
         alertas = self.consultar_cnpj(cpf, razao_social=nome)
         n = len(alertas)
+        consultados = [uf for uf in ("SP", "MG", "RJ") if uf not in _FALHAS]
+        falharam = sorted(_FALHAS)
+
+        if not consultados:
+            return {
+                "fonte": self.fonte, "categoria": "dou", "status": "pendente",
+                "titulo_secao": "Diários Oficiais Estaduais",
+                "resumo": "Nenhum portal estadual respondeu",
+                "detalhes": {"falharam": falharam},
+            }
+
+        cobertura = "/".join(consultados)
+        resumo = (f"{n} publicação(ões) adversa(s)" if n
+                  else f"Nenhuma publicação adversa em {cobertura}")
+        if falharam:
+            resumo += f" · {'/'.join(falharam)} indisponível(is)"
+
         return {
             "fonte": self.fonte,
             "categoria": "dou",
             "status": "alerta" if n else "limpo",
-            "titulo_secao": "Diários Oficiais Estaduais (SP/MG/RJ)",
-            "resumo": f"{n} publicação(ões) adversa(s) nos DOEs" if n else "Nenhuma publicação adversa encontrada",
-            "detalhes": {"total": n, "titulos": [a.get("titulo", "") for a in alertas[:5]]},
+            "titulo_secao": f"Diários Oficiais Estaduais ({cobertura})",
+            "resumo": resumo,
+            "detalhes": {"total": n, "consultados": consultados, "falharam": falharam,
+                         "titulos": [a.get("titulo", "") for a in alertas[:5]]},
         }

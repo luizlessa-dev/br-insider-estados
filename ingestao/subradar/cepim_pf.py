@@ -42,7 +42,11 @@ def _cnpjs_de_socio(cpf: str) -> list[dict]:
             f"{SUPABASE_URL}/rest/v1/cnpj_socios",
             params={
                 "cpf_cnpj_socio": f"eq.{cpf}",
-                "select": "cnpj,nome_socio,qualificacao_socio",
+                # A tabela foi renomeada: cnpj -> cnpj_basico (raiz de 8 dígitos)
+                # e qualificacao_socio -> qualificacao. Pedir as colunas antigas
+                # devolvia HTTP 400, e a lista vazia virava "sem vínculo com
+                # entidades CEPIM" no laudo.
+                "select": "cnpj_basico,nome_socio,qualificacao",
                 "limit": "50",
             },
             headers=_supabase_headers(),
@@ -50,9 +54,10 @@ def _cnpjs_de_socio(cpf: str) -> list[dict]:
         )
         if resp.ok:
             return resp.json() or []
+        logger.warning("cepim_pf: HTTP %d ao buscar sócios — consulta não realizada", resp.status_code)
     except Exception as e:
-        logger.debug("cepim_pf: erro ao buscar sócios: %s", e)
-    return []
+        logger.warning("cepim_pf: erro ao buscar sócios: %s", e)
+    return None
 
 
 def _checar_cepim(cnpj: str) -> list[dict]:
@@ -98,6 +103,9 @@ class CEPIMRepresentantePFConnector(SubradarSource):
 
         cpf_fmt = _fmt_cpf(cpf)
         socios = _cnpjs_de_socio(cpf)
+        if socios is None:
+            self._falhou = True
+            return []
 
         if not socios:
             logger.debug("cepim_pf: CPF %s*** não é sócio de nenhum CNPJ", cpf[:3])
@@ -107,7 +115,7 @@ class CEPIMRepresentantePFConnector(SubradarSource):
         seen_cnpj = set()
 
         for socio in socios:
-            cnpj_socio = _strip(socio.get("cnpj", ""))
+            cnpj_socio = _strip(socio.get("cnpj_basico") or socio.get("cnpj") or "")
             if not cnpj_socio or cnpj_socio in seen_cnpj:
                 continue
             seen_cnpj.add(cnpj_socio)
@@ -144,8 +152,18 @@ class CEPIMRepresentantePFConnector(SubradarSource):
 
         return alertas
 
+    _falhou = False
+
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        self._falhou = False
         alertas = self.consultar_cnpj(cpf, razao_social=nome)
+        if self._falhou:
+            return {
+                "fonte": self.fonte, "categoria": "sancao", "status": "pendente",
+                "titulo_secao": "CEPIM — Entidades Impedidas",
+                "resumo": "Não foi possível consultar o quadro societário",
+                "detalhes": {},
+            }
         n = len(alertas)
         return {
             "fonte": self.fonte,

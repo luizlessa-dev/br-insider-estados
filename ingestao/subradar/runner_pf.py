@@ -55,6 +55,8 @@ from .detran_restricoes_pf import DetranRestricoesConnector
 from .processos_infosimples_pf import ProcessosInfosimplesPFConnector
 from .dou_pf import DOUPFConnector
 from .cepim_pf import CEPIMRepresentantePFConnector
+from .improbidade_cnj_pf import ImprobidadeCNJPFConnector
+from .protestos_cenprot_pf import ProtestosCenprotPFConnector
 from .opensanctions_pro import OpenSanctionsProPFConnector
 from .bnmp_pf import BNMPMandadosPrisaoPFConnector
 from .tse_situacao_pf import TSESituacaoEleitoralPFConnector
@@ -102,7 +104,13 @@ FONTES_PF = [
     ProcessosInfosimplesPFConnector(),  # Infosimples — processos TRF/TRT (fallback Escavador)
 
     # ── Eleitoral / Idoneidade ───────────────────────────────────────────────
-    TSESituacaoEleitoralPFConnector(),  # TSE — quitação eleitoral
+    # TSESituacaoEleitoralPFConnector() — PAUSADO em 27/08/2026.
+    # A certidão do TSE é serviço restrito na Infosimples; a habilitação foi
+    # solicitada e está em análise. Enquanto pendente, a fonte sairia como
+    # "pendente" em todo dossiê e a trava de completude reteria TODAS as
+    # entregas. Reativar assim que a Infosimples confirmar a habilitação:
+    # basta descomentar a linha abaixo.
+    # TSESituacaoEleitoralPFConnector(),
 
     # ── Conselhos profissionais ──────────────────────────────────────────────
     CREACONFEAPFConnector(),            # CREA/CONFEA — engenheiros e agrônomos (nacional)
@@ -113,6 +121,8 @@ FONTES_PF = [
 
     # ── Sanções e restrições federais ────────────────────────────────────────
     CEPIMRepresentantePFConnector(),    # CEPIM — sócio de entidade impedida
+    ImprobidadeCNJPFConnector(),        # CNJ/CNIA — improbidade administrativa e inelegibilidade
+    ProtestosCenprotPFConnector(),      # CENPROT/IEPTB — protestos em cartório
     CEISConnector(),                    # CEIS — inidôneos CGU
     CNEPConnector(),                    # CNEP — punidos CGU
     ListaSujaConnector(),               # MTE — trabalho escravo

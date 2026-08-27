@@ -31,6 +31,41 @@ from .base import SubradarSource
 logger = logging.getLogger("subradar.tse_situacao_pf")
 
 _DD_TOKEN = os.environ.get("DIRECT_DATA_TOKEN", "")
+_INFOSIMPLES_TOKEN = os.environ.get("INFOSIMPLES_TOKEN", "")
+_INFOSIMPLES_TSE = "https://api.infosimples.com/api/v2/consultas/tribunal/tse/certidao"
+
+
+def _via_infosimples(cpf: str) -> dict | None:
+    """Certidão de quitação eleitoral pelo TSE.
+
+    Serviço restrito na Infosimples: exige habilitação prévia da conta pelo
+    formulário https://api.infosimples.com/habilitar/tribunal%2Ftse%2Fcertidao
+    (responde code 603 enquanto não habilitado). None quando não emitiu.
+    """
+    if not _INFOSIMPLES_TOKEN:
+        return None
+    try:
+        r = requests.post(
+            _INFOSIMPLES_TSE,
+            data={"cpf": cpf, "token": _INFOSIMPLES_TOKEN, "timeout": 600},
+            timeout=600,
+        )
+        j = r.json()
+        if j.get("code") == 603:
+            logger.warning("TSE: consulta não habilitada na Infosimples — habilitar em "
+                           "https://api.infosimples.com/habilitar/tribunal%2Ftse%2Fcertidao")
+            return None
+        if j.get("code") != 200:
+            logger.warning("TSE Infosimples: code %s (%s)", j.get("code"),
+                           str(j.get("code_message"))[:80])
+            return None
+        itens = j.get("data") or []
+        return itens[0] if itens else None
+    except Exception as e:
+        logger.warning("TSE Infosimples: %s", e)
+        return None
+
+
 _DD_V3_BASE = "https://apiv3.directd.com.br/api"
 
 _STATUS_IRREGULAR = {
@@ -147,13 +182,45 @@ class TSESituacaoEleitoralPFConnector(SubradarSource):
         }]
 
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
+        cpf_d = _strip(cpf)
+        titulo = "Situação Eleitoral (TSE)"
+
+        # Fonte primária: certidão do TSE via Infosimples.
+        cert = _via_infosimples(cpf_d)
+        if cert is not None:
+            quitado = cert.get("conseguiu_emitir_certidao_negativa")
+            if quitado is None:
+                quitado = not cert.get("consta")
+            numero = cert.get("certidao_codigo") or cert.get("certidao") or ""
+            return {
+                "fonte": self.fonte, "categoria": "cadastral",
+                "status": "limpo" if quitado else "alerta",
+                "titulo_secao": titulo,
+                "resumo": (
+                    f"Quitação eleitoral regular — certidão nº {numero}" if quitado and numero
+                    else "Quitação eleitoral regular" if quitado
+                    else "Título eleitoral irregular ou pendente"
+                ),
+                "detalhes": {"certidao": numero, "resposta": cert},
+            }
+
+        # Sem certidão emitida não se afirma regularidade. O Direct Data, fonte
+        # anterior, responde 403 e devolvia "título regular (quitado)" para
+        # qualquer CPF.
         alertas = self.consultar_cnpj(cpf, razao_social=nome)
-        n = len(alertas)
+        if not alertas:
+            return {
+                "fonte": self.fonte, "categoria": "cadastral", "status": "pendente",
+                "titulo_secao": titulo,
+                "resumo": "Não foi possível consultar — certidão do TSE não emitida",
+                "detalhes": {},
+            }
         return {
             "fonte": self.fonte,
             "categoria": "cadastral",
-            "status": "alerta" if n else "limpo",
-            "titulo_secao": "Situação Eleitoral (TSE)",
-            "resumo": alertas[0].get("titulo", "Título irregular") if n else "Título eleitoral regular (quitado)",
-            "detalhes": {"total_irregulares": n, "alertas": [a.get("descricao", "") for a in alertas[:2]]},
+            "status": "alerta",
+            "titulo_secao": titulo,
+            "resumo": alertas[0].get("titulo", "Título irregular"),
+            "detalhes": {"total_irregulares": len(alertas),
+                         "alertas": [a.get("descricao", "") for a in alertas[:2]]},
         }

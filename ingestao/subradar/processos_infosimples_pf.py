@@ -1,28 +1,26 @@
 """
-Conector: Infosimples — Processos Judiciais (Pessoa Física)
+Conector: Justiça Federal — Certidão Unificada (TRF1 a TRF6) via Infosimples
 
-Consulta processos judiciais em Tribunais Regionais Federais (TRF) e
-Tribunais Regionais do Trabalho (TRT) para PF.
+Substitui a consulta processual por tribunal, que usava caminhos do tipo
+`poder_judiciario/processos/trf1/cpf`. Esses endpoints foram descontinuados e
+respondiam 404; o conector tratava a falha como lista vazia e o laudo afirmava
+"Nenhum processo encontrado" sem ter consultado nada.
 
-Cobertura: TRFs 1–6, TRTs 2–27 (maioria dos estados).
-Custo: R$ 0,30–0,50/consulta (mensalidade mínima R$ 100/mês).
+Serviço: tribunal/trf/cert-unificada
+Parâmetros: cpf, email (destino da certidão), tipo.
 
-Funciona como fallback/complemento do Escavador:
-  - Escavador tem cobertura mais ampla (estaduais + federais)
-  - Infosimples via Tribunais diretos (cobertura federal apenas)
-  - Usar Infosimples se Escavador tiver gap geográfico ou limites de busca
+Os tipos foram confirmados lendo os PDFs emitidos (o JSON de retorno não informa
+a natureza da certidão):
+  1 — CERTIDÃO JUDICIAL CÍVEL (processos de classes cíveis em tramitação)
+  2 — CERTIDÃO JUDICIAL CRIMINAL NEGATIVA (processos de classes criminais)
+  3 — CERTIDÃO JUDICIAL PARA FINS ELEITORAIS (só processos com potencial de
+      gerar inelegibilidade — escopo da Ficha Limpa, inútil para background
+      check de admissão)
 
-Tipos de processo:
-  - Cível (TRF)
-  - Penal (TRF)
-  - Trabalhista (TRT)
-  - Administrativo (TRF)
+Emitimos 1 e 2. A criminal é a que pesa para contratação; a cível entra como
+complemento patrimonial/contratual. Cada consulta custa R$ 0,20.
 
-Env var: INFOSIMPLES_TOKEN
-Documentação: https://infosimples.com/consultas/
-
-Retorna alerta para processos "em andamento" ou "condenado".
-Processos arquivados/extintos retornam como informação (sem alerta).
+Env: INFOSIMPLES_TOKEN · SUBRADAR_OPERADOR (e-mail de destino; não usar o do cliente)
 """
 from __future__ import annotations
 
@@ -36,177 +34,157 @@ from .base import SubradarSource
 
 logger = logging.getLogger("subradar.processos_infosimples_pf")
 
-TOKEN = os.environ.get("INFOSIMPLES_TOKEN", "")
-
-_BASE = "https://api.infosimples.com/api/v2/consultas"
-
-# Endpoints Infosimples para processos judiciais
-_ENDPOINTS = [
-    {"tribunal": "TRF1", "endpoint": f"{_BASE}/poder_judiciario/processos/trf1/cpf"},
-    {"tribunal": "TRF2", "endpoint": f"{_BASE}/poder_judiciario/processos/trf2/cpf"},
-    {"tribunal": "TRF3", "endpoint": f"{_BASE}/poder_judiciario/processos/trf3/cpf"},
-    {"tribunal": "TRF4", "endpoint": f"{_BASE}/poder_judiciario/processos/trf4/cpf"},
-    {"tribunal": "TRF5", "endpoint": f"{_BASE}/poder_judiciario/processos/trf5/cpf"},
-    {"tribunal": "TRF6", "endpoint": f"{_BASE}/poder_judiciario/processos/trf6/cpf"},
-    {"tribunal": "TRT2-SP", "endpoint": f"{_BASE}/poder_judiciario/processos/trt2/cpf"},
-    {"tribunal": "TRT3-MG", "endpoint": f"{_BASE}/poder_judiciario/processos/trt3/cpf"},
-    {"tribunal": "TRT4-RS", "endpoint": f"{_BASE}/poder_judiciario/processos/trt4/cpf"},
-]
+_TOKEN = os.environ.get("INFOSIMPLES_TOKEN", "")
+_EMAIL = os.environ.get("SUBRADAR_OPERADOR", "luiz@lessalabs.com")
+_ENDPOINT = "https://api.infosimples.com/api/v2/consultas/tribunal/trf/cert-unificada"
+_TIPO_CIVEL = "1"
+_TIPO_CRIMINAL = "2"
 
 
 def _strip_cpf(cpf: str) -> str:
-    return re.sub(r"\D", "", cpf)
+    return re.sub(r"\D", "", str(cpf or ""))
 
 
-def _fmt_cpf(cpf: str) -> str:
-    c = _strip_cpf(cpf)
-    return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:11]}" if len(c) == 11 else cpf
-
-
-def _consultar_tribunal(tribunal: str, endpoint: str, cpf: str, nome: str | None = None) -> list[dict]:
-    """Consulta processos em um tribunal específico."""
-    if not TOKEN or not cpf:
-        return []
-
-    cpf_limpo = _strip_cpf(cpf)
-    if len(cpf_limpo) != 11:
-        return []
-
+def _emitir(cpf: str, tipo: str) -> dict | None:
+    """Emite uma certidão da Justiça Federal. None quando não foi possível."""
+    if not _TOKEN:
+        return None
     try:
-        resp = requests.get(
-            endpoint,
-            params={
-                "token": TOKEN,
-                "cpf": cpf_limpo,
-                "nome": nome or "",
+        resp = requests.post(
+            _ENDPOINT,
+            data={
+                "cpf": cpf,
+                "email": _EMAIL,
+                "tipo": tipo,
+                "token": _TOKEN,
                 "timeout": 600,
             },
-            timeout=30,
+            timeout=600,
         )
-        if not resp.ok:
-            logger.debug("Infosimples %s: HTTP %d", tribunal, resp.status_code)
-            return []
-
-        data = resp.json()
-        if data.get("code") != 200:
-            logger.debug("Infosimples %s: code %s", tribunal, data.get("code"))
-            return []
-
-        return data.get("data", [])
+        j = resp.json()
+        if j.get("code") != 200:
+            logger.warning("Certidão TRF tipo %s: code %s (%s)", tipo, j.get("code"),
+                           str(j.get("code_message"))[:90])
+            return None
+        itens = j.get("data") or []
+        return itens[0] if itens else None
     except Exception as e:
-        logger.debug("Infosimples %s: %s", tribunal, e)
-        return []
+        logger.warning("Certidão TRF tipo %s: %s", tipo, e)
+        return None
+
+
+def _ler_regionais(cert: dict) -> tuple[list, list, list, dict]:
+    """Separa regionais em (negativos, com registro, sem resposta) + metadados."""
+    det = cert.get("detalhes_certidao") or {}
+    negativos, positivos, sem_resposta = [], [], []
+    for t, v in (det.get("tribunais") or {}).items():
+        estado = (v or {}).get("conseguiu_emitir_certidao_negativa")
+        if estado is True:
+            negativos.append(t)
+        elif estado is False:
+            positivos.append(t)
+        else:
+            # Regional sem veredito (acontece com o TRF4). Não conta como
+            # negativa: some do total e é declarado no laudo.
+            sem_resposta.append(t)
+    return negativos, positivos, sem_resposta, det
 
 
 class ProcessosInfosimplesPFConnector(SubradarSource):
-    """
-    Consulta processos judiciais (TRF/TRT) para PF via Infosimples.
-    Complemento do Escavador; cobre gaps geográficos específicos.
-    Gracioso se INFOSIMPLES_TOKEN não estiver configurado.
-    """
+    """Certidões cível e criminal da Justiça Federal por CPF."""
     fonte = "infosimples_processos_judiciais"
     request_delay = 1.0
 
-    def consultar_cnpj(self, cnpj_or_cpf: str, razao_social: str | None = None, **_) -> list[dict]:
-        """Interface CNPJ não aplicável para este conector PF."""
-        return []
+    def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
+        cpf_d = _strip_cpf(cpf)
+        if len(cpf_d) != 11:
+            return []
+        alertas = []
+        for tipo, rotulo, sev in ((_TIPO_CRIMINAL, "criminal", "critico"),
+                                  (_TIPO_CIVEL, "cível", "atencao")):
+            cert = _emitir(cpf_d, tipo)
+            if not cert or cert.get("conseguiu_emitir") is not True:
+                continue
+            _, positivos, _, _ = _ler_regionais(cert)
+            if not positivos:
+                continue
+            alertas.append({
+                "fonte": self.fonte,
+                "categoria": "judicial",
+                "severidade": sev,
+                "titulo": f"Justiça Federal — certidão {rotulo} com registro",
+                "descricao": (
+                    f"A certidão {rotulo} da Justiça Federal não saiu negativa em: "
+                    + ", ".join(t.upper() for t in sorted(positivos))
+                    + ". Consultar o inteiro teor para identificar os processos."
+                ),
+                "url_fonte": "https://certidao-unificada.cjf.jus.br",
+                "is_novo": True,
+            })
+        return alertas
 
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:
-        """
-        Retorna resumo de processos judiciais para PF.
-
-        Returns:
-            dict com status "limpo" ou "alerta"
-            None se TOKEN ausente ou CPF inválido
-        """
-        if not TOKEN:
-            logger.debug("processos_infosimples: INFOSIMPLES_TOKEN ausente — pulando")
+        cpf_d = _strip_cpf(cpf)
+        if len(cpf_d) != 11:
             return None
 
-        cpf_limpo = _strip_cpf(cpf)
-        if len(cpf_limpo) != 11:
-            logger.debug("processos_infosimples: CPF inválido %s", cpf)
-            return None
-
-        cpf_fmt = _fmt_cpf(cpf_limpo)
-
-        # Consultar todos os tribunais
-        todos_processos = []
-        tribunais_com_resultados = set()
-
-        for config in _ENDPOINTS:
-            tribunal = config["tribunal"]
-            endpoint = config["endpoint"]
-            processos = _consultar_tribunal(tribunal, endpoint, cpf_limpo, nome)
-            if processos:
-                tribunais_com_resultados.add(tribunal)
-                todos_processos.extend([{**p, "tribunal": tribunal} for p in processos])
-
-        if not todos_processos:
-            logger.info("Processos Infosimples: %s — sem registros", cpf_fmt)
+        titulo = "Justiça Federal — Certidões Cível e Criminal"
+        if not _TOKEN:
             return {
-                "fonte": self.fonte,
-                "categoria": "judicial",
-                "status": "limpo",
-                "titulo_secao": "Processos Judiciais (TRF/TRT via Infosimples)",
-                "resumo": "Nenhum processo encontrado",
-                "detalhes": {"total_processos": 0},
+                "fonte": self.fonte, "categoria": "judicial", "status": "pendente",
+                "titulo_secao": titulo,
+                "resumo": "Não foi possível consultar — token Infosimples ausente",
+                "detalhes": {},
             }
 
-        # Filtrar apenas processos "relevantes" (em andamento, condenado, não arquivado)
-        processos_relevantes = []
-        processos_arquivados = []
-
-        for p in todos_processos:
-            situacao = (p.get("situacao") or p.get("status") or "").lower()
-            if "arquiv" in situacao or "encerr" in situacao or "extint" in situacao:
-                processos_arquivados.append(p)
-            else:
-                processos_relevantes.append(p)
-
-        n_relevantes = len(processos_relevantes)
-        n_total = len(todos_processos)
-
-        if n_relevantes == 0:
-            # Só arquivados/encerrados
-            logger.info("Processos Infosimples: %s — %d processos arquivados/encerrados", cpf_fmt, n_total)
-            return {
-                "fonte": self.fonte,
-                "categoria": "judicial",
-                "status": "info",
-                "titulo_secao": "Processos Judiciais (TRF/TRT via Infosimples)",
-                "resumo": f"{n_total} processo(s) arquivado(s)/encerrado(s)",
-                "detalhes": {
-                    "total_processos": n_total,
-                    "processos_relevantes": 0,
-                    "tribunais": list(tribunais_com_resultados),
-                },
+        resultados = {}
+        for tipo, rotulo in ((_TIPO_CRIMINAL, "criminal"), (_TIPO_CIVEL, "civel")):
+            cert = _emitir(cpf_d, tipo)
+            if not cert or cert.get("conseguiu_emitir") is not True:
+                resultados[rotulo] = None
+                continue
+            negativos, positivos, sem_resposta, det = _ler_regionais(cert)
+            resultados[rotulo] = {
+                "certidao": det.get("numero_certidao"),
+                "codigo_validacao": det.get("codigo_validacao"),
+                "emissao": det.get("normalizado_data_hora_emissao"),
+                "negativos": negativos,
+                "com_registro": positivos,
+                "sem_resposta": sem_resposta,
             }
 
-        # Processos em andamento ou condenado
-        severidade = "atencao"
-        condenacoes = [p for p in processos_relevantes if "condenad" in (p.get("situacao") or "").lower()]
-        if condenacoes:
-            severidade = "critico"
+        # Certidão que não foi emitida não é certidão negativa. Basta uma das
+        # duas falhar para a seção não poder afirmar ausência de processos.
+        if any(v is None for v in resultados.values()):
+            faltando = [k for k, v in resultados.items() if v is None]
+            return {
+                "fonte": self.fonte, "categoria": "judicial", "status": "pendente",
+                "titulo_secao": titulo,
+                "resumo": "Não foi possível emitir a certidão "
+                          + " e ".join(faltando) + " da Justiça Federal",
+                "detalhes": {"emitidas": {k: v for k, v in resultados.items() if v}},
+            }
 
-        logger.warning(
-            "Processos Infosimples: %s — %d em andamento (%d condenações), %d arquivados",
-            cpf_fmt, n_relevantes, len(condenacoes), n_total - n_relevantes,
-        )
+        crim, civ = resultados["criminal"], resultados["civel"]
+        ufs = lambda l: "/".join(t.upper() for t in sorted(l))
+
+        if crim["com_registro"]:
+            status, resumo = "critico", f"Processo criminal na Justiça Federal ({ufs(crim['com_registro'])})"
+        elif civ["com_registro"]:
+            status, resumo = "alerta", f"Processo cível na Justiça Federal ({ufs(civ['com_registro'])})"
+        else:
+            status = "limpo"
+            resumo = (f"Certidões negativas cível (nº {civ['certidao']}) e "
+                      f"criminal (nº {crim['certidao']})")
+
+        sem = sorted(set(crim["sem_resposta"]) | set(civ["sem_resposta"]))
+        if sem:
+            resumo += f" · {ufs(sem)} não respondeu"
 
         return {
-            "fonte": self.fonte,
-            "categoria": "judicial",
-            "status": "alerta",
-            "severidade": severidade,
-            "titulo_secao": "Processos Judiciais (TRF/TRT via Infosimples)",
-            "resumo": f"{n_relevantes} processo(s) em andamento{' — CONDENAÇÕES' if condenacoes else ''}",
-            "detalhes": {
-                "total_processos": n_total,
-                "processos_relevantes": n_relevantes,
-                "condenacoes": len(condenacoes),
-                "arquivados": n_total - n_relevantes,
-                "tribunais": list(tribunais_com_resultados),
-                "processos": processos_relevantes[:10],  # Top 10
-            },
+            "fonte": self.fonte, "categoria": "judicial",
+            "status": status,
+            "titulo_secao": titulo,
+            "resumo": resumo,
+            "detalhes": {"criminal": crim, "civel": civ, "regionais_sem_resposta": sem},
         }
