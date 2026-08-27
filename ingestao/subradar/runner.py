@@ -211,6 +211,9 @@ def _buscar_ou_criar_dossie(cliente_id: str, cnpj: str, razao_social: str | None
 
 
 _PESOS_PJ = {"critico": 30, "atencao": 10, "info": 2}
+# Severidades que declaram "não consegui consultar". Não pontuam e não podem
+# ativar bônus de categoria: fonte que não respondeu não é achado de risco.
+_SEV_NAO_CONSULTADA = {"pendente", "erro"}
 _CAT_JUDICIAL_PJ   = {"datajud", "tcu", "cade", "tce_estaduais_pj", "cndt_tst_pj"}
 _CAT_INTL_PJ       = {"ofac", "uk_sanctions", "eu_sanctions", "un_sanctions",
                        "worldbank_debarment", "opensanctions_pro", "opensanctions"}
@@ -229,7 +232,10 @@ def _calcular_score(alertas: list[dict]) -> tuple[int, str]:
     """Calcula score de risco proprietário 0-100 com bônus por categoria."""
     score = sum(_PESOS_PJ.get(a.get("severidade", ""), 0) for a in alertas)
 
-    fontes = {(a.get("fonte") or "").lower() for a in alertas}
+    fontes = {
+        (a.get("fonte") or "").lower() for a in alertas
+        if a.get("severidade") not in _SEV_NAO_CONSULTADA
+    }
     if fontes & _CAT_JUDICIAL_PJ:
         score += 10
     if fontes & _CAT_INTL_PJ:
@@ -252,12 +258,13 @@ def _atualizar_dossie(dossie_id: str, alertas: list[dict]) -> None:
     if not SUPABASE_URL or not SUPABASE_KEY or not dossie_id:
         return
     score_num, score_texto = _calcular_score(alertas)
+    n_reais = len([a for a in alertas if a.get("severidade") not in _SEV_NAO_CONSULTADA])
     url = f"{SUPABASE_URL}/rest/v1/sub_dossies"
     params = {"id": f"eq.{dossie_id}"}
     payload = {
         "score_num": score_num,
         "score_texto": score_texto,
-        "total_alertas": len(alertas),
+        "total_alertas": n_reais,
         "status": "gerado",
     }
     headers = {**_supabase_headers(), "Prefer": "return=minimal"}

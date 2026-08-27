@@ -43,6 +43,8 @@ try:
     RED50    = rl_colors.HexColor("#fef2f2")
     GREEN50  = rl_colors.HexColor("#f0fdf4")
     AMBER50  = rl_colors.HexColor("#fffbeb")
+    SLATE100 = rl_colors.HexColor("#f1f5f9")   # fundo "não consultada"
+    SLATE700 = rl_colors.HexColor("#334155")   # texto "não consultada"
     WHITE    = rl_colors.white
     BLACK    = rl_colors.black
     _HAS_REPORTLAB = True
@@ -191,21 +193,39 @@ def _buscar_alertas(dossie_id: str) -> list[dict]:
     return r.json() if r.ok else []
 
 
+# Severidade desconhecida NUNCA cai em "ok": um valor que o PDF não reconhece
+# é tratado como fonte não consultada. O contrário já pintou de verde alerta
+# "pendente" gravado pelo conector.
+_NAO_CONSULTADA = {"pendente", "erro"}
+
+# Ordem de gravidade. "pendente" fica acima de info/ok: não saber é pior que
+# saber que está limpo.
+_ORDEM_SEV = {"critico": 0, "atencao": 1, "pendente": 2, "erro": 2, "info": 3,
+              "ok": 4, "nenhum": 4}
+
+
 def _sev_color(sev: str):
-    return {"critico": RED600, "atencao": AMBER600, "info": SLATE400, "ok": GREEN700}.get(sev, SLATE400)
+    return {"critico": RED600, "atencao": AMBER600, "info": SLATE400,
+            "ok": GREEN700, "nenhum": GREEN700,
+            "pendente": SLATE700, "erro": SLATE700}.get(sev, SLATE700)
 
 
 def _sev_bg(sev: str):
-    return {"critico": RED50, "atencao": AMBER50, "info": CREAM, "ok": GREEN50}.get(sev, CREAM)
+    return {"critico": RED50, "atencao": AMBER50, "info": CREAM,
+            "ok": GREEN50, "nenhum": GREEN50,
+            "pendente": SLATE100, "erro": SLATE100}.get(sev, SLATE100)
 
 
 def _sev_label(sev: str) -> str:
-    return {"critico": "CRÍTICO", "atencao": "ATENÇÃO", "info": "INFO", "ok": "OK"}.get(sev, "OK")
+    return {"critico": "CRÍTICO", "atencao": "ATENÇÃO", "info": "INFO",
+            "ok": "OK", "nenhum": "OK"}.get(sev, "NÃO CONSULTADA")
 
 
 def _pior(alertas: list[dict]) -> str:
-    order = {"critico": 0, "atencao": 1, "info": 2, "ok": 3}
-    return min(alertas, key=lambda a: order.get(a.get("severidade", "ok"), 3)).get("severidade", "ok")
+    return min(
+        alertas,
+        key=lambda a: _ORDEM_SEV.get(a.get("severidade", "ok"), 2),
+    ).get("severidade", "ok")
 
 
 def _ps(name, size=9, bold=False, color=None, align="LEFT", leading=None, space_after=2):
@@ -311,7 +331,7 @@ def _logo_flowable(width=160, height=36):
 
 
 def _draw_header_hero(canvas, doc, dossie, n_fontes, n_ok, n_alertas,
-                      sc_label, sc_color, doc_tipo, fontes_lista):
+                      sc_label, sc_color, doc_tipo, fontes_lista, n_pendentes=0):
     """Desenha cabeçalho e hero na primeira página via canvas (pixel-perfect)."""
     from reportlab.lib.units import cm
     from reportlab.lib.colors import HexColor
@@ -408,15 +428,18 @@ def _draw_header_hero(canvas, doc, dossie, n_fontes, n_ok, n_alertas,
     canvas.setFillColor(PINK)
     canvas.drawCentredString(score_x, hero_y + HERO_H * 0.18, sc_label)
 
-    # Contadores (FONTES / OK / ALERTAS)
-    ctrs_start = score_x + MARGIN * 0.6
-    ctrs_end   = W - MARGIN
-    col_w = (ctrs_end - ctrs_start) / 3
-    for i, (val, lbl) in enumerate([
+    # Contadores (FONTES / OK / ALERTAS). O número de fontes não consultadas
+    # não cabe aqui ao lado do score — vai numa tarja acima da tabela-resumo,
+    # que é onde o leitor procura o resultado.
+    ctrs = [
         (str(n_fontes), "FONTES"),
         (str(n_ok), "OK"),
         (str(n_alertas), "ALERTAS"),
-    ]):
+    ]
+    ctrs_start = score_x + MARGIN * 0.6
+    ctrs_end   = W - MARGIN
+    col_w = (ctrs_end - ctrs_start) / len(ctrs)
+    for i, (val, lbl) in enumerate(ctrs):
         cx = ctrs_start + col_w * i + col_w / 2
         canvas.setFillColor(WHITE)
         canvas.setFont("Helvetica-Bold", 16)
@@ -482,7 +505,17 @@ def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
     # ════════════════════════════════════════════════════════════════════════
 
     n_fontes  = len(fontes_lista)
-    n_alertas = len(alertas)
+    # Fonte cujo pior status é "pendente"/"erro" não é alerta nem OK: é fonte
+    # que não respondeu. Contada à parte para não inflar nenhum dos dois lados.
+    chaves_pendentes = {
+        k for k, _ in fontes_lista
+        if k in por_fonte and _pior(por_fonte[k]) in _NAO_CONSULTADA
+    }
+    n_pendentes = len(chaves_pendentes)
+    n_alertas = len([
+        a for a in alertas
+        if a.get("severidade") not in _NAO_CONSULTADA
+    ])
     n_ok      = n_fontes - len([k for k, _ in fontes_lista if k in por_fonte])
 
     # O cabeçalho e hero são desenhados via canvas (on_page callback).
@@ -497,8 +530,26 @@ def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
     # TABELA RESUMO — todas as fontes
     # ════════════════════════════════════════════════════════════════════════
 
-    story.append(P(f"Resumo das {n_fontes} fontes consultadas",
+    story.append(P(f"Resumo das {n_fontes} fontes do catálogo",
                    size=9, bold=True, color=SLATE600, space_after=4))
+
+    # Tarja de incompletude: some quando todas as fontes responderam.
+    if n_pendentes:
+        _av = Table(
+            [[P(f"{n_pendentes} fonte(s) não puderam ser consultadas neste ciclo. "
+                "O resultado delas é desconhecido — não é ausência de ocorrência.",
+                size=8, bold=True, color=WHITE)]],
+            colWidths=[INNER],
+        )
+        _av.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), SLATE700),
+            ("LEFTPADDING", (0, 0), (-1, -1), 9),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(_av)
+        story.append(Spacer(1, 0.15 * cm))
 
     r_data = [["FONTE", "STATUS", "RESULTADO"]]
     r_sevs = []
@@ -509,7 +560,7 @@ def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
             titulo = next(
                 (a.get("titulo", "") for a in sorted(
                     por_fonte[fonte_key],
-                    key=lambda a: {"critico": 0, "atencao": 1, "info": 2}.get(a.get("severidade", ""), 3)
+                    key=lambda a: _ORDEM_SEV.get(a.get("severidade", ""), 2)
                 )),
                 "",
             )
@@ -520,7 +571,7 @@ def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
         r_data.append([fonte_nome, _sev_label(sev), resultado])
         r_sevs.append(sev)
 
-    r_t = Table(r_data, colWidths=[INNER * 0.42, INNER * 0.12, INNER * 0.46])
+    r_t = Table(r_data, colWidths=[INNER * 0.38, INNER * 0.19, INNER * 0.43])
     r_style = [
         ("BACKGROUND", (0, 0), (-1, 0), SLATE900),
         ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
@@ -550,7 +601,7 @@ def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
     story.append(Spacer(1, 0.4 * cm))
     story.append(HR(SLATE200))
     story.append(P(
-        "Documento gerado automaticamente pelo Subradar a partir de fontes públicas oficiais. "
+        "Documento gerado automaticamente pelo Subradar a partir de fontes oficiais e bases licenciadas. "
         "Não substitui parecer jurídico.",
         size=7, color=SLATE400, align="CENTER",
     ))
@@ -668,11 +719,17 @@ def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
     ]))
     story.append(met_hdr)
     story.append(Spacer(1, 0.3 * cm))
-    story.append(P(
+    _nota_ciclo = (
         "O score de risco é calculado somando os pontos de cada alerta encontrado (máximo 100). "
-        "Todas as fontes são consultadas a cada ciclo mensal.",
-        size=8.5, color=SLATE600, space_after=10,
-    ))
+    )
+    if n_pendentes:
+        _nota_ciclo += (
+            f"Neste ciclo, {n_pendentes} fonte(s) não puderam ser consultadas e aparecem "
+            "marcadas como NÃO CONSULTADA — o resultado delas é desconhecido, não negativo."
+        )
+    else:
+        _nota_ciclo += "Todas as fontes do catálogo responderam neste ciclo."
+    story.append(P(_nota_ciclo, size=8.5, color=SLATE600, space_after=10))
 
     pt_data = [["CLASSIFICAÇÃO", "PONTOS / ALERTA", "EXEMPLOS"]]
     pt_rows = [
@@ -765,7 +822,7 @@ def _build_pdf(dossie: dict, alertas: list[dict], output_path: str) -> None:
     _on_first = partial(
         _draw_header_hero,
         dossie=dossie,
-        n_fontes=n_fontes, n_ok=n_ok, n_alertas=n_alertas,
+        n_fontes=n_fontes, n_ok=n_ok, n_alertas=n_alertas, n_pendentes=n_pendentes,
         sc_label=sc_label, sc_color=sc_color,
         doc_tipo=doc_tipo, fontes_lista=fontes_lista,
     )

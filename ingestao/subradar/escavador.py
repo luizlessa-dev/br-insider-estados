@@ -74,10 +74,14 @@ def _headers() -> dict:
     }
 
 
-def _buscar_processos(cnpj_digits: str) -> list[dict]:
+def _buscar_processos(cnpj_digits: str) -> tuple[list[dict], str | None]:
     """
     Consulta paginada de processos por CNPJ via API v2.
-    Retorna lista bruta de processos (todos os itens, todas as páginas).
+
+    Retorna (processos, falha). `falha` é None quando a consulta chegou ao fim
+    normalmente; caso contrário traz o motivo. Lista vazia com falha != None
+    significa "não consegui consultar", nunca "nada consta" — a distinção que
+    faltava fazia o dossiê declarar ausência de processo sem ter perguntado.
     """
     todos: list[dict] = []
     page = 1
@@ -92,25 +96,28 @@ def _buscar_processos(cnpj_digits: str) -> list[dict]:
             )
         except Exception as e:
             logger.warning("Escavador: erro de rede na pág %d para %s: %s", page, cnpj_digits, e)
-            break
+            return todos, f"erro de rede: {e}"
 
         if r.status_code == 401:
             logger.error("Escavador: APIKey inválida ou sem créditos")
-            break
+            return todos, "APIKey inválida ou sem créditos (HTTP 401)"
         if r.status_code == 402:
             logger.error("Escavador: créditos esgotados")
-            break
+            return todos, "créditos esgotados (HTTP 402)"
+        if r.status_code == 403:
+            logger.error("Escavador: acesso negado — saldo bloqueado ou plano sem permissão")
+            return todos, "acesso negado (HTTP 403)"
         if r.status_code == 404:
             break
         if not r.ok:
             logger.warning("Escavador: HTTP %s para %s pág %d", r.status_code, cnpj_digits, page)
-            break
+            return todos, f"HTTP {r.status_code}"
 
         try:
             data = r.json()
         except Exception:
             logger.warning("Escavador: resposta não-JSON para %s", cnpj_digits)
-            break
+            return todos, "resposta não-JSON"
 
         items = data.get("items") or data.get("data") or []
         todos.extend(items)
@@ -123,7 +130,7 @@ def _buscar_processos(cnpj_digits: str) -> list[dict]:
         page += 1
         time.sleep(0.3)  # respeita rate limit
 
-    return todos
+    return todos, None
 
 
 def _severidade_por_titulo(titulo: str) -> str:
@@ -184,6 +191,30 @@ def _montar_alerta(processo: dict, cnpj_fmt: str, ciclo: str) -> dict:
     }
 
 
+def _alerta_pendente(cnpj_fmt: str, ciclo: str, motivo: str) -> dict:
+    """
+    Alerta que declara a fonte como não consultada. O PDF renderiza severidade
+    "pendente" em faixa própria — nunca como OK verde.
+    """
+    return {
+        "cnpj": cnpj_fmt,
+        "ciclo": ciclo,
+        "fonte": "escavador",
+        "categoria": "judicial",
+        "severidade": "pendente",
+        "titulo": "Escavador — fonte não consultada neste ciclo",
+        "descricao": (
+            f"A consulta de processos judiciais não pôde ser realizada ({motivo}). "
+            "A ausência de processo neste dossiê não significa que não existam: "
+            "esta fonte não respondeu."
+        ),
+        "referencia_id": f"pendente-{ciclo}",
+        "data_evento": None,
+        "url_fonte": "https://www.escavador.com",
+        "is_novo": True,
+    }
+
+
 class EscavadorConnector(SubradarSource):
     fonte         = "escavador"
     request_delay = 0.5
@@ -195,9 +226,11 @@ class EscavadorConnector(SubradarSource):
 
         if not ESCAVADOR_KEY:
             logger.info("Escavador: ESCAVADOR_API_KEY não configurada — fonte indisponível")
-            return []
+            return [_alerta_pendente(cnpj_fmt, ciclo, "ESCAVADOR_API_KEY não configurada")]
 
-        processos = _buscar_processos(cnpj_digits)
+        processos, falha = _buscar_processos(cnpj_digits)
+        if falha:
+            return [_alerta_pendente(cnpj_fmt, ciclo, falha)]
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, processos)
         if not mudou:
