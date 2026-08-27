@@ -389,8 +389,62 @@ def processar_cpf(
                 logger.info("  ✓ %s — %d alerta(s)", nome_fonte, len(alertas))
             logger.info("TIMING %s: %.1fs", nome_fonte, dt)
 
-    # Reagrupa na ordem declarada das fontes, para o laudo não variar de ordem
-    # entre execuções por causa de quem terminou primeiro.
+    logger.info("Fontes concluídas em %.1fs (%d threads)",
+                time.perf_counter() - t_inicio, max_workers)
+
+    # Segunda tentativa nas fontes que não conseguiram consultar.
+    #
+    # INLabs (DOU) e o CJF (certidões da Justiça Federal) falham de forma
+    # intermitente — 502 e 615 que costumam passar minutos depois. Como a trava
+    # de entrega retém o dossiê inteiro quando qualquer fonte fica pendente,
+    # sem esta retentativa quase todo laudo dependeria de intervenção manual.
+    # Só as fontes pendentes são refeitas, e apenas se houver folga de tempo.
+    _RETENTAR = {"pendente", "erro"}
+    tentativas_extra = int(os.environ.get("SUBRADAR_PF_RETRY", "1"))
+    espera = int(os.environ.get("SUBRADAR_PF_RETRY_ESPERA", "20"))
+    limite_s = int(os.environ.get("SUBRADAR_PF_RETRY_LIMITE", "600"))
+
+    for tentativa in range(1, tentativas_extra + 1):
+        pendentes = [
+            f for f in fontes
+            if str(((resultados.get(getattr(f, "fonte", "?"), ([], None))[1]) or {})
+                   .get("status", "")).lower() in _RETENTAR
+        ]
+        if not pendentes:
+            break
+        decorrido = time.perf_counter() - t_inicio
+        if decorrido > limite_s:
+            logger.warning("Sem folga para retentar (%.0fs decorridos, limite %ds): %s",
+                           decorrido, limite_s,
+                           ", ".join(getattr(f, "fonte", "?") for f in pendentes))
+            break
+
+        logger.info("Retentativa %d/%d em %d fonte(s) pendente(s): %s",
+                    tentativa, tentativas_extra, len(pendentes),
+                    ", ".join(getattr(f, "fonte", "?") for f in pendentes))
+        time.sleep(espera)
+        # O cache guardaria a falha anterior e a retentativa seria inócua.
+        limpar_memo()
+
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(pendentes))) as pool:
+            futuros = {pool.submit(_rodar_fonte, f): getattr(f, "fonte", "?") for f in pendentes}
+            for fut in as_completed(futuros):
+                nome_fonte = futuros[fut]
+                try:
+                    nome_fonte, alertas, dado, dt = fut.result()
+                except Exception as e:
+                    logger.error("  ✗ %s — falhou na retentativa: %s", nome_fonte, e)
+                    continue
+                novo_status = str((dado or {}).get("status", "")).lower()
+                if dado and novo_status not in _RETENTAR:
+                    logger.info("  ✓ %s recuperada na retentativa (%.1fs)", nome_fonte, dt)
+                    resultados[nome_fonte] = (alertas, dado)
+                else:
+                    logger.warning("  - %s segue indisponível após retentativa", nome_fonte)
+
+    # Reagrupa depois das retentativas, para o laudo refletir o resultado final.
+    todos_alertas.clear()
+    todos_dados.clear()
     for fonte in fontes:
         nome_fonte = getattr(fonte, "fonte", "?")
         alertas, dado = resultados.get(nome_fonte, ([], None))
@@ -398,9 +452,6 @@ def processar_cpf(
             todos_alertas.extend(alertas)
         if dado:
             todos_dados.append(dado)
-
-    logger.info("Todas as %d fontes concluídas em %.1fs (%d threads)",
-                len(fontes), time.perf_counter() - t_inicio, max_workers)
 
     vistas: set[str] = set()
     dados_unicos: list[dict] = []
