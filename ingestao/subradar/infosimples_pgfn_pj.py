@@ -54,7 +54,11 @@ class InfosimplesPGFNPJConnector(SubradarSource):
     e conseguiu_emitir_certidao_negativa=False.
     """
 
-    fonte = "pgfn"
+    # "pgfn" ja e o nome de DividaAtivaConnector (tabela local pgfn_divida_ativa).
+    # sub_snapshots tem unique em (cnpj, ciclo, fonte): com as duas registradas sob
+    # o mesmo nome, a segunda derrubava a gravacao do ciclo inteiro. Sao fontes
+    # distintas — aqui e a certidao conjunta RFB/PGFN emitida via Infosimples.
+    fonte = "pgfn_certidao"
 
     def consultar_cnpj(self, cnpj: str, razao_social: str | None = None, **_) -> list[dict]:
         if not TOKEN:

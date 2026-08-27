@@ -28,7 +28,7 @@ from typing import Any
 import requests
 
 from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, \
-    SUPABASE_URL, SUPABASE_KEY, _supabase_headers
+    SUPABASE_URL, SUPABASE_KEY, _supabase_headers, FonteIndisponivel
 
 logger = logging.getLogger("subradar.socios_compliance")
 
@@ -73,9 +73,18 @@ def _get_socios_pf(cnpj_digits: str) -> list[dict]:
     cnpj_basico = cnpj_digits[:8]
     rows = _supabase_get("cnpj_socios", {
         "cnpj_basico": f"eq.{cnpj_basico}",
-        "select": "nome_socio,cpf_cnpj_socio,qualificacao_socio",
+        # A coluna e "qualificacao"; "qualificacao_socio" nao existe mais e fazia
+        # o PostgREST responder 400. O 400 virava lista vazia, e lista vazia
+        # virava "socios sem apontamentos" no dossie.
+        "select": "nome_socio,cpf_cnpj_socio,qualificacao",
         "limit": 20,
     })
+    if not rows:
+        # Toda empresa tem quadro societario. Zero linhas quer dizer que a base
+        # local nao cobre este CNPJ — nao que ele nao tenha socios.
+        raise FonteIndisponivel(
+            "QSA nao disponivel na base local (cnpj_socios) para este CNPJ"
+        )
     socios = []
     for r in rows:
         cpf = _strip(r.get("cpf_cnpj_socio", ""))
@@ -83,7 +92,7 @@ def _get_socios_pf(cnpj_digits: str) -> list[dict]:
             socios.append({
                 "nome": (r.get("nome_socio") or "").strip(),
                 "cpf": cpf,
-                "qualificacao": r.get("qualificacao_socio", ""),
+                "qualificacao": r.get("qualificacao", ""),
             })
     return socios[:_MAX_SOCIOS]
 

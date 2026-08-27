@@ -20,7 +20,7 @@ import time
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY, _supabase_headers
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY, _supabase_headers, FonteIndisponivel
 
 logger = logging.getLogger("subradar.jucesp")
 
@@ -117,7 +117,8 @@ class JUCESPConnector(SubradarSource):
     fonte = "jucesp"
     request_delay = 0.0
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
         ciclo = _ciclo_atual()
@@ -125,8 +126,13 @@ class JUCESPConnector(SubradarSource):
         # Busca snapshots societários (requer SocietarioConnector já executado)
         snapshots = _buscar_snapshots_societarios(cnpj_fmt)
         if len(snapshots) < 2:
-            # Sem histórico suficiente para comparação
-            return []
+            # A fonte compara dois retratos societarios no tempo. Com menos de
+            # dois, nao ha o que comparar — e isso nao e "nenhuma mudanca
+            # societaria relevante", e "ainda nao da para dizer".
+            raise FonteIndisponivel(
+                "JUCESP: historico societario insuficiente para comparacao",
+                f"{len(snapshots)} snapshot(s) disponivel(is), sao necessarios 2",
+            )
 
         atual = snapshots[0].get("dados") or {}
         anterior = snapshots[1].get("dados") or {}

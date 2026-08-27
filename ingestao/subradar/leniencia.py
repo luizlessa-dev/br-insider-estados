@@ -73,7 +73,8 @@ class LenienciaConnector(SubradarSource):
 
         return encontrados
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         if not PT_KEY:
             logger.warning("Leniência: PORTAL_TRANSPARENCIA_API_KEY ausente")
             return []

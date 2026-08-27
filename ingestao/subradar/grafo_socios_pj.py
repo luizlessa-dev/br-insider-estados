@@ -24,17 +24,14 @@ import re
 
 import requests
 
-from .base import SubradarSource, SUPABASE_URL, SUPABASE_KEY, _supabase_headers
+from .base import SubradarSource, SUPABASE_URL, SUPABASE_KEY, _supabase_headers, FonteIndisponivel
 
 logger = logging.getLogger("subradar.grafo_socios_pj")
 
 _MAX_SOCIOS = 10
 _MAX_PARTICIPACOES_ALERTA = 5   # sócio em mais de N empresas → info
-_PAISES_RISCO = {
-    "ilhas cayman", "ilhas virgens", "bahamas", "panama", "bermuda",
-    "luxemburgo", "liechtenstein", "mônaco", "andorra", "seychelles",
-    "belize", "vanuatu", "marshall", "samoa", "nauru",
-}
+# _PAISES_RISCO foi removido: dependia de cnpj_socios.pais_socio, coluna que
+# nao existe. Reintroduzir so junto com uma fonte que traga a jurisdicao.
 
 
 def _strip(doc: str) -> str:
@@ -62,15 +59,22 @@ def _get_socios(cnpj_digits: str) -> list[dict]:
     cnpj_basico = cnpj_digits[:8]
     rows = _supabase_get("cnpj_socios", {
         "cnpj_basico": f"eq.{cnpj_basico}",
-        "select": "nome_socio,cpf_cnpj_socio,qualificacao_socio,pais_socio",
+        # cnpj_socios tem "qualificacao", nao "qualificacao_socio", e nao tem
+        # coluna de pais nenhuma — o select antigo respondia 400 e o 400 virava
+        # lista vazia, ou seja, "nenhum vinculo de risco" em todo dossie.
+        # Socio estrangeiro sai de "identificador" (layout RFB: 3 = estrangeiro).
+        "select": "nome_socio,cpf_cnpj_socio,qualificacao,identificador",
         "limit": _MAX_SOCIOS,
     })
     return rows
 
 
 def _situacao_empresa(cnpj_basico: str) -> str:
-    rows = _supabase_get("cnpj_empresas", {
-        "cnpj_basico": f"eq.{cnpj_basico}",
+    # cnpj_empresas nao tem situacao_cadastral (so razao_social, natureza,
+    # capital e porte). A situacao vive em cnpj_enriquecido, chaveada pelo CNPJ
+    # completo. String vazia aqui significa "nao sei", e quem chama trata assim.
+    rows = _supabase_get("cnpj_enriquecido", {
+        "cnpj": f"like.{cnpj_basico}%",
         "select": "situacao_cadastral",
         "limit": 1,
     })
@@ -86,7 +90,7 @@ def _participacoes_socio(cpf_cnpj: str) -> list[dict]:
         return []
     rows = _supabase_get("cnpj_socios", {
         "cpf_cnpj_socio": f"eq.{doc}",
-        "select": "cnpj_basico,qualificacao_socio",
+        "select": "cnpj_basico,qualificacao",
         "limit": 50,
     })
     return rows
@@ -110,27 +114,38 @@ class GrafoSociosPJConnector(SubradarSource):
         socios = _get_socios(cnpj)
 
         if not socios:
-            logger.debug("grafo_socios: sem sócios para %s", cnpj_fmt)
-            return []
+            # Empresa sem nenhuma linha de QSA na base local nao e empresa sem
+            # socios — e empresa que a base nao cobre. Declarar isso como
+            # "nenhum vinculo de risco" era afirmar o que nao foi apurado.
+            raise FonteIndisponivel(
+                "QSA nao disponivel na base local (cnpj_socios) para este CNPJ"
+            )
 
         alertas = []
 
         for socio in socios:
             nome = socio.get("nome_socio") or "Sócio"
             doc_socio = _strip(socio.get("cpf_cnpj_socio") or "")
-            qualif = socio.get("qualificacao_socio") or ""
-            pais = (socio.get("pais_socio") or "").lower()
+            qualif = socio.get("qualificacao") or ""
+            estrangeiro = str(socio.get("identificador") or "") == "3"
 
-            # 1. Sócio com sede em paraíso fiscal
-            if pais and any(p in pais for p in _PAISES_RISCO):
+            # 1. Sócio estrangeiro
+            # O QSA da RFB nao traz o pais do socio, so o marcador de tipo
+            # (identificador 3 = estrangeiro). Da para sinalizar a presenca de
+            # capital estrangeiro, nao para dizer que e paraiso fiscal — a
+            # jurisdicao teria de vir de outra fonte. O alerta afirma so o que
+            # o dado sustenta.
+            if estrangeiro:
                 alertas.append({
                     "fonte": self.fonte,
                     "categoria": "societario",
                     "severidade": "atencao",
-                    "titulo": f"Grafo Sócios — sócio em paraíso fiscal: {cnpj_fmt}",
+                    "titulo": f"Grafo Sócios — sócio estrangeiro: {cnpj_fmt}",
                     "descricao": (
-                        f"Sócio '{nome}' ({qualif}) tem domicílio em '{pais.title()}', "
-                        "jurisdição classificada como paraíso fiscal ou de baixa transparência."
+                        f"Sócio '{nome}' ({qualif}) está registrado no QSA da Receita "
+                        "como sócio estrangeiro. A jurisdição de domicílio não consta "
+                        "do QSA — verificar se há exposição a jurisdição de baixa "
+                        "transparência exige consulta complementar."
                     ),
                     "url_fonte": "https://www.receita.fazenda.gov.br/",
                     "referencia_id": doc_socio or nome[:30],

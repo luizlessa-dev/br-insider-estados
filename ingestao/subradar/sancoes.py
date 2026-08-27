@@ -20,7 +20,7 @@ from datetime import date
 import requests
 
 from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, \
-    SUPABASE_URL, SUPABASE_KEY, _supabase_headers
+    SUPABASE_URL, SUPABASE_KEY, _supabase_headers, exigir_tabela_populada
 
 logger = logging.getLogger("subradar.sancoes")
 
@@ -63,11 +63,14 @@ class CEISConnector(SubradarSource):
     fonte = "ceis"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_digits)
         ciclo = _ciclo_atual()
 
+        # Tabela vazia nao e "nada consta": e seed que nao rodou.
+        exigir_tabela_populada("sub_ceis", "CEIS")
         registros = _query_local("sub_ceis", cnpj_digits)
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, registros)
@@ -126,11 +129,14 @@ class CNEPConnector(SubradarSource):
     fonte = "cnep"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_digits)
         ciclo = _ciclo_atual()
 
+        # Tabela vazia nao e "nada consta": e seed que nao rodou.
+        exigir_tabela_populada("sub_cnep", "CNEP")
         registros = _query_local("sub_cnep", cnpj_digits)
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, registros)
@@ -186,11 +192,14 @@ class CEPIMConnector(SubradarSource):
     fonte = "cepim"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_digits)
         ciclo = _ciclo_atual()
 
+        # Tabela vazia nao e "nada consta": e seed que nao rodou.
+        exigir_tabela_populada("sub_cepim", "CEPIM")
         registros = _query_local("sub_cepim", cnpj_digits)
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, registros)

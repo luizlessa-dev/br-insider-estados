@@ -14,7 +14,7 @@ import re
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY, _supabase_headers
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY, _supabase_headers, exigir_tabela_populada
 
 logger = logging.getLogger("subradar.divida_ativa")
 
@@ -49,11 +49,14 @@ class DividaAtivaConnector(SubradarSource):
     fonte = "pgfn"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_limpo = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_limpo)
         ciclo = _ciclo_atual()
 
+        # Tabela vazia nao e "nada consta": e seed que nao rodou.
+        exigir_tabela_populada("pgfn_divida_ativa", "PGFN — divida ativa da Uniao")
         registros = _query_pgfn(cnpj_limpo)
 
         resumo = {"total": len(registros)}

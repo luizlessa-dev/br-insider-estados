@@ -19,7 +19,7 @@ import re
 import time
 from typing import Any
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.sicaf")
 
@@ -54,7 +54,11 @@ def _consultar_ocorrencias(session, cnpj_digits: str) -> list[dict] | None:
     try:
         resp = session.get(OCORRENCIAS_URL, params={"cnpj": cnpj_digits}, timeout=20)
         if resp.status_code == 404:
-            return []
+            # compras.dados.gov.br foi descontinuado: o 404 e da rota, nao do
+            # CNPJ. Tratar como "nenhuma ocorrencia" declarava fornecedor
+            # regular sem ter consultado o SICAF.
+            raise FonteIndisponivel("SICAF: endpoint de ocorrencias descontinuado",
+                                    "HTTP 404 em compras.dados.gov.br")
         resp.raise_for_status()
         data = resp.json()
         # API pode retornar dict com "_embedded" ou lista direta
@@ -68,6 +72,8 @@ def _consultar_ocorrencias(session, cnpj_digits: str) -> list[dict] | None:
                         return v
             return data.get("ocorrencias", data.get("items", []))
         return []
+    except FonteIndisponivel:
+        raise
     except Exception as e:
         logger.debug("SICAF ocorrencias falhou para %s: %s", cnpj_digits, e)
         return None
@@ -116,7 +122,8 @@ class SICAFConnector(SubradarSource):
     fonte = "sicaf"
     request_delay = 0.5
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
         ciclo = _ciclo_atual()

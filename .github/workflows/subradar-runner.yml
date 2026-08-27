@@ -37,6 +37,20 @@ jobs:
       BDC_ACCESS_TOKEN: ${{ secrets.BDC_ACCESS_TOKEN }}
       BDC_WEBHOOK_URL: ${{ secrets.BDC_WEBHOOK_URL }}
       SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      # bigdatacorp.py e bigdatacorp_negativacoes.py leem BIGDATA_CORP_*;
+      # BDC_* acima e o nome legado, lido so por bdc_ondemand_async.py. Sem estas
+      # duas linhas os tres conectores BDC do PJ rodavam sem credencial em
+      # producao, ainda que funcionassem na maquina local.
+      BIGDATA_CORP_TOKEN_ID: ${{ secrets.BIGDATA_CORP_TOKEN_ID }}
+      BIGDATA_CORP_ACCESS_TOKEN: ${{ secrets.BIGDATA_CORP_ACCESS_TOKEN }}
+      # Sem estes, os conectores devolvem lista vazia por falta de token. Os
+      # secrets ainda precisam ser criados no repo (gh secret set) — enquanto
+      # nao existirem, a fonte sai como "pendente", nao como "limpo".
+      INFOSIMPLES_TOKEN: ${{ secrets.INFOSIMPLES_TOKEN }}
+      ESCAVADOR_API_KEY: ${{ secrets.ESCAVADOR_API_KEY }}
+      ANVISA_TOKEN: ${{ secrets.ANVISA_TOKEN }}
+      DOE_SP_TOKEN: ${{ secrets.DOE_SP_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4

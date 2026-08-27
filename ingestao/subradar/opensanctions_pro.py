@@ -24,7 +24,7 @@ import logging
 import os
 import re
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.opensanctions_pro")
 
@@ -132,10 +132,10 @@ class OpenSanctionsProConnector(SubradarSource):
             logger.warning("OpenSanctions Pro search '%s' falhou: %s", query, e)
             return []
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         if not OS_PRO_KEY:
-            logger.info("OpenSanctions Pro: OPENSANCTIONS_PRO_KEY não configurada — fonte indisponível")
-            return []
+            raise FonteIndisponivel("OPENSANCTIONS_PRO_KEY nao configurada")
 
         cnpj_digits = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_digits)

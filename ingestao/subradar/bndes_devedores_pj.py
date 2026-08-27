@@ -23,7 +23,7 @@ import logging
 import re
 from typing import Any
 
-from .base import SubradarSource, _ciclo_atual, snapshot_changed, upsert
+from .base import SubradarSource, _ciclo_atual, snapshot_changed, upsert, FonteIndisponivel
 
 logger = logging.getLogger("subradar.bndes_devedores")
 
@@ -177,7 +177,8 @@ class BNDESDevedoresPJConnector(SubradarSource):
     request_delay = 1.0  # respeita servidor público
     timeout = 30
 
-    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj14 = _strip_cnpj(cnpj)
         if len(cnpj14) != 14:
             logger.warning("CNPJ inválido (não tem 14 dígitos): %r", cnpj)
@@ -200,13 +201,15 @@ class BNDESDevedoresPJConnector(SubradarSource):
             logger.info("CKAN indisponível, tentando scraping portal BNDES")
             registros = _buscar_portal_html(self._session, cnpj14)
 
-        # --- Falha total: fail-safe ---
+        # --- Falha total ---
+        # Isto aqui era um "fail-safe" que devolvia []. Nao era seguro: com as
+        # duas fontes fora do ar, o dossie afirmava que a empresa nao consta da
+        # lista de inadimplentes do BNDES sem que ninguem tivesse olhado.
         if registros is None:
-            logger.warning(
-                "Ambas as fontes BNDES indisponíveis para %s — retornando []",
-                cnpj_fmt,
+            raise FonteIndisponivel(
+                "BNDES: CKAN e portal HTML indisponiveis",
+                f"nenhuma das duas rotas respondeu para {cnpj_fmt}",
             )
-            return []
 
         # --- Não encontrado ---
         if not registros:

@@ -12,7 +12,7 @@ import logging
 import os
 import re
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, exigir_tabela_populada
 
 logger = logging.getLogger("subradar.aneel")
 
@@ -77,6 +77,8 @@ class ANEELConnector(SubradarSource):
         cnpj_fmt   = _fmt(cnpj_limpo)
         ciclo      = _ciclo_atual()
 
+        # Tabela vazia nao e "nada consta": e seed que nao rodou.
+        exigir_tabela_populada("sub_aneel_autos", "ANEEL — autos de infração")
         registros = _query_local(cnpj_limpo)
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, registros)
