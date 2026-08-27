@@ -60,7 +60,6 @@ from .sicaf import SICAFConnector
 from .previc import PREVICConnector
 from .anac import ANACConnector
 from .ana import ANAConnector
-from .escavador import EscavadorConnector
 from .opensanctions_pro import OpenSanctionsProConnector
 from .cndt_tst_pj import CNDTTrabalhiPJConnector
 from .crf_fgts_pj import CRFFGTSPJConnector
@@ -140,7 +139,16 @@ FONTES = [
     PREVICConnector(),            # PREVIC — medidas administrativas em fundos de pensão
     ANACConnector(),              # ANAC — infrações e sanções em aviação civil
     ANAConnector(),               # ANA — sanções em recursos hídricos e saneamento
-    EscavadorConnector(),         # Escavador — processos judiciais nacionais (ESCAVADOR_API_KEY)
+    # Escavador removido em 27/08/2026: conta com saldo bloqueado (403) e
+    # decisão de produto de não recontratar. Enquanto ficou registrado aqui,
+    # todo dossiê PJ afirmava ausência de processo judicial sem ter
+    # consultado. O módulo escavador.py segue no repo caso a conta volte.
+    #
+    # COBERTURA JUDICIAL DO PJ ESTÁ DESCOBERTA: o DataJud também saiu (a API
+    # pública do CNJ não indexa as partes, ver 3d1336f). O caminho é migrar
+    # para o dataset `processes`/`Lawsuits` do BigDataCorp, como o Imob já
+    # fez em processos_proprietario_imob.py. Até lá, não anunciar cobertura
+    # de processos judiciais para PJ.
     OpenSanctionsProConnector(),  # OpenSanctions Pro — 400+ listas globais (OPENSANCTIONS_PRO_KEY)
     BigDataCorpConnector(),       # BigDataCorp — protestos cartoriais + processos sócios (BIGDATA_CORP_TOKEN)
     BDCNegativacoesPJConnector(), # BigDataCorp — negativações/restrições bureaus PJ (negative_data)

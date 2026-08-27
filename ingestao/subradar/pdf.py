@@ -88,7 +88,6 @@ FONTES_PJ: list[tuple[str, str]] = [
     ("cade",                   "CADE — Processos Antitruste"),
     ("cvm_pas",                "CVM — Processos Sancionadores"),
     ("bacen",                  "BACEN — Entidades Supervisionadas"),
-    ("escavador",              "Escavador — Processos Judiciais"),
     # Ambiental / Setorial
     ("ibama",                  "IBAMA — Autos de Infração Ambiental"),
     ("aneel",                  "ANEEL — Autos Elétricos"),

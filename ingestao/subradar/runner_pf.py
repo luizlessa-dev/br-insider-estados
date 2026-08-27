@@ -168,12 +168,6 @@ try:
 except ImportError:
     _BDC_SCORE_PF = None
 
-try:
-    from .escavador import EscavadorConnector
-    _ESCAVADOR_PF = EscavadorConnector()
-except ImportError:
-    _ESCAVADOR_PF = None
-
 from .bdc_marketplace_pf import (
     BDCRestritivosQuodPFConnector,
     BDCRestritevosBiroPFConnector,
