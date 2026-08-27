@@ -6,3 +6,8 @@ requests==2.31.0
 supabase==2.31.0
 mangum==0.21.0
 reportlab==4.5.1
+# pillow é dependência do reportlab. A partir da 12.3 as wheels exigem
+# glibc >= 2.27 (manylinux_2_28) e a imagem base da Lambda é Amazon Linux 2,
+# com glibc 2.26: o pip cai para compilar da fonte e falha por falta de gcc.
+# 12.2.0 é a última com wheel manylinux_2_17. Não subir sem trocar a base.
+pillow==12.2.0
