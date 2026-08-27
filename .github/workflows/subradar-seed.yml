@@ -23,6 +23,12 @@ concurrency:
   group: subradar-seed
   cancel-in-progress: false
 
+# Atencao ao `if:` de cada step. Em gatilho `schedule` o contexto `inputs` nao
+# existe (o `default: todas` so vale para workflow_dispatch), entao a condicao
+# antiga `inputs.fonte == 'todas'` era sempre falsa: de 01/07 a 27/08/2026 todo
+# run agendado pulou os sete seeders e terminou "success" em 27 segundos, com as
+# tabelas locais congeladas em 24-26/06. Manter o teste de github.event_name.
+
 jobs:
   seed:
     runs-on: ubuntu-latest
@@ -42,34 +48,34 @@ jobs:
         run: pip install -r ingestao/requirements.txt
 
       - name: Seed PGFN — Dívida Ativa
-        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'pgfn' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'pgfn' }}
         run: python -m ingestao.subradar.pgfn_seeder
 
       - name: Seed IBAMA — Autos de Infração Ambiental
-        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'ibama' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'ibama' }}
         run: python -m ingestao.subradar.ibama_seeder
 
       - name: Seed CVM — Processos Sancionadores
-        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'cvm' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'cvm' }}
         run: python -m ingestao.subradar.cvm_seeder
 
       - name: Seed Sanções — CEIS/CNEP/CEPIM
-        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'sancoes' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'sancoes' }}
         run: python -m ingestao.subradar.sancoes_seeder
 
       - name: Seed Lista Suja MTE — Trabalho Análogo à Escravidão
-        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'lista_suja' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'lista_suja' }}
         run: python -m ingestao.subradar.lista_suja_seeder
 
       - name: Seed ANEEL — Autos de Infração Setor Elétrico
-        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'aneel' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'aneel' }}
         run: python -m ingestao.subradar.aneel_seeder
 
       - name: Seed ANS — Operadoras de Plano de Saúde
-        if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'ans' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'ans' }}
         run: python -m ingestao.subradar.ans_seeder
 
       # MTE Autos: seed manual até dados.mte.gov.br resolver SSL
       # - name: Seed MTE — Autos de Infração Trabalhista
-      #   if: ${{ inputs.fonte == 'todas' || inputs.fonte == 'mte_autos' }}
+      #   if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'mte_autos' }}
       #   run: python -m ingestao.subradar.mte_autos_seeder

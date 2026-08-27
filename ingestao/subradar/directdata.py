@@ -254,7 +254,8 @@ class DirectDataConnector(SubradarSource):
     fonte         = "directdata"
     request_delay = 1.0
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         if not DD_TOKEN:
             logger.info("DirectData: DIRECT_DATA_TOKEN não configurado — fonte indisponível")
             return []

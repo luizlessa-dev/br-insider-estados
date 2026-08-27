@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import re
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, exigir_tabela_populada
 
 logger = logging.getLogger("subradar.lista_suja")
 
@@ -59,6 +59,8 @@ class ListaSujaConnector(SubradarSource):
         cnpj_fmt   = _fmt(cnpj_limpo)
         ciclo      = _ciclo_atual()
 
+        # Tabela vazia nao e "nada consta": e seed que nao rodou.
+        exigir_tabela_populada("sub_lista_suja", "Lista Suja MTE")
         registros = _query_local(cnpj_limpo)
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, registros)

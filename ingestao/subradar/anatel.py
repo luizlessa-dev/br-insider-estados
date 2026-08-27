@@ -23,7 +23,7 @@ import time
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.anatel")
 
@@ -57,13 +57,17 @@ def _fetch_recursos_dataset() -> list[str]:
             headers={"User-Agent": "Subradar/1.0"},
         )
         if not resp.ok:
-            return []
+            # dados.gov.br passou a responder 401. Sem o catalogo nao ha
+            # o que consultar — devolver vazio declarava "nada consta".
+            raise FonteIndisponivel("ANATEL: catalogo de dados abertos indisponivel",
+                                    f"HTTP {resp.status_code}")
         data = resp.json()
         resources = data.get("result", {}).get("resources", [])
         return [r["url"] for r in resources if r.get("format", "").upper() in ("CSV", "XLS", "XLSX")]
+    except FonteIndisponivel:
+        raise
     except Exception as e:
-        logger.warning("ANATEL: falha ao buscar recursos CKAN: %s", e)
-        return []
+        raise FonteIndisponivel("ANATEL: falha ao acessar o catalogo", str(e)[:120])
 
 
 def _load_sancoes() -> list[dict]:
@@ -136,7 +140,8 @@ class ANATELConnector(SubradarSource):
     fonte = "anatel"
     request_delay = 0.0
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
         ciclo = _ciclo_atual()

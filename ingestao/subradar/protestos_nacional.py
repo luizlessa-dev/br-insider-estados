@@ -35,7 +35,7 @@ import re
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.protestos_nacional")
 
@@ -75,14 +75,14 @@ class ProtestosNacionalConnector(SubradarSource):
     fonte = "protestos_nacional"
     request_delay = 1.0
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt    = _fmt(cnpj_digits)
         ciclo       = _ciclo_atual()
 
         if not DIRECT_DATA_TOKEN:
-            logger.info("Protestos Nacional: DIRECT_DATA_TOKEN não configurado — fonte indisponível")
-            return []
+            raise FonteIndisponivel("DIRECT_DATA_TOKEN nao configurado")
 
         try:
             resp = self._session.get(
@@ -94,24 +94,21 @@ class ProtestosNacionalConnector(SubradarSource):
                 timeout=self.timeout,
             )
         except Exception as e:
-            logger.warning("Protestos Nacional: erro na requisição para %s: %s", cnpj_fmt, e)
-            return []
+            raise FonteIndisponivel("Direct Data inacessivel", str(e)[:120])
 
+        # Sem protesto e "consultei e nao achei". Token invalido, conta sem
+        # credito ou 403 e "nao consegui consultar" — nao pode virar lista vazia.
         if resp.status_code == 401:
-            logger.error("Protestos Nacional: token inválido ou sem créditos")
-            return []
+            raise FonteIndisponivel("Direct Data: token invalido", "HTTP 401")
         if resp.status_code == 402:
-            logger.error("Protestos Nacional: sem créditos na conta Direct Data")
-            return []
+            raise FonteIndisponivel("Direct Data: conta sem creditos", "HTTP 402")
         if not resp.ok:
-            logger.warning("Protestos Nacional: HTTP %s para %s", resp.status_code, cnpj_fmt)
-            return []
+            raise FonteIndisponivel("Direct Data indisponivel", f"HTTP {resp.status_code}")
 
         try:
             data = resp.json()
         except Exception:
-            logger.warning("Protestos Nacional: resposta não-JSON para %s", cnpj_fmt)
-            return []
+            raise FonteIndisponivel("Direct Data: resposta nao-JSON")
 
         # Sem protestos
         consta = data.get("constamProtestos", False)

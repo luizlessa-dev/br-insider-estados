@@ -146,6 +146,105 @@ def snapshot_changed(cnpj: str, fonte: str, ciclo: str, dados: Any) -> tuple[boo
     return rows[0].get("hash_dados") != h, h
 
 
+class FonteIndisponivel(Exception):
+    """A fonte não pôde ser consultada — não que ela tenha respondido "nada consta".
+
+    Levantada por um conector quando a consulta falha por motivo externo: HTTP
+    4xx/5xx, timeout, credencial ausente, endpoint descontinuado, coluna que
+    sumiu do banco. O runner converte em um alerta de severidade "pendente",
+    que aparece no dossiê e não pontua no score.
+
+    A regra que motivou isto: ausência de resposta não é ausência de registro.
+    Conector que não conseguiu consultar nunca devolve lista vazia — devolver
+    vazio é afirmar que a fonte está limpa.
+    """
+
+    def __init__(self, motivo: str, detalhe: str | None = None) -> None:
+        super().__init__(motivo if not detalhe else f"{motivo}: {detalhe}")
+        self.motivo = motivo
+        self.detalhe = detalhe
+
+
+def alerta_pendente(
+    doc: str,
+    fonte: str,
+    motivo: str,
+    *,
+    categoria: str = "cobertura",
+    ciclo: str | None = None,
+    titulo_fonte: str | None = None,
+    url_fonte: str | None = None,
+) -> dict:
+    """Monta o alerta que registra "não foi possível consultar esta fonte"."""
+    rotulo = titulo_fonte or fonte
+    return {
+        "cnpj": doc,
+        "ciclo": ciclo or _ciclo_atual(),
+        "fonte": fonte,
+        "categoria": categoria,
+        "severidade": "pendente",
+        "titulo": f"{rotulo} — não foi possível consultar",
+        "descricao": (
+            f"A consulta a esta fonte não foi concluída ({motivo}). "
+            "Este item NÃO significa ausência de registro: a fonte não respondeu, "
+            "e portanto nada pode ser afirmado sobre ela neste ciclo."
+        ),
+        "url_fonte": url_fonte,
+        "is_novo": True,
+    }
+
+
+_TABELA_POPULADA_CACHE: dict[str, bool] = {}
+
+
+def tabela_tem_dados(table: str) -> bool:
+    """A tabela local tem ao menos uma linha?
+
+    Fonte que faz lookup em tabela alimentada por seeder não consegue, sozinha,
+    distinguir "este CNPJ não está na lista" de "a lista está vazia porque o
+    seed nunca rodou". O segundo caso não é ausência de registro.
+
+    Motivo concreto: `sub_mte_autos` estava com zero linhas (o step do seeder
+    estava comentado) e o conector declarava "nada consta" para todo CNPJ. As
+    outras sete tabelas locais escaparam por sorte — o seed agendado também não
+    rodava, mas elas tinham a carga manual de junho.
+
+    Resultado memoizado por execução: é uma pergunta sobre a tabela, não sobre
+    o documento consultado.
+    """
+    if table in _TABELA_POPULADA_CACHE:
+        return _TABELA_POPULADA_CACHE[table]
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return True  # sem credencial o proprio lookup ja falha e sinaliza
+    try:
+        r = requests.get(
+            f"{SUPABASE_URL}/rest/v1/{table}",
+            params={"select": "*", "limit": 1},
+            headers={**_supabase_headers(), "Prefer": "count=exact"},
+            timeout=15,
+        )
+        if not r.ok:
+            raise FonteIndisponivel(
+                f"tabela local {table} inacessivel", f"HTTP {r.status_code}"
+            )
+        total = r.headers.get("content-range", "").rsplit("/", 1)[-1]
+        ok = total not in ("0", "", "*")
+    except FonteIndisponivel:
+        raise
+    except Exception as e:
+        raise FonteIndisponivel(f"tabela local {table} inacessivel", str(e)[:120])
+    _TABELA_POPULADA_CACHE[table] = ok
+    return ok
+
+
+def exigir_tabela_populada(table: str, rotulo: str | None = None) -> None:
+    """Levanta FonteIndisponivel se a tabela local estiver vazia."""
+    if not tabela_tem_dados(table):
+        raise FonteIndisponivel(
+            f"base local {rotulo or table} esta vazia — seed nao executado",
+        )
+
+
 class SubradarSource:
     """Classe base para fontes do Subradar."""
     fonte: str = ""

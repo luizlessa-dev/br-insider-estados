@@ -22,7 +22,7 @@ from collections import defaultdict
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.procon")
 
@@ -62,7 +62,10 @@ def _fetch_csv_urls() -> list[str]:
                 return urls
         except Exception as e:
             logger.warning("PROCON: CKAN %s falhou: %s", ckan_url, e)
-    return []
+    # Nenhum dos dois catalogos respondeu com recursos. Antes isto virava lista
+    # vazia e a fonte declarava "sem reclamacoes" sem ter consultado nada.
+    raise FonteIndisponivel("PROCON: catalogo de dados abertos indisponivel",
+                            "CKAN dados.gov.br e dados.mj.gov.br sem recursos")
 
 
 def _load_procon() -> dict[str, int]:
@@ -129,7 +132,8 @@ class PROCONConnector(SubradarSource):
     fonte = "procon"
     request_delay = 0.0
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
         ciclo = _ciclo_atual()

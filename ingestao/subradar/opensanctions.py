@@ -19,7 +19,7 @@ import logging
 import os
 import re
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.opensanctions")
 
@@ -100,7 +100,8 @@ class OpenSanctionsConnector(SubradarSource):
             logger.warning("OpenSanctions entity %s falhou: %s", entity_id, e)
             return None
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         """
         Consulta CNPJ e razão social contra as bases internacionais.
         Retorna alertas de sanções internacionais encontradas.
@@ -109,8 +110,7 @@ class OpenSanctionsConnector(SubradarSource):
         Registre em https://www.opensanctions.org/api/ (gratuito para projetos abertos).
         """
         if not OS_KEY:
-            logger.warning("OpenSanctions: OPENSANCTIONS_API_KEY não configurada — pulando %s", cnpj)
-            return []
+            raise FonteIndisponivel("OPENSANCTIONS_API_KEY nao configurada")
 
         cnpj_limpo = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_limpo)

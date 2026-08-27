@@ -20,7 +20,7 @@ import time
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.cade")
 
@@ -44,13 +44,20 @@ def _fetch_csv_urls() -> list[str]:
     try:
         resp = requests.get(CKAN_URL, timeout=20, headers={"User-Agent": "Subradar/1.0"})
         if not resp.ok:
-            return []
+            # CKAN dados.gov.br passou a responder 401. Devolver lista vazia aqui
+            # fazia a fonte declarar "nada consta" sem ter consultado.
+            raise FonteIndisponivel(
+                "CADE: catalogo de dados abertos indisponivel",
+                f"HTTP {resp.status_code}",
+            )
         data = resp.json()
         resources = data.get("result", {}).get("resources", [])
         return [r["url"] for r in resources if r.get("format", "").upper() in ("CSV", "XLS", "XLSX")]
+    except FonteIndisponivel:
+        raise
     except Exception as e:
         logger.warning("CADE: falha ao buscar recursos CKAN: %s", e)
-        return []
+        raise FonteIndisponivel("CADE: falha ao acessar o catalogo", str(e)[:120])
 
 
 def _load_cade() -> list[dict]:
@@ -116,7 +123,8 @@ class CADEConnector(SubradarSource):
     fonte = "cade"
     request_delay = 0.0
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None,
+                       **_) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt = _fmt(cnpj_digits)
         ciclo = _ciclo_atual()
