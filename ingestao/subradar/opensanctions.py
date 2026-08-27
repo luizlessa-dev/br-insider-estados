@@ -100,7 +100,7 @@ class OpenSanctionsConnector(SubradarSource):
             logger.warning("OpenSanctions entity %s falhou: %s", entity_id, e)
             return None
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         """
         Consulta CNPJ e razão social contra as bases internacionais.
         Retorna alertas de sanções internacionais encontradas.

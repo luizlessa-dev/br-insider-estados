@@ -250,7 +250,7 @@ class DirectDataMonitorAppConnector(SubradarSource):
     fonte = "directdata_monitorapp"
     request_delay = 1.0
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         if not _TOKEN:
             logger.warning("DIRECT_DATA_TOKEN não configurado — MonitorApp ignorado.")
             return []

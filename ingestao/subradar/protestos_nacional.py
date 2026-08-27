@@ -75,7 +75,7 @@ class ProtestosNacionalConnector(SubradarSource):
     fonte = "protestos_nacional"
     request_delay = 1.0
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_digits = _strip(cnpj)
         cnpj_fmt    = _fmt(cnpj_digits)
         ciclo       = _ciclo_atual()

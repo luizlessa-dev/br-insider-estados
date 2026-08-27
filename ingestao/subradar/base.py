@@ -226,8 +226,13 @@ class SubradarSource:
         r.raise_for_status()
         return r.json()
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
-        """Retorna lista de alertas para o CNPJ. Implementar no subclasse."""
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
+        """Retorna lista de alertas para o CNPJ. Implementar no subclasse.
+
+        `razao_social` é sempre passado pelo runner. Conector que omitir o
+        parâmetro estoura TypeError em 100% das consultas — foi o que
+        aconteceu com 21 fontes, entre elas CEIS, CNEP, CEPIM, SICAF e PGFN.
+        """
         raise NotImplementedError
 
     def resumo_pf(self, cpf: str, nome: str | None = None) -> dict | None:

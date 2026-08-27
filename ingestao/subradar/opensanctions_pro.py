@@ -132,7 +132,7 @@ class OpenSanctionsProConnector(SubradarSource):
             logger.warning("OpenSanctions Pro search '%s' falhou: %s", query, e)
             return []
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         if not OS_PRO_KEY:
             logger.info("OpenSanctions Pro: OPENSANCTIONS_PRO_KEY não configurada — fonte indisponível")
             return []

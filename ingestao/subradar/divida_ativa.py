@@ -49,7 +49,7 @@ class DividaAtivaConnector(SubradarSource):
     fonte = "pgfn"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_limpo = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_limpo)
         ciclo = _ciclo_atual()

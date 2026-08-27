@@ -63,7 +63,7 @@ class CEISConnector(SubradarSource):
     fonte = "ceis"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_digits = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_digits)
         ciclo = _ciclo_atual()
@@ -126,7 +126,7 @@ class CNEPConnector(SubradarSource):
     fonte = "cnep"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_digits = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_digits)
         ciclo = _ciclo_atual()
@@ -186,7 +186,7 @@ class CEPIMConnector(SubradarSource):
     fonte = "cepim"
     base_url = SUPABASE_URL or ""
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj_digits = _strip_cnpj(cnpj)
         cnpj_fmt = _fmt_cnpj(cnpj_digits)
         ciclo = _ciclo_atual()

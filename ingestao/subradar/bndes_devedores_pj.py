@@ -177,7 +177,7 @@ class BNDESDevedoresPJConnector(SubradarSource):
     request_delay = 1.0  # respeita servidor público
     timeout = 30
 
-    def consultar_cnpj(self, cnpj: str) -> list[dict]:
+    def consultar_cnpj(self, cnpj: str, razao_social: str | None = None) -> list[dict]:
         cnpj14 = _strip_cnpj(cnpj)
         if len(cnpj14) != 14:
             logger.warning("CNPJ inválido (não tem 14 dígitos): %r", cnpj)
