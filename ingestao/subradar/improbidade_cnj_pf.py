@@ -20,7 +20,7 @@ import re
 
 import requests
 
-from .base import SubradarSource
+from .base import SubradarSource, memoizar
 
 logger = logging.getLogger("subradar.improbidade_cnj_pf")
 
@@ -32,6 +32,7 @@ def _strip_cpf(cpf: str) -> str:
     return re.sub(r"\D", "", str(cpf or ""))
 
 
+@memoizar
 def _consultar(cpf: str) -> dict | None:
     """Consulta o CNIA. None quando a certidão não pôde ser emitida."""
     if not _TOKEN:

@@ -19,7 +19,7 @@ import logging
 import re
 import unicodedata
 
-from .base import SubradarSource
+from .base import SubradarSource, memoizar
 from .dou import (
     INLabsSession,
     INLABS_EMAIL, INLABS_PASSWORD, ANTHROPIC_KEY,
@@ -153,6 +153,12 @@ Responda APENAS com JSON: {{"severidade": "critico|atencao|info", "motivo": "uma
     return sev, titulo, descricao
 
 
+@memoizar
+def _varredura_dou(nome: str) -> list[dict]:
+    """Varredura do DOU por nome, memoizada durante a execução."""
+    return DOUPFConnector()._consultar_sem_cache("", razao_social=nome)
+
+
 class DOUPFConnector(SubradarSource):
     """
     Busca o nome da pessoa física no Diário Oficial da União (últimos 30 dias).
@@ -161,6 +167,11 @@ class DOUPFConnector(SubradarSource):
     fonte = "dou_pf"
 
     def consultar_cnpj(self, cnpj_or_cpf: str, razao_social: str | None = None, **_) -> list[dict]:
+        # resumo_pf chama este método por dentro e o runner também o chama:
+        # sem cache, os diários eram varridos duas vezes por dossiê.
+        return _varredura_dou(razao_social or "")
+
+    def _consultar_sem_cache(self, cnpj_or_cpf: str, razao_social: str | None = None, **_) -> list[dict]:
         nome = razao_social or ""
         if not nome:
             logger.debug("dou_pf: nome não informado — pulando")

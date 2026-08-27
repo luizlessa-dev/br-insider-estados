@@ -19,7 +19,7 @@ import re
 
 import requests
 
-from .base import SubradarSource, _ciclo_atual
+from .base import SubradarSource, _ciclo_atual, memoizar
 
 logger = logging.getLogger("subradar.antecedentes_criminais_pf")
 
@@ -40,6 +40,7 @@ def _fmt_cpf(cpf: str) -> str:
     return f"{c[:3]}.{c[3:6]}.{c[6:9]}-{c[9:11]}" if len(c) == 11 else cpf
 
 
+@memoizar
 def _consultar_antecedentes(cpf: str, nome: str | None = None) -> dict | None:
     """Consulta antecedentes criminais na Infosimples.
 

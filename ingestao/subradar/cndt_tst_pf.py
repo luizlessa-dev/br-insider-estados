@@ -25,7 +25,7 @@ import re
 
 import requests
 
-from .base import SubradarSource
+from .base import SubradarSource, memoizar
 
 logger = logging.getLogger("subradar.cndt_tst_pf")
 
@@ -56,6 +56,7 @@ _INFOSIMPLES_TOKEN = os.environ.get("INFOSIMPLES_TOKEN", "")
 _INFOSIMPLES_CNDT = "https://api.infosimples.com/api/v2/consultas/tribunal/tst/cndt"
 
 
+@memoizar
 def _via_infosimples(cpf: str) -> dict | None:
     """Emite a CNDT pelo TST via Infosimples.
 

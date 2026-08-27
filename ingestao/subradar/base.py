@@ -200,3 +200,48 @@ class SubradarSource:
         Por padrão retorna None — subclasses que queiram aparecer no laudo implementam.
         """
         return None
+
+
+# ─────────────────────────────────────────────────────────────
+# Cache de execução
+# ─────────────────────────────────────────────────────────────
+#
+# O runner chama consultar_cpf/consultar_cnpj E resumo_pf de cada fonte, e em
+# vários conectores o resumo_pf refaz a consulta por dentro. O DOU varria os
+# diários duas vezes; as certidões da Justiça Federal eram emitidas quatro
+# vezes (dois tipos x dois métodos), cobrando o dobro. Este cache guarda o
+# resultado durante uma execução e é limpo a cada CPF processado.
+
+import threading as _threading
+from functools import wraps as _wraps
+
+_MEMO: dict = {}
+_MEMO_LOCK = _threading.Lock()
+
+
+def limpar_memo() -> None:
+    """Zera o cache. Chamado no início de cada processamento de CPF."""
+    with _MEMO_LOCK:
+        _MEMO.clear()
+
+
+def memoizar(fn):
+    """Memoiza por argumentos durante a execução corrente.
+
+    Só para consultas idempotentes de leitura — nunca para algo que grave.
+    """
+    @_wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            chave = (fn.__module__, fn.__qualname__, args, tuple(sorted(kwargs.items())))
+            hash(chave)
+        except TypeError:
+            return fn(*args, **kwargs)  # argumento não-hasheável: segue sem cache
+        with _MEMO_LOCK:
+            if chave in _MEMO:
+                return _MEMO[chave]
+        resultado = fn(*args, **kwargs)
+        with _MEMO_LOCK:
+            _MEMO[chave] = resultado
+        return resultado
+    return wrapper

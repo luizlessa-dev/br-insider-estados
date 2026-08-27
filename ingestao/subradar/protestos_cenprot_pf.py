@@ -24,7 +24,7 @@ import re
 
 import requests
 
-from .base import SubradarSource
+from .base import SubradarSource, memoizar
 
 logger = logging.getLogger("subradar.protestos_cenprot_pf")
 
@@ -43,6 +43,7 @@ def _strip_cpf(cpf: str) -> str:
     return re.sub(r"\D", "", str(cpf or ""))
 
 
+@memoizar
 def _consultar(url: str, cpf: str) -> tuple[str, dict | list]:
     """Devolve (estado, payload) com estado em {ok, negativa, indisponivel}."""
     if not _TOKEN:

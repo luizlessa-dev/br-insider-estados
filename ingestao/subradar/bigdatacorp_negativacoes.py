@@ -31,7 +31,7 @@ import re
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, memoizar
 
 logger = logging.getLogger("subradar.bigdatacorp_negativacoes")
 
@@ -80,6 +80,7 @@ def _post_bdc(base_url: str, datasets: str, doc_digits: str) -> dict | None:
         return None
 
 
+@memoizar
 def _consulta_pf(dataset: str, bloco: str, cpf11: str) -> tuple[str, dict]:
     """Consulta um dataset PF e classifica o desfecho.
 
@@ -454,6 +455,18 @@ class BDCNegativacoesPFConnector(SubradarSource):
         return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
 
 
+def _classifica_processo(lw: dict) -> str:
+    """Severidade de um processo, do ponto de vista de quem vai contratar."""
+    tipo_vara = (lw.get("CourtType") or "").upper()
+    status = (lw.get("Status") or "").upper()
+    encerrado = status in ("ARQUIVADO", "BAIXADO", "EXTINTO")
+    if "CRIMINAL" in tipo_vara and not encerrado:
+        return "critico"
+    if not encerrado:
+        return "atencao"
+    return "info"
+
+
 class BDCProcessosPFConnector(SubradarSource):
     """
     Processos judiciais para PF via BigDataCorp.
@@ -470,55 +483,47 @@ class BDCProcessosPFConnector(SubradarSource):
         return _resumo_processos_pf(cpf11, self.fonte)
 
     def consultar_cpf(self, cpf: str, nome: str | None = None, **_) -> list[dict]:
-        if not BDC_ACCESS_TOKEN:
-            return []
+        """Um alerta por processo, para que entrem no score de risco.
 
+        Esta função lia o bloco "ProcessData" via _parse_processos, mas o
+        dataset devolve "Processes". O resumo saía certo na seção do laudo e
+        nenhum processo virava alerta — e o score, calculado sobre os alertas,
+        ignorava processo criminal em curso.
+        """
         cpf11 = re.sub(r"\D", "", str(cpf or ""))
         if len(cpf11) != 11:
             return []
         cpf_fmt = _fmt_cpf(cpf11)
-        ciclo = _ciclo_atual()
 
-        result = _post_bdc(_BASE_PESSOAS, _DS_PROCESS, cpf11)
-        if result is None:
+        estado, d = _consulta_pf(_DS_PROCESS, "Processes", cpf11)
+        if estado != "ok":
             return []
 
-        dados = _parse_processos(result, "ProcessData") or _parse_processos(result, "process_data")
-        if not dados:
-            logger.info("BDCProcessosPFConnector: sem dados para %s (result=%s)", cpf_fmt, result)
-            return []
-
-        mudou, hash_novo = snapshot_changed(cpf_fmt, self.fonte, ciclo, dados)
-        if not mudou:
-            return []
-
-        # Persiste em sub_pf_dados (tabela específica para PF)
-        for d in dados:
-            alerta = _build_alerta(cpf_fmt, ciclo, d, self.fonte)
-            upsert("sub_pf_dados", [{
+        alertas = []
+        for lw in (d.get("Lawsuits") or []):
+            tribunal = lw.get("CourtName") or "N/D"
+            uf = lw.get("State") or ""
+            valor = lw.get("Value") or 0
+            assunto = lw.get("InferredCNJSubjectName") or lw.get("MainSubject") or ""
+            descricao = (
+                f"Vara {(lw.get('CourtType') or 'N/D').title()}. "
+                f"Assunto: {assunto}. "
+                f"Situação: {(lw.get('Status') or 'N/D').title()}. "
+                f"Processo nº {lw.get('Number') or 'N/D'}."
+            )
+            alertas.append({
                 "cpf": cpf_fmt,
                 "fonte": self.fonte,
-                "ciclo": ciclo,
-                "categoria": alerta["categoria"],
-                "status": "CRITICO" if alerta["severidade"] == "critico" else "LIMPO",
-                "titulo_secao": alerta["titulo"],
-                "resumo": alerta["descricao"],
-                "detalhes": {"tipo": d.get("tipo"), "dados": d},
-            }])
+                "categoria": "judicial",
+                "severidade": _classifica_processo(lw),
+                "titulo": f"{lw.get('Type') or 'Processo'} — {tribunal}/{uf}"[:120],
+                "descricao": descricao,
+                "data_evento": (lw.get("LastMovementDate") or "")[:10] or None,
+                "valor_brl": valor or None,
+                "is_novo": True,
+            })
+        return alertas
 
-        return [_build_alerta(cpf_fmt, ciclo, d, self.fonte) for d in dados]
-
-
-def _classifica_processo(lw: dict) -> str:
-    """Severidade de um processo, do ponto de vista de quem vai contratar."""
-    tipo_vara = (lw.get("CourtType") or "").upper()
-    status = (lw.get("Status") or "").upper()
-    encerrado = status in ("ARQUIVADO", "BAIXADO", "EXTINTO")
-    if "CRIMINAL" in tipo_vara and not encerrado:
-        return "critico"
-    if not encerrado:
-        return "atencao"
-    return "info"
 
 
 def _resumo_processos_pf(cpf11: str, fonte: str) -> dict:

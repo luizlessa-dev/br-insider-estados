@@ -20,7 +20,7 @@ import unicodedata
 
 import requests
 
-from .base import SubradarSource
+from .base import SubradarSource, memoizar
 
 logger = logging.getLogger("subradar.bnmp_pf")
 
@@ -42,6 +42,7 @@ def _norm(txt: str) -> str:
     return unicodedata.normalize("NFD", str(txt or "")).encode("ascii", "ignore").decode().upper().strip()
 
 
+@memoizar
 def _via_infosimples(nome: str, nome_mae: str = "") -> list[dict] | None:
     """Mandados de prisão no BNMP/CNJ, buscando por nome.
 

@@ -30,7 +30,7 @@ import re
 
 import requests
 
-from .base import SubradarSource
+from .base import SubradarSource, memoizar
 
 logger = logging.getLogger("subradar.processos_infosimples_pf")
 
@@ -45,6 +45,7 @@ def _strip_cpf(cpf: str) -> str:
     return re.sub(r"\D", "", str(cpf or ""))
 
 
+@memoizar
 def _emitir(cpf: str, tipo: str) -> dict | None:
     """Emite uma certidão da Justiça Federal. None quando não foi possível."""
     if not _TOKEN:

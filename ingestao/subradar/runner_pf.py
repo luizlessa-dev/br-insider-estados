@@ -30,11 +30,14 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import re
 import sys
 import time
+import inspect
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from .base import upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
+from .base import limpar_memo, upsert, _ciclo_atual, SUPABASE_URL, SUPABASE_KEY
 
 # Fontes compatíveis com PF
 from .sancoes import CEISConnector, CNEPConnector
@@ -322,48 +325,79 @@ def processar_cpf(
     ciclo = _ciclo_atual()
     fontes = FONTES_PF_AVULSA if avulsa else FONTES_PF
 
+    # Zera o cache de execução: ele existe para evitar consulta repetida
+    # dentro de um mesmo CPF, nunca entre CPFs diferentes.
+    limpar_memo()
+
     logger.info("Subradar PF — %s | %d fontes | dry_run=%s avulsa=%s",
                 cpf_fmt, len(fontes), dry_run, avulsa)
 
-    todos_alertas: list[dict] = []
-    todos_dados: list[dict] = []
+    # As fontes são I/O puro (HTTP), então rodam em paralelo. Sequencialmente
+    # o dossiê levava 640s dos 900s de teto da Lambda, com quatro fontes
+    # respondendo por 557s: DOU (217s), BNMP (143s), certidões TRF (116s) e
+    # protestos (81s). Bastava uma delas piorar para o processamento morrer no
+    # meio. O limite de threads é conservador para não esbarrar em rate limit
+    # de BigDataCorp e Infosimples.
+    max_workers = int(os.environ.get("SUBRADAR_PF_WORKERS", "6"))
 
-    for fonte in fontes:
+    def _rodar_fonte(fonte) -> tuple[str, list[dict], dict | None, float]:
         nome_fonte = getattr(fonte, "fonte", "?")
         t0 = time.perf_counter()
+        alertas: list[dict] = []
+        dado = None
         try:
-            import inspect
             if hasattr(fonte, "consultar_cpf"):
                 fn = fonte.consultar_cpf
-                sig = inspect.signature(fn)
-                alertas = fn(cpf_digits, nome=nome) if "nome" in sig.parameters else fn(cpf_digits)
             elif hasattr(fonte, "consultar_cnpj"):
                 fn = fonte.consultar_cnpj
+            else:
+                fn = None
+            if fn is not None:
                 sig = inspect.signature(fn)
                 alertas = fn(cpf_digits, nome=nome) if "nome" in sig.parameters else fn(cpf_digits)
-            else:
-                alertas = []
-
-            if alertas:
-                logger.info("  ✓ %s — %d alerta(s)", nome_fonte, len(alertas))
-                todos_alertas.extend(alertas)
-            else:
-                logger.debug("  - %s — sem alertas", nome_fonte)
-
-            # Coleta dados estruturados para o laudo (Opção B)
-            if hasattr(fonte, "resumo_pf"):
-                try:
-                    dado = fonte.resumo_pf(cpf_digits, nome=nome)
-                    if dado:
-                        todos_dados.append(dado)
-                except Exception as e_d:
-                    logger.debug("  resumo_pf %s falhou: %s", nome_fonte, e_d)
-
+                alertas = alertas or []
         except Exception as e:
             logger.error("  ✗ %s — erro: %s", nome_fonte, e)
-        finally:
-            dt = time.perf_counter() - t0
+
+        if hasattr(fonte, "resumo_pf"):
+            try:
+                dado = fonte.resumo_pf(cpf_digits, nome=nome)
+            except Exception as e_d:
+                logger.debug("  resumo_pf %s falhou: %s", nome_fonte, e_d)
+
+        return nome_fonte, alertas, dado, time.perf_counter() - t0
+
+    todos_alertas: list[dict] = []
+    todos_dados: list[dict] = []
+    resultados: dict[str, tuple] = {}
+
+    t_inicio = time.perf_counter()
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futuros = {pool.submit(_rodar_fonte, f): getattr(f, "fonte", "?") for f in fontes}
+        for fut in as_completed(futuros):
+            nome_fonte = futuros[fut]
+            try:
+                nome_fonte, alertas, dado, dt = fut.result()
+            except Exception as e:
+                logger.error("  ✗ %s — falhou no pool: %s", nome_fonte, e)
+                continue
+            resultados[nome_fonte] = (alertas, dado)
+            if alertas:
+                logger.info("  ✓ %s — %d alerta(s)", nome_fonte, len(alertas))
             logger.info("TIMING %s: %.1fs", nome_fonte, dt)
+
+    # Reagrupa na ordem declarada das fontes, para o laudo não variar de ordem
+    # entre execuções por causa de quem terminou primeiro.
+    for fonte in fontes:
+        nome_fonte = getattr(fonte, "fonte", "?")
+        alertas, dado = resultados.get(nome_fonte, ([], None))
+        if alertas:
+            todos_alertas.extend(alertas)
+        if dado:
+            todos_dados.append(dado)
+
+    logger.info("Todas as %d fontes concluídas em %.1fs (%d threads)",
+                len(fontes), time.perf_counter() - t_inicio, max_workers)
 
     score = calcular_score_risco(todos_alertas)
     logger.info(

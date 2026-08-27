@@ -24,7 +24,7 @@ import re
 
 import requests
 
-from .base import SubradarSource
+from .base import SubradarSource, memoizar
 
 logger = logging.getLogger("subradar.cpf_situacao")
 
@@ -37,6 +37,7 @@ _INFOSIMPLES_TOKEN = os.environ.get("INFOSIMPLES_TOKEN", "")
 _INFOSIMPLES_RFB = "https://api.infosimples.com/api/v2/consultas/receita-federal/cpf"
 
 
+@memoizar
 def _via_receita(cpf: str, nascimento: str) -> dict | None:
     """Comprovante de situação cadastral direto na Receita. None se não emitiu."""
     if not _INFOSIMPLES_TOKEN or not nascimento:
