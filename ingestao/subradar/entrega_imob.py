@@ -32,9 +32,11 @@ SB_KEY = (
     or ""
 )
 RESEND_KEY = os.environ.get("RESEND_API_KEY", "")
-REMETENTE = os.environ.get("SUBRADAR_FROM", "retorno@subradar.com.br")
-OPERADOR = os.environ.get("SUBRADAR_OPERADOR", "luiz@lessalabs.com")
-BASE_SITE = os.environ.get("SUBRADAR_BASE_URL", "https://subradar.dev").rstrip("/")
+# `or` em vez do default do get: secret inexistente no GitHub Actions chega como
+# string vazia, e "" passaria pelo default, deixando o remetente em branco.
+REMETENTE = os.environ.get("SUBRADAR_FROM") or "retorno@subradar.com.br"
+OPERADOR = os.environ.get("SUBRADAR_OPERADOR") or "luiz@lessalabs.com"
+BASE_SITE = (os.environ.get("SUBRADAR_BASE_URL") or "https://subradar.dev").rstrip("/")
 
 # Status que significam "esta fonte não respondeu". Laudo com qualquer um deles
 # não vai para o cliente. `nao_contratada` fica de fora de propósito: é limite
