@@ -26,7 +26,8 @@ import time
 
 import requests as req
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import (SubradarSource, snapshot_changed, upsert, _ciclo_atual,
+                   FonteIndisponivel)
 
 logger = logging.getLogger("subradar.datajud")
 
@@ -131,16 +132,19 @@ def _search(indice: str, cnpj_digits: str, razao_social: str | None = None) -> l
             timeout=20,
         )
         if r.status_code == 401:
-            logger.warning("DataJud: APIKey inválida ou ausente")
+            raise FonteIndisponivel("APIKey do DataJud inválida ou ausente")
+        if r.status_code == 404:
+            # Índice inexistente para este tribunal: não é falha da consulta.
             return []
-        if r.status_code in (400, 404):
-            return []
+        if r.status_code == 400:
+            raise FonteIndisponivel(f"consulta rejeitada pelo índice {indice} (HTTP 400)")
         r.raise_for_status()
         hits = r.json().get("hits", {}).get("hits", [])
         return [h["_source"] for h in hits]
+    except FonteIndisponivel:
+        raise
     except Exception as e:
-        logger.debug("DataJud %s: %s", indice, e)
-        return []
+        raise FonteIndisponivel(f"falha ao consultar o índice {indice}", str(e))
 
 
 class DataJudConnector(SubradarSource):
@@ -152,23 +156,26 @@ class DataJudConnector(SubradarSource):
         cnpj_fmt   = _fmt(cnpj_limpo)
         ciclo      = _ciclo_atual()
 
-        # A API pública DataJud não indexa partes (CPF/CNPJ) nos documentos.
-        # Cobertura real de falências requer API restrita (convênio CNJ) ou fontes alternativas.
-        # Retornamos "sem dados" graciosamente para não bloquear o pipeline.
-        if not DATAJUD_KEY:
+        # A API pública do DataJud NÃO publica as partes do processo. O _source
+        # devolvido traz classe, assuntos, movimentos e número — nenhum nome,
+        # nenhum CPF/CNPJ. Verificado contra a API real: query_string por
+        # "PETROBRAS" ou pelo CNPJ devolve 0 resultados, enquanto a mesma busca
+        # por um numeroProcesso colhido do índice devolve 2.
+        #
+        # Logo, buscar processo por parte aqui é estruturalmente impossível, e
+        # o "nada encontrado" desta fonte nunca foi evidência de ausência. Ela
+        # se declara não consultada até existir convênio CNJ (API restrita) ou
+        # a cobertura migrar para o dataset `processes` do BigDataCorp, como
+        # já foi feito no Subradar Imob.
+        raise FonteIndisponivel(
+            "a API pública do DataJud não indexa as partes do processo",
+            "consulta por CNPJ ou razão social não retorna resultado por limitação da fonte; "
+            "cobertura judicial depende de convênio CNJ ou de fonte alternativa",
+        )
+
+        if not DATAJUD_KEY:  # pragma: no cover - inalcançável, mantido para o dia da migração
             logger.info("DataJud: DATAJUD_API_KEY não configurada — fonte indisponível")
-            return [{
-                "cnpj": cnpj_fmt, "ciclo": ciclo, "fonte": self.fonte,
-                "categoria": "judicial", "severidade": "info",
-                "titulo": "DataJud — cobertura indisponível (APIKey ausente)",
-                "descricao": (
-                    "Consulta de falências/RJ requer APIKey CNJ (gratuita). "
-                    "Nota: a API pública não indexa CNPJ das partes — "
-                    "cobertura real depende de convênio CNJ ou fontes alternativas."
-                ),
-                "url_fonte": "https://datajud-wiki.cnj.jus.br",
-                "is_novo": True,
-            }]
+            raise FonteIndisponivel("DATAJUD_API_KEY não configurada")
 
         todos: list[dict] = []
         for indice in INDICES:
@@ -188,14 +195,11 @@ class DataJudConnector(SubradarSource):
         }])
 
         if not todos:
-            return [{
-                "cnpj": cnpj_fmt, "ciclo": ciclo, "fonte": self.fonte,
-                "categoria": "judicial", "severidade": "ok",
-                "titulo": "Sem processos de falência/recuperação judicial (DataJud)",
-                "descricao": "CNPJ não encontrado como parte em processos de falência, recuperação judicial ou execução fiscal nos tribunais consultados.",
-                "url_fonte": "https://datajud.cnj.jus.br",
-                "is_novo": True,
-            }]
+            # Não afirmar ausência: ver a nota no topo de consultar_cnpj.
+            raise FonteIndisponivel(
+                "a API pública do DataJud não indexa as partes do processo",
+                "resultado vazio não distingue 'não há processo' de 'não é possível buscar por parte'",
+            )
 
         alertas = []
         seen: set[str] = set()

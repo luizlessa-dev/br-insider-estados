@@ -146,6 +146,54 @@ def snapshot_changed(cnpj: str, fonte: str, ciclo: str, dados: Any) -> tuple[boo
     return rows[0].get("hash_dados") != h, h
 
 
+class FonteIndisponivel(Exception):
+    """A fonte não pôde ser consultada — não que ela tenha respondido "nada consta".
+
+    Levantada por um conector quando a consulta falha por motivo externo: HTTP
+    4xx/5xx, timeout, credencial ausente, endpoint descontinuado, coluna que
+    sumiu do banco. O runner converte em um alerta de severidade "pendente",
+    que aparece no dossiê e não pontua no score.
+
+    A regra que motivou isto: ausência de resposta não é ausência de registro.
+    Conector que não conseguiu consultar nunca devolve lista vazia — devolver
+    vazio é afirmar que a fonte está limpa.
+    """
+
+    def __init__(self, motivo: str, detalhe: str | None = None) -> None:
+        super().__init__(motivo if not detalhe else f"{motivo}: {detalhe}")
+        self.motivo = motivo
+        self.detalhe = detalhe
+
+
+def alerta_pendente(
+    doc: str,
+    fonte: str,
+    motivo: str,
+    *,
+    categoria: str = "cobertura",
+    ciclo: str | None = None,
+    titulo_fonte: str | None = None,
+    url_fonte: str | None = None,
+) -> dict:
+    """Monta o alerta que registra "não foi possível consultar esta fonte"."""
+    rotulo = titulo_fonte or fonte
+    return {
+        "cnpj": doc,
+        "ciclo": ciclo or _ciclo_atual(),
+        "fonte": fonte,
+        "categoria": categoria,
+        "severidade": "pendente",
+        "titulo": f"{rotulo} — não foi possível consultar",
+        "descricao": (
+            f"A consulta a esta fonte não foi concluída ({motivo}). "
+            "Este item NÃO significa ausência de registro: a fonte não respondeu, "
+            "e portanto nada pode ser afirmado sobre ela neste ciclo."
+        ),
+        "url_fonte": url_fonte,
+        "is_novo": True,
+    }
+
+
 class SubradarSource:
     """Classe base para fontes do Subradar."""
     fonte: str = ""

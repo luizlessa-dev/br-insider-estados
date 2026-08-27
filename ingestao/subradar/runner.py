@@ -227,6 +227,16 @@ _FAIXAS_PJ = [
     (81, 100, "VERMELHO", "Risco crítico — contraindicado sem apuração especializada"),
 ]
 
+# sub_dossies.score_texto tem CHECK que só aceita este vocabulário. As faixas
+# acima usam nomes de cor; gravar "verde" devolvia HTTP 400 e, como o PATCH não
+# checava a resposta, o score calculado nunca chegava ao dossiê.
+_FAIXA_PARA_SCORE_TEXTO = {
+    "verde": "baixo",
+    "amarelo": "medio",
+    "laranja": "alto",
+    "vermelho": "critico",
+}
+
 
 def _calcular_score(alertas: list[dict]) -> tuple[int, str]:
     """Calcula score de risco proprietário 0-100 com bônus por categoria."""
@@ -257,7 +267,8 @@ def _atualizar_dossie(dossie_id: str, alertas: list[dict]) -> None:
     """Atualiza score e total de alertas no dossiê."""
     if not SUPABASE_URL or not SUPABASE_KEY or not dossie_id:
         return
-    score_num, score_texto = _calcular_score(alertas)
+    score_num, faixa = _calcular_score(alertas)
+    score_texto = _FAIXA_PARA_SCORE_TEXTO.get(faixa, "baixo")
     n_reais = len([a for a in alertas if a.get("severidade") not in _SEV_NAO_CONSULTADA])
     url = f"{SUPABASE_URL}/rest/v1/sub_dossies"
     params = {"id": f"eq.{dossie_id}"}
@@ -268,7 +279,15 @@ def _atualizar_dossie(dossie_id: str, alertas: list[dict]) -> None:
         "status": "gerado",
     }
     headers = {**_supabase_headers(), "Prefer": "return=minimal"}
-    requests.patch(url, json=payload, params=params, headers=headers, timeout=15)
+    resp = requests.patch(url, json=payload, params=params, headers=headers, timeout=15)
+    if not resp.ok:
+        # Falhar aqui em silêncio significa dossiê publicado com o score inicial
+        # (0/baixo) em vez do calculado — foi o que aconteceu com o vocabulário
+        # de faixa errado.
+        logger.error(
+            "Falha ao atualizar dossiê %s: HTTP %s %s",
+            dossie_id, resp.status_code, resp.text[:200],
+        )
 
 
 def processar_cnpj(
@@ -290,12 +309,29 @@ def processar_cnpj(
     todos_alertas = []
 
     fontes_ativas = FONTES_AVULSA if avulsa else FONTES
+    # Falha de fonte vira alerta "pendente", nunca silêncio: o PDF pinta de
+    # verde toda fonte que não gravou linha, então engolir a exceção equivalia
+    # a declarar a fonte limpa. Vale para FonteIndisponivel (falha que o
+    # conector reconheceu) e para exceção inesperada (falha que ele não viu).
+    from .base import FonteIndisponivel, alerta_pendente
+    _d = re.sub(r"\D", "", str(cnpj or ""))
+    cnpj_alerta = (
+        f"{_d[:2]}.{_d[2:5]}.{_d[5:8]}/{_d[8:12]}-{_d[12:14]}" if len(_d) == 14 else cnpj
+    )
     for fonte in fontes_ativas:
         try:
             alertas = fonte.consultar_cnpj(cnpj, razao_social=razao_social)
             todos_alertas.extend(alertas)
+        except FonteIndisponivel as e:
+            logger.warning("Fonte %s indisponível para %s: %s", fonte.fonte, cnpj, e.motivo)
+            todos_alertas.append(
+                alerta_pendente(cnpj_alerta, fonte.fonte, e.motivo, ciclo=ciclo)
+            )
         except Exception as e:
             logger.error("Fonte %s falhou para %s: %s", fonte.fonte, cnpj, e)
+            todos_alertas.append(
+                alerta_pendente(cnpj_alerta, fonte.fonte, f"erro inesperado: {e}", ciclo=ciclo)
+            )
 
     if not todos_alertas:
         logger.info("%s: sem alertas em nenhuma fonte", cnpj)

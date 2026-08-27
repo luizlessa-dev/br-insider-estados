@@ -28,7 +28,7 @@ import time
 
 import requests
 
-from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual
+from .base import SubradarSource, snapshot_changed, upsert, _ciclo_atual, FonteIndisponivel
 
 logger = logging.getLogger("subradar.escavador")
 
@@ -191,30 +191,6 @@ def _montar_alerta(processo: dict, cnpj_fmt: str, ciclo: str) -> dict:
     }
 
 
-def _alerta_pendente(cnpj_fmt: str, ciclo: str, motivo: str) -> dict:
-    """
-    Alerta que declara a fonte como não consultada. O PDF renderiza severidade
-    "pendente" em faixa própria — nunca como OK verde.
-    """
-    return {
-        "cnpj": cnpj_fmt,
-        "ciclo": ciclo,
-        "fonte": "escavador",
-        "categoria": "judicial",
-        "severidade": "pendente",
-        "titulo": "Escavador — fonte não consultada neste ciclo",
-        "descricao": (
-            f"A consulta de processos judiciais não pôde ser realizada ({motivo}). "
-            "A ausência de processo neste dossiê não significa que não existam: "
-            "esta fonte não respondeu."
-        ),
-        "referencia_id": f"pendente-{ciclo}",
-        "data_evento": None,
-        "url_fonte": "https://www.escavador.com",
-        "is_novo": True,
-    }
-
-
 class EscavadorConnector(SubradarSource):
     fonte         = "escavador"
     request_delay = 0.5
@@ -226,11 +202,11 @@ class EscavadorConnector(SubradarSource):
 
         if not ESCAVADOR_KEY:
             logger.info("Escavador: ESCAVADOR_API_KEY não configurada — fonte indisponível")
-            return [_alerta_pendente(cnpj_fmt, ciclo, "ESCAVADOR_API_KEY não configurada")]
+            raise FonteIndisponivel("ESCAVADOR_API_KEY não configurada")
 
         processos, falha = _buscar_processos(cnpj_digits)
         if falha:
-            return [_alerta_pendente(cnpj_fmt, ciclo, falha)]
+            raise FonteIndisponivel("consulta de processos não concluída", falha)
 
         mudou, hash_novo = snapshot_changed(cnpj_fmt, self.fonte, ciclo, processos)
         if not mudou:
