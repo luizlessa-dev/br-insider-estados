@@ -192,7 +192,10 @@ FONTES_PF_AVULSA = FONTES_PF + [f for f in [_BDC_SCORE_PF] if f] + [
     BDCScoreQuodPFConnectorV2(),           # Score Quod PF 300-1000 (partner_quod_credit_score_person)
     BDCFlagsNegativosQuodPFConnector(),    # Flags Negativos (marketplace_partner_quod_credit_risk_person)
     BDCSegurancaPublicaPFConnector(),      # Segurança Pública (on-demand, contato comercial)
-    BDCDadosFinanceirosPFConnector(),      # Dados Financeiros Estimados (pessoas_financial_data — incluso)
+    # BDCDadosFinanceirosPFConnector() removido: declara a mesma fonte
+    # ("bdc_financeiro_pf") que BDCFinanceiroPFConnector. Como a chave única
+    # de sub_pf_dados é (cpf, ciclo, fonte), as duas linhas no mesmo lote
+    # faziam o Postgres recusar o INSERT inteiro (21000) e o dossiê morria.
     DirectDataPFEnriquecimentoConnector(), # Direct Data — enriquecimento PF: nome da mãe, prog. sociais
     DirectDataMonitorAppConnector(),       # Direct Data MonitorApp — eventos push PF cadastradas
 ]
@@ -398,6 +401,18 @@ def processar_cpf(
 
     logger.info("Todas as %d fontes concluídas em %.1fs (%d threads)",
                 len(fontes), time.perf_counter() - t_inicio, max_workers)
+
+    vistas: set[str] = set()
+    dados_unicos: list[dict] = []
+    for d in todos_dados:
+        f = d.get("fonte") or ""
+        if f in vistas:
+            logger.warning("Fonte duplicada ignorada na gravação: %s "
+                           "(dois conectores declaram o mesmo nome)", f)
+            continue
+        vistas.add(f)
+        dados_unicos.append(d)
+    todos_dados = dados_unicos
 
     score = calcular_score_risco(todos_alertas)
     logger.info(

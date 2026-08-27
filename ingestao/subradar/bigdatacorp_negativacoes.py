@@ -516,7 +516,12 @@ class BDCProcessosPFConnector(SubradarSource):
                 "fonte": self.fonte,
                 "categoria": "judicial",
                 "severidade": _classifica_processo(lw),
-                "titulo": f"{lw.get('Type') or 'Processo'} — {tribunal}/{uf}"[:120],
+                # Assunto no título: dois processos do mesmo tipo no mesmo
+                # tribunal geravam alertas visualmente idênticos no laudo.
+                "titulo": (
+                    f"{lw.get('Type') or 'Processo'} — {assunto}" if assunto
+                    else f"{lw.get('Type') or 'Processo'} — {tribunal}/{uf}"
+                )[:120],
                 "descricao": descricao,
                 "data_evento": (lw.get("LastMovementDate") or "")[:10] or None,
                 "valor_brl": valor or None,
