@@ -314,14 +314,25 @@ def processar_cnpj(
     # a declarar a fonte limpa. Vale para FonteIndisponivel (falha que o
     # conector reconheceu) e para exceção inesperada (falha que ele não viu).
     from .base import FonteIndisponivel, alerta_pendente
+    from .sentinela import observar, avaliar
     _d = re.sub(r"\D", "", str(cnpj or ""))
     cnpj_alerta = (
         f"{_d[:2]}.{_d[2:5]}.{_d[5:8]}/{_d[8:12]}-{_d[12:14]}" if len(_d) == 14 else cnpj
     )
     for fonte in fontes_ativas:
         try:
-            alertas = fonte.consultar_cnpj(cnpj, razao_social=razao_social)
-            todos_alertas.extend(alertas)
+            with observar() as obs:
+                alertas = fonte.consultar_cnpj(cnpj, razao_social=razao_social)
+            # Conector que engoliu o próprio erro e devolveu vazio: se toda
+            # requisição à fonte falhou, o vazio não sustenta "nada consta".
+            motivo = avaliar(fonte.fonte, alertas, obs)
+            if motivo:
+                logger.warning("Fonte %s: vazio sem resposta da origem (%s)", fonte.fonte, motivo)
+                todos_alertas.append(
+                    alerta_pendente(cnpj_alerta, fonte.fonte, motivo, ciclo=ciclo)
+                )
+            else:
+                todos_alertas.extend(alertas)
         except FonteIndisponivel as e:
             logger.warning("Fonte %s indisponível para %s: %s", fonte.fonte, cnpj, e.motivo)
             todos_alertas.append(
