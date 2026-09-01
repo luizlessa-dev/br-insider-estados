@@ -59,15 +59,36 @@ jobs:
         run: |
           ARGS=""
 
-          # Janela
-          if [ -n "${{ github.event.inputs.data_inicio }}" ]; then
-            ARGS="$ARGS --data-inicio ${{ github.event.inputs.data_inicio }}"
-          fi
-          if [ -n "${{ github.event.inputs.data_fim }}" ]; then
-            ARGS="$ARGS --data-fim ${{ github.event.inputs.data_fim }}"
-          fi
-          if [ -z "${{ github.event.inputs.data_inicio }}" ]; then
-            ARGS="$ARGS --dias ${{ github.event.inputs.dias || '2' }}"
+          if [ -z "${{ github.event.inputs.data_inicio }}" ] && [ -z "${{ github.event.inputs.data_fim }}" ]; then
+            # Execução agendada, ou dispatch manual sem overrides de data.
+            #
+            # --dias sozinho é sempre retroativo: o runner faz
+            # data_fim=hoje / data_inicio=data_fim-(dias-1), nunca avança além
+            # de hoje. Resultado medido em produção (31/08/2026): das 799
+            # linhas em agenda_camara_eventos, só 2 tinham data posterior à
+            # própria data de ingestão — ou seja, a agenda nunca continha
+            # evento futuro, apesar da Câmara publicar pauta com dias de
+            # antecedência (confirmado: 14 eventos retornados pela API pura
+            # para os 7 dias seguintes, no mesmo teste). "Próximo →" na
+            # página /agenda sempre caía em "nenhum evento".
+            #
+            # Fixa a janela explicitamente: ontem até hoje+7, cobrindo tanto
+            # o retroativo de sempre quanto uma semana à frente.
+            DATA_INICIO=$(date -u -d "yesterday" +%Y-%m-%d)
+            DATA_FIM=$(date -u -d "+7 days" +%Y-%m-%d)
+            ARGS="$ARGS --data-inicio $DATA_INICIO --data-fim $DATA_FIM"
+          else
+            # Dispatch manual com pelo menos um limite explícito — respeita
+            # exatamente o que foi pedido, sem impor a janela futura acima.
+            if [ -n "${{ github.event.inputs.data_inicio }}" ]; then
+              ARGS="$ARGS --data-inicio ${{ github.event.inputs.data_inicio }}"
+            fi
+            if [ -n "${{ github.event.inputs.data_fim }}" ]; then
+              ARGS="$ARGS --data-fim ${{ github.event.inputs.data_fim }}"
+            fi
+            if [ -z "${{ github.event.inputs.data_inicio }}" ]; then
+              ARGS="$ARGS --dias ${{ github.event.inputs.dias || '2' }}"
+            fi
           fi
 
           # Fonte
@@ -78,6 +99,7 @@ jobs:
             ARGS="$ARGS --senado-only"
           fi
 
+          echo "Janela: $ARGS"
           python -m ingestao.agenda.runner $ARGS
 
       - name: Backfill histórico
