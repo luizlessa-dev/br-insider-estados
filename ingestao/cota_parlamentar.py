@@ -258,4 +258,8 @@ if __name__ == "__main__":
     print(json.dumps(results, indent=2, ensure_ascii=False))
 
     failed = [r for r in results if "erro" in r]
+
+    if writer and not failed:
+        writer.refresh_mv_cota_fornecedor()
+
     sys.exit(1 if failed else 0)
