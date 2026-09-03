@@ -1,32 +1,26 @@
 name: Ingestão Senado Federal
 
-# Cobre: CEAPS (verba indenizatória) + votações nominais.
+# Cobre: votações nominais.
 #
-# CEAPS:    mensal dia 16 — dados chegam com ~15 dias de lag
 # Votações: semanal (3ª-feira) — complementa o workflow da Câmara (2ª-feira)
+#
+# O módulo CEAPS foi removido em 03/09/2026 — alimentava
+# `senado_ceaps_despesa`, tabela que nenhuma página do site lê (fonte
+# diferente da usada por /senate-expenses, que vem de outro pipeline em
+# br-insider-main/packages/ingestao-portal). Rodava com sucesso todo mês
+# sem nenhum efeito visível no site — puro desperdício de CI.
 
 on:
   schedule:
-    - cron: "0 8 16 * *"   # mensal dia 16, 08:00 UTC
     - cron: "0 7 * * 2"    # semanal 3ª-feira, 07:00 UTC
   workflow_dispatch:
     inputs:
-      modulos:
-        description: "ceaps votacoes (separados por espaço)"
-        default: "ceaps votacoes"
-      anos_ceaps:
-        description: "Anos CEAPS separados por espaço (ex: 2023 2024 2025)"
-        default: ""
       data_inicio:
         description: "Início período votações (YYYY-MM-DD)"
         default: ""
       data_fim:
         description: "Fim período votações (YYYY-MM-DD)"
         default: ""
-      backfill:
-        description: "CEAPS desde 2008?"
-        type: boolean
-        default: false
 
 concurrency:
   group: ingest-senado
@@ -55,20 +49,6 @@ jobs:
       - name: Calcular parâmetros
         id: cfg
         run: |
-          YEAR=$(date +%Y)
-          MODULOS="${{ github.event.inputs.modulos || 'ceaps votacoes' }}"
-
-          # CEAPS: backfill ou anos recentes
-          if [ "${{ github.event.inputs.backfill }}" = "true" ]; then
-            ANOS_CEAPS=$(seq 2008 $YEAR | tr '\n' ' ')
-          elif [ -n "${{ github.event.inputs.anos_ceaps }}" ]; then
-            ANOS_CEAPS="${{ github.event.inputs.anos_ceaps }}"
-          else
-            PREV=$((YEAR - 1))
-            ANOS_CEAPS="$PREV $YEAR"
-          fi
-
-          # Votações: período customizado ou últimos 14 dias
           if [ -n "${{ github.event.inputs.data_inicio }}" ]; then
             DATA_INI="${{ github.event.inputs.data_inicio }}"
             DATA_FIM="${{ github.event.inputs.data_fim }}"
@@ -78,20 +58,10 @@ jobs:
             DATA_FIM=$(date +%Y-%m-%d)
           fi
 
-          echo "modulos=$MODULOS"    >> $GITHUB_OUTPUT
-          echo "anos_ceaps=$ANOS_CEAPS" >> $GITHUB_OUTPUT
           echo "data_ini=$DATA_INI"  >> $GITHUB_OUTPUT
           echo "data_fim=$DATA_FIM"  >> $GITHUB_OUTPUT
 
-      - name: Ingerir CEAPS
-        if: contains(steps.cfg.outputs.modulos, 'ceaps')
-        run: |
-          python -m ingestao.senado \
-            --modulos ceaps \
-            --anos ${{ steps.cfg.outputs.anos_ceaps }}
-
       - name: Ingerir Votações
-        if: contains(steps.cfg.outputs.modulos, 'votacoes')
         run: |
           python -m ingestao.senado \
             --modulos votacoes \
