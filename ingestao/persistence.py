@@ -241,3 +241,22 @@ class SupabaseWriter:
             },
             timeout=30,
         )
+
+    # ── RPCs de refresh pós-ingestão ─────────────────────────────────────
+    def refresh_mv_cota_fornecedor(self) -> None:
+        """
+        Atualiza mv_cota_fornecedor (ranking de fornecedores do CEAP Câmara,
+        usado em /expenses/fornecedores). A MV agrega `cota_despesa`, que
+        este ingester popula — sem essa chamada, a MV nunca acompanha o
+        cron mensal e fica presa no último refresh manual (ficou ~2 meses
+        parada até ser notado em 03/09/2026).
+        """
+        resp = self.session.post(
+            f"{self.url}/rest/v1/rpc/refresh_mv_cota_fornecedor",
+            json={},
+            timeout=120,
+        )
+        if resp.status_code >= 300:
+            logger.warning("refresh_mv_cota_fornecedor falhou: %s", resp.text[:200])
+        else:
+            logger.info("mv_cota_fornecedor atualizada.")
