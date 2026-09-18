@@ -1,0 +1,31 @@
+name: Subradar PF - Keep-alive da Lambda
+
+# A Lambda (subradar-pf-dev, imagem de container) fica "Inactive" depois de
+# ~14 dias sem invocação — a primeira chamada real nesse estado dá 500 e só
+# reativa na segunda tentativa. Esse ping evita isso pingando /health.
+on:
+  schedule:
+    - cron: "0 12 */3 * *"   # a cada 3 dias, 12:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: subradar-pf-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /health (acorda a Lambda se estiver Inactive)
+        run: |
+          url="https://ngzghlfwu5.execute-api.us-east-1.amazonaws.com/health"
+          for tentativa in 1 2; do
+            status=$(curl -s -o /tmp/resp.txt -w "%{http_code}" "$url")
+            echo "Tentativa $tentativa: HTTP $status"
+            cat /tmp/resp.txt
+            [ "$status" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::Lambda não respondeu 200 em 2 tentativas"
+          exit 1
