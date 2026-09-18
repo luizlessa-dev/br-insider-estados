@@ -17,6 +17,7 @@ on:
           - lista_suja
           - aneel
           - ans
+          - anpd
         default: todas
 
 concurrency:
@@ -74,6 +75,10 @@ jobs:
       - name: Seed ANS — Operadoras de Plano de Saúde
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'ans' }}
         run: python -m ingestao.subradar.ans_seeder
+
+      - name: Seed ANPD — Processos Sancionadores LGPD
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.fonte == 'todas' || inputs.fonte == 'anpd' }}
+        run: python -m ingestao.subradar.anpd_seeder
 
       # MTE Autos: seed manual até dados.mte.gov.br resolver SSL
       # - name: Seed MTE — Autos de Infração Trabalhista
