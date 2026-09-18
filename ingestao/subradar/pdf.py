@@ -73,6 +73,8 @@ FONTES_PJ: list[tuple[str, str]] = [
     ("leniencia",              "Acordos de Leniência CGU"),
     ("lista_suja_mte",         "Lista Suja — Trabalho Escravo (MTE)"),
     ("sicaf",                  "SICAF — Cadastro Federal de Fornecedores"),
+    # Regulatório LGPD
+    ("anpd",                   "ANPD — Processos Sancionadores LGPD"),
     # Trabalhista
     ("cndt_tst_pj",            "CNDT/TST — Débitos Trabalhistas"),
     ("crf_fgts",               "CRF — Regularidade FGTS"),

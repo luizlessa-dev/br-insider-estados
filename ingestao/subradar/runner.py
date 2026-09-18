@@ -30,6 +30,7 @@ from .societario import SocietarioConnector
 from .dou import DOUConnector
 from .sancoes import CEISConnector, CNEPConnector, CEPIMConnector
 from .ibama import IBAMAConnector
+from .anpd import ANPDConnector
 from .cvm import CVMConnector
 from .siconv import SICONVConnector
 from .anvisa import ANVISAConnector
@@ -101,6 +102,7 @@ FONTES = [
     CNEPConnector(),           # CNEP — punidas pela Lei Anticorrupção
     CEPIMConnector(),          # CEPIM — entidades impedidas de convênios
     IBAMAConnector(),          # IBAMA — autos de infração ambiental (tabela local)
+    ANPDConnector(),           # ANPD — processos administrativos sancionadores LGPD (tabela local)
     CVMConnector(),            # CVM — processos administrativos sancionadores (tabela local)
     SICONVConnector(),         # SICONV — convênios federais (Portal Transparência)
     ANVISAConnector(),         # ANVISA — AFE/AE (token gov.br opcional)
@@ -232,6 +234,10 @@ _CAT_INTL_PJ       = {"ofac", "uk_sanctions", "eu_sanctions", "un_sanctions",
                        "worldbank_debarment", "opensanctions_pro", "opensanctions"}
 _CAT_CGU_PJ        = {"ceis", "cnep", "cepim", "lista_suja", "sicaf", "leniencia"}
 _CAT_FISCAL_PJ     = {"cnd_federal", "crf_fgts", "sefaz_estadual", "divida_ativa"}
+# ANPD/LGPD é tematicamente distinto de improbidade/CGU — outro órgão regulador,
+# outro bem jurídico protegido. Bônus próprio para empilhar com CGU quando a
+# empresa tem os dois tipos de risco regulatório, em vez de diluir num só grupo.
+_CAT_LGPD_PJ       = {"anpd"}
 
 _FAIXAS_PJ = [
     (0,  20,  "VERDE",    "Sem ocorrências significativas"),
@@ -266,6 +272,8 @@ def _calcular_score(alertas: list[dict]) -> tuple[int, str]:
     if fontes & _CAT_CGU_PJ:
         score += 5
     if fontes & _CAT_FISCAL_PJ:
+        score += 5
+    if fontes & _CAT_LGPD_PJ:
         score += 5
 
     score = min(score, 100)
